@@ -70,9 +70,18 @@ different installed version. Make both come from the same tree:
 
 ```bash
 cd /mnt/models/hermes-home/hermes-agent-src
-git pull
-pip install -e .          # or: hermes update, if your build offers it
-hermes gateway restart
+
+# 1) on a detached tag `git pull` fails — pick a tag or a branch first:
+git status -sb | head -2            # "not currently on a branch" = detached HEAD
+git fetch --tags
+git tag --sort=-v:refname | head -3
+git switch --detach <tag>           # or: git switch main && git pull
+
+# 2) let Hermes prepare its own isolated runtime; no pip needed:
+hermes gateway restart              # prints "Preparing the isolated Hermes runtime… ✓"
+
+# 3) PEP 668 blocks `pip install -e .`; only if you insist on the system Python:
+python3 -m pip install -e . --break-system-packages   # not recommended
 ```
 
 Until then the HUD shows `—` and "ni dosegljivo (Hermes)" in SKILLS.

@@ -178,9 +178,18 @@ da oba dela prideta iz istega drevesa:
 
 ```bash
 cd /mnt/models/hermes-home/hermes-agent-src   # tvoj checkout
-git pull
-pip install -e .          # ali: hermes update, če tvoja različica to ponuja
-hermes gateway restart
+
+# 1) če si na odpeti glavi (tag), `git pull` ne deluje:
+git status -sb | head -2            # "not currently on a branch" = detached HEAD
+git fetch --tags
+git tag --sort=-v:refname | head -3 # izberi najnovejši tag …
+git switch --detach <tag>           # … ali: git switch main && git pull
+
+# 2) odvisnosti pusti Hermesu — ob restartu sam pripravi svoj izoliran runtime
+hermes gateway restart              # v izpisu: "Preparing the isolated Hermes runtime… ✓"
+
+# 3) sistemu PEP 668 ne dovoli `pip install -e .`; če res želiš v sistemski Python:
+python3 -m pip install -e . --break-system-packages   # ni priporočeno
 ```
 
 Dokler to ni urejeno, HUD v panelu VEŠČINE kaže `—` in »ni dosegljivo (Hermes)«.
