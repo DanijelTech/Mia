@@ -40,6 +40,12 @@ sudo ./uninstall.sh --keep-data      # keep voices/certs/logs/config
 
 It never touches Hermes, its sessions/memory, your models, or the source tree.
 
+**Non-root installs** adapt automatically: port 443 cannot be bound without
+privileges, so the installer writes `tls_ports: [8766]` and the HUD lives at
+`https://<lan-ip>:8766/hud/` (also printed in the summary). Because it is a user
+systemd unit, keep it alive after logout with `loginctl enable-linger $USER`.
+For port 443 later, re-run the installer with `sudo`.
+
 To build a tarball for an offline machine: `./build-package.sh`.
 
 Tested on macOS (Apple Silicon) with Hermes Agent v0.16. Allow ~1 hour.

@@ -44,6 +44,18 @@ odstranitev natančna:
 
 Nikoli se ne dotakne Hermesa, njegovih sej/spomina, tvojih modelov ali izvorne kode.
 
+**Namestitev kot navaden uporabnik** (brez roota) se prilagodi sama: vrat 443 ni
+mogoče zagnati brez privilegijev, zato namestitvenik v `server.yaml` zapiše
+`tls_ports: [8766]` in HUD živi na `https://<lan-ip>:8766/hud/` (izpiše ga tudi v
+povzetku). Ker gre za uporabniško systemd storitev, jo obdržiš aktivno tudi po
+odjavi:
+
+```bash
+loginctl enable-linger $USER
+```
+
+Če pozneje želiš vrata 443, zaženi namestitev kot root (`sudo ./install.sh`).
+
 Za arhiv na stroj brez interneta: `./build-package.sh`.
 
 Testirano na macOS (Apple Silicon) s Hermes Agent v0.16. Predviden čas: ~1 ura.
@@ -269,6 +281,9 @@ Brskalniki dajo mikrofon samo varnim izvorom:
 ```bash
 scripts/make-certs.sh            # samodejno zazna LAN IP za SAN
 ```
+
+Brez roota so vrata 443 nedosegljiva; v tem primeru uporabi `tls_ports: [8766]`
+in HUD na `https://<lan-ip>:8766/hud/` (namestitvenik to nastavi sam).
 
 Zaupaj `certs/cert.pem` na vsaki napravi (macOS: Keychain; Windows:
 `certutil -user -addstore Root cert.pem`; iPhone: prenesi

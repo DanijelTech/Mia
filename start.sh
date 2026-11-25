@@ -156,11 +156,17 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
 done
 if [ "$READY" != 1 ]; then
   warn "voice server did not answer on :$HUD_PORT within ${WAIT_S}s"
-  if [ -f "$REPO/server/logs/mia.out" ]; then
+  if [ ${#SCTL[@]} -gt 0 ] && unit_exists mia-voice; then
+    printf '\n    --- systemd status ---\n'
+    timeout 10 "${SCTL[@]}" --no-pager status mia-voice 2>&1 | tail -n 12 | sed 's/^/    /' || true
     printf '\n    --- last log lines ---\n'
-    tail -n 15 "$REPO/server/logs/mia.out" | sed 's/^/    /'
+    timeout 10 journalctl --no-pager -n 25 -u mia-voice 2>/dev/null | sed 's/^/    /' \
+      || printf '    (journalctl unavailable)\n'
+  elif [ -f "$REPO/server/logs/mia.out" ]; then
+    printf '\n    --- last log lines ---\n'
+    tail -n 20 "$REPO/server/logs/mia.out" | sed 's/^/    /'
   fi
-  die "check the log above, then retry: ./start.sh --no-start" 2
+  die "fix the error above, then retry: ./start.sh --no-start" 2
 fi
 info "voice server is up"
 

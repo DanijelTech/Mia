@@ -166,6 +166,30 @@ pathlib.Path(out).write_text(json.dumps(data, indent=2) + "\n")
 PY
 }
 
+
+hud_url() {  # print the URL the HUD will live at (respects TLS port and cert presence)
+  local out
+  out="$($PYTHON - "$CFG" "$SERVER_DIR/certs/cert.pem" 2>/dev/null <<'PY'
+import sys, yaml, socket
+cfg = yaml.safe_load(open(sys.argv[1])) or {}
+server = cfg.get("server") or {}
+has_cert = __import__("pathlib").Path(sys.argv[2]).exists()
+ports = server.get("tls_ports") or ([server["tls_port"]] if server.get("tls_port") else [])
+try:
+    host = socket.gethostbyname(socket.gethostname())
+except Exception:
+    host = "127.0.0.1"
+if has_cert and ports:
+    port = int(ports[0])
+    print(f"https://{host}/hud/" if port == 443 else f"https://{host}:{port}/hud/")
+else:
+    print(f"http://{host}:{int(server.get('port', 8765))}/hud/  (no TLS certificate)")
+PY
+)"
+  [ -n "$out" ] || out="http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 127.0.0.1):8765/hud/"
+  printf '%s\n' "$out"
+}
+
 # ------------------------------------------------------------------ preflight
 say "Mia installer — $VERSION ($MODE mode)"
 info "repo:      $REPO_DIR"
@@ -220,7 +244,9 @@ say "1/7 Python dependencies"
 pip_install fastapi uvicorn requests pyyaml numpy
 pip_install psutil || warn "psutil missing: the HUD machines panel will be degraded"
 if [ "$DO_STT_DEPS" = 1 ]; then
-  pip_install RealtimeSTT || die "RealtimeSTT is required for speech-to-text"
+  # RealtimeSTT treats these as optional extras but fails at runtime without them
+  pip_install RealtimeSTT faster-whisper silero-vad \
+    || die "RealtimeSTT + faster-whisper + silero-vad are required for speech-to-text"
 else
   info "skip RealtimeSTT (--no-stt-deps)"
 fi
@@ -291,6 +317,28 @@ else
   info "created $CFG (review voice/tts/language settings)"
 fi
 
+# Port 443 needs root (or CAP_NET_BIND_SERVICE, which user services cannot get),
+# so a user-mode install listens for HTTPS on 8766 instead of 443.
+if [ "$DRY_RUN" = 0 ] && [ "$(id -u)" != "0" ]; then
+  if grep -qE '^  tls_ports:[^#]*\b443\b' "$CFG"; then
+    $PYTHON - "$CFG" <<'PY'
+import re, sys, pathlib
+p = pathlib.Path(sys.argv[1])
+lines = p.read_text().splitlines()
+out, changed = [], False
+for line in lines:
+    if re.match(r"^  tls_ports:", line) and "443" in line:
+        out.append("  tls_ports: [8766]           # not root: 443 needs privileges, HUD uses :8766")
+        changed = True
+    else:
+        out.append(line)
+if changed:
+    p.write_text("\n".join(out) + "\n")
+    print("    tls_ports -> [8766] (user install cannot bind :443)")
+PY
+  fi
+fi
+
 # ------------------------------------------------------------------ 4. certs
 say "4/7 TLS certificate (required for the browser microphone)"
 if [ "$DO_CERT" = 1 ]; then
@@ -325,6 +373,15 @@ if [ "$DO_TOKEN" = 1 ]; then
   fi
 else
   info "skip token (--no-token)"
+fi
+
+# Mia authenticates to Hermes with API_SERVER_KEY; it must live in the env file
+# this user can read (running Mia as another user than Hermes is a common trap).
+if [ -f "$HERMES_ENV" ] && ! grep -qE '^API_SERVER_KEY=' "$HERMES_ENV"; then
+  warn "no API_SERVER_KEY in $HERMES_ENV — Mia will report 'Agent backend offline'"
+  info "  fix: copy the key from the Hermes user's env file, e.g."
+  info "       sudo grep '^API_SERVER_KEY=' /root/.hermes/.env >> $HERMES_ENV"
+  info "  or run Mia as the same user that runs Hermes"
 fi
 
 # ---------------------------------------------------------------- 6. service
@@ -430,16 +487,29 @@ fi
 # --------------------------------------------------------------- 7. verify
 say "7/7 Verification"
 write_manifest
+SERVICE_OK=""
 if [ "$DRY_RUN" = 0 ] && [ "$DO_SERVICE" = 1 ] && [ "$DO_START" = 1 ]; then
   if command -v curl >/dev/null 2>&1; then
     info "waiting for the voice server to warm up (up to 60 s)…"
+    SERVICE_OK="no"
     for _ in $(seq 1 20); do
-      curl -s -m 2 http://127.0.0.1:8765/api/hud-config >/dev/null 2>&1 && break
+      if curl -s -m 2 http://127.0.0.1:8765/api/hud-config >/dev/null 2>&1; then SERVICE_OK="yes"; break; fi
       sleep 3
     done
-    curl -s -m 3 http://127.0.0.1:8765/api/hud-config || warn "voice server not answering yet"
-    echo
-    [ -x "$SERVER_DIR/scripts/mia-health.sh" ] && bash "$SERVER_DIR/scripts/mia-health.sh" || true
+    if [ "$SERVICE_OK" = "yes" ]; then
+      CUR_JSON="$(curl -s -m 3 http://127.0.0.1:8765/api/hud-config || true)"
+      info "voice server up: $CUR_JSON"
+      [ -x "$SERVER_DIR/scripts/mia-health.sh" ] && bash "$SERVER_DIR/scripts/mia-health.sh" || true
+    else
+      warn "the voice server is not answering yet — here is what it says:"
+      if [ ${#SCTL[@]} -gt 0 ] && [ -d /run/systemd/system ]; then
+        timeout 10 "${SCTL[@]}" --no-pager status mia-voice 2>&1 | tail -n 15 | sed 's/^/    /' || true
+        timeout 10 journalctl --no-pager -n 20 -u mia-voice 2>/dev/null | sed 's/^/    /' || true
+      elif [ -f "$SERVER_DIR/logs/mia.out" ]; then
+        tail -n 20 "$SERVER_DIR/logs/mia.out" | sed 's/^/    /'
+      fi
+      warn "fix the error above, then run: ./start.sh"
+    fi
   fi
 fi
 
@@ -452,9 +522,10 @@ $([ "$DRY_RUN" = 1 ] && printf '\033[1;33mDry run complete — nothing was chang
   python      $($PYTHON -c 'import sys;print(sys.executable)')
   mode        $MODE
   voices      $(ls "$SERVER_DIR/voices" 2>/dev/null | grep -c '\.onnx$') model(s)
-  service     ${SERVICE_KIND:-none}${SERVICE_DIR:+ ($SERVICE_DIR)}
+  service     ${SERVICE_KIND:-none}${SERVICE_DIR:+ ($SERVICE_DIR)}${SERVICE_OK:+ [running: $SERVICE_OK]}
   tts engine  $TTS_ENGINE
-  HUD         https://$(hostname 2>/dev/null || echo localhost)/hud/
+  HUD URL     $(hud_url)
+
 
 Next steps
   1. Hermes: point your local model at it (Qwen3 with thinking disabled) —
@@ -462,6 +533,8 @@ Next steps
   2. Open the HUD and enter the token from $HERMES_ENV.
   3. If you switched TTS to Gepard: start the TTS service and set
      tts.provider: http (see docs/SETUP.md).
+
+$( [ "$MODE" = "user" ] && printf 'Keep it running after logout/reboot:  loginctl enable-linger %s\n\n' "$(id -un)" )
 
 Remove everything again:  ./uninstall.sh --dry-run   then   ./uninstall.sh
 DONE

@@ -1311,8 +1311,24 @@ def main() -> int:
                 ssl_certfile=str(ROOT / cert), ssl_keyfile=str(ROOT / key),
             )))
 
+        async def serve_one(srv) -> None:
+            # One listener must never take down the others: binding :443 as a
+            # non-root user fails, and gather() would then cancel every port.
+            try:
+                await srv.serve()
+            except BaseException as exc:  # noqa: BLE001 - SystemExit/KeyboardInterrupt included
+                port = getattr(getattr(srv, "config", None), "port", "?")
+                hint = ""
+                try:
+                    if int(port) < 1024 and os.geteuid() != 0:
+                        hint = (" (privileged port: run as root, or set server.tls_ports: [8766] "
+                                "and open https://HOST:8766/hud/)")
+                except (TypeError, ValueError):
+                    pass
+                print(f"listener on :{port} stopped: {exc!r}{hint}", flush=True)
+
         async def serve_all() -> None:
-            await asyncio.gather(*[s.serve() for s in servers])
+            await asyncio.gather(*[serve_one(s) for s in servers])
 
         asyncio.run(serve_all())
     else:

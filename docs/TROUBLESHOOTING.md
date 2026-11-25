@@ -15,9 +15,17 @@ certifikatu, ki mu brskalnik ne zaupa. Brskalniki zahtevajo varen kontekst za
 (~40 s). `scripts/mia-health.sh`, dokler niso vse vrstice OK.
 
 **»Agent backend offline. Running in basic mode.«** — Hermesov API strežnik ni
-dosegljiv. Preveri `API_SERVER_ENABLED/KEY` v `~/.hermes/.env` in da teče
-`hermes gateway`; preveri s `curl -H "Authorization: Bearer $KEY"
-http://127.0.0.1:8642/health`.
+dosegljiv **ali** Mia ne vidi ključa. Preveri `API_SERVER_ENABLED`/`API_SERVER_KEY`
+v `~/.hermes/.env` tistega uporabnika, ki poganja Mio, in da teče `hermes gateway`:
+
+```bash
+KEY=$(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)
+curl -H "Authorization: Bearer $KEY" http://127.0.0.1:8642/health
+```
+
+Če Hermes teče kot **root**, Mia pa kot navaden uporabnik, ključ v
+`/root/.hermes/.env` Mii ni viden (in obratno). Kopiraj ga v okoljsko datoteko
+uporabnika, ki poganja Mio, ali poganjaj oba kot isti uporabnik.
 
 **Prepis je napačen / besede so zmešane** — poskrbi, da si na aktualnem HUD-u
 (trda osvežitev): mikrofon mora zajemati pri 16 kHz. Pomaga tudi večji model
@@ -93,6 +101,37 @@ vrstic `server/logs/mia.out`. Najpogosteje manjkajoče odvisnosti
 `start.sh` zaznata, da systemd ne teče, in uporabita proces v ozadju
 (`server/logs/mia.pid`). V takem okolju systemd enote samo napišeta, ne
 aktivirata.
+
+**Namestitev uspe, a `mia-health.sh` kaže vse DOWN** — skoraj vedno manjkata
+`faster-whisper` in `silero-vad` (RealtimeSTT ju obravnava kot opcijska, ob zagonu
+pa brez njiju odpove), ali pa strežnik ne more vezati vrat. Poglej dnevnik:
+
+```bash
+journalctl --user -u mia-voice -n 40 --no-pager     # uporabniška namestitev
+sudo journalctl -u mia-voice -n 40 --no-pager       # sistemska
+```
+
+Nato poženi `./install.sh --yes` znova — namesti manjkajoče pakete in popravi
+`tls_ports`. Trenutna koda posameznega poslušalca ne pusti več, da bi podrl
+ostale (prej je neuspešen bind na :443 ubil tudi :8765).
+
+**V dnevniku je `PermissionError` ali `SystemExit(1)` pri vratih 443** — tečeš
+kot navaden uporabnik. V `server/config/server.yaml` nastavi
+`tls_ports: [8766]` in odpri `https://<lan-ip>:8766/hud/`. Namestitvenik to
+nastavi sam, če config ustvari on; pri obstoječem configu preveri ročno.
+
+**Mia preneha delovati po odjavi iz sistema** — uporabniške systemd storitve se
+ustavijo z zadnjo sejo. Omogoči:
+
+```bash
+loginctl enable-linger $USER
+```
+
+**`pip --user` je nadgradil skupne pakete (npr. `websockets` 15 → 16)** — to se
+zgodi, ker RealtimeSTT zahteva `websockets==16`, uporabniški `site-packages` pa je
+deljen z drugo programsko opremo (npr. `gradio-client` zahteva `<16`). Mia dela;
+če druga aplikacija zaradi tega odpove, ji namesti svojo različico v ločenem
+okolju ali Mio zaženi v venv-u (namestitvenik tega ne počne, ker si želel brez).
 
 **Žeton se je znašel v zgodovini brskalnika** — `?token=` se po prijavi odstrani
 iz naslova, a ostane v zgodovini. Če te to moti, uporabi

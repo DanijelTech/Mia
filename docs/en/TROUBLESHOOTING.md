@@ -5,6 +5,26 @@
 > Renamed from `jarvis_ai`: the server still accepts the old `JARVIS_HUD_TOKEN` env var, the `jarvis_token` cookie and `X-Jarvis-Token` header, so an upgrade cannot silently disable auth.
 
 
+**Install completes but `mia-health.sh` shows everything DOWN** — nearly always
+`faster-whisper` and `silero-vad` missing (RealtimeSTT treats them as optional
+extras but fails at runtime without them), or the server cannot bind its ports.
+Check the log with `journalctl --user -u mia-voice -n 40 --no-pager` (or
+`sudo journalctl` for a system unit), then re-run `./install.sh --yes` — it
+installs the missing packages and fixes `tls_ports`. A failing listener no
+longer takes the others down (previously a failed :443 bind killed :8765 too).
+
+**Log shows `PermissionError` / `SystemExit(1)` on port 443** — you are not root.
+Set `tls_ports: [8766]` in `server/config/server.yaml` and open
+`https://<lan-ip>:8766/hud/`.
+
+**Mia stops working after you log out** — user systemd units stop with the last
+session: `loginctl enable-linger $USER`.
+
+**`pip --user` upgraded shared packages (e.g. `websockets` 15 → 16)** —
+RealtimeSTT pins `websockets==16` and user `site-packages` is shared with other
+software (e.g. `gradio-client` wants `<16`). Mia works; give the other app its own
+environment if it breaks.
+
 **HUD loads but mic is blocked** — you're on plain http or an untrusted cert.
 Browsers require a secure context for `getUserMedia`. Trust `certs/cert.pem`
 on the device (see SETUP §3) and use `https://`.
@@ -12,10 +32,19 @@ on the device (see SETUP §3) and use `https://`.
 **First connection after server start times out** — the Whisper model warms at
 startup (~40 s). `scripts/mia-health.sh` until all rows are OK.
 
-**"Agent backend offline. Running in basic mode."** — the Hermes API server
-isn't reachable. Check `API_SERVER_ENABLED/KEY` in `~/.hermes/.env` and that
-`hermes gateway` is running; verify with `curl -H "Authorization: Bearer $KEY"
-http://127.0.0.1:8642/health`.
+**"Agent backend offline. Running in basic mode."** — the Hermes API server is
+unreachable **or** Mia cannot see the key. Check `API_SERVER_ENABLED` /
+`API_SERVER_KEY` in the env file of the user that runs Mia, and that
+`hermes gateway` is running:
+
+```bash
+KEY=$(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)
+curl -H "Authorization: Bearer $KEY" http://127.0.0.1:8642/health
+```
+
+If Hermes runs as **root** and Mia as a normal user (or vice versa), the key is in
+the other user's env file and Mia cannot read it — copy it over or run both as the
+same user.
 
 **Transcripts are wrong/garbled words** — make sure you're on the current HUD
 (hard refresh): mic must capture at 16 kHz natively. Upgrading `stt.model` to
