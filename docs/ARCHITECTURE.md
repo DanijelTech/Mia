@@ -19,9 +19,10 @@
    (→ HUD approval cards).
 5. Text is sentence-split, markdown/think-block-stripped, **secret-redacted**,
    then each sentence streams through the configured TTS backend (`server/tts.py`:
-   local `piper` by default, `command` for any other local engine, or
-   `elevenlabs` for cloud) back to the client as 16 kHz PCM while generation
-   continues. Local voices at 22.05 kHz are resampled streamingly in-process.
+   local `piper` by default, `http` for a local TTS service such as Gepard,
+   `command` for a per-sentence local CLI, or `elevenlabs` for cloud) back to the
+   client as 16 kHz PCM while generation continues. Local voices at 22.05 kHz are
+   resampled streamingly in-process.
 
 Why the Sessions API and not `/v1/responses` or `/v1/runs`: on Hermes v0.16,
 sessions are the only surface that combines named persistent memory, run ids,

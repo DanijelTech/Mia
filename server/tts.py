@@ -223,6 +223,47 @@ class CommandBackend(TTSBackend):
             yield out
 
 
+class HTTPBackend(TTSBackend):
+    """Local TTS HTTP service: POST {"text": ...} -> WAV (or raw PCM16).
+
+    Model lives in that service, so it is loaded once instead of per sentence —
+    the right shape for heavy local engines (Gepard, Maya1) and for running the
+    voice on a second machine.
+    """
+
+    name = "http"
+
+    def __init__(self, cfg: dict | None = None, root: Path | None = None):
+        super().__init__(cfg, root)
+        self.url = self.cfg.get("url")
+        if not self.url:
+            raise RuntimeError("tts.http.url is required (e.g. http://127.0.0.1:8770/tts)")
+        self.timeout = float(self.cfg.get("timeout") or 120)
+        self.format = (self.cfg.get("format") or "wav").lower()
+        self.sample_rate = int(self.cfg.get("sample_rate") or TARGET_RATE)
+        self.token = (os.environ.get(self.cfg.get("token_env") or "MIA_HUD_TOKEN", "")
+                      or os.environ.get("JARVIS_HUD_TOKEN", ""))
+        self.label = self.cfg.get("name") or f"http:{self.url.split('//')[-1]}"
+
+    def synth(self, text: str) -> Iterator[bytes]:
+        import requests
+
+        headers = {"Content-Type": "application/json"}
+        if self.token:
+            headers["X-Mia-Token"] = self.token
+        response = requests.post(self.url, json={"text": text}, headers=headers,
+                                 timeout=self.timeout)
+        if response.status_code >= 400:
+            raise RuntimeError(f"TTS service HTTP {response.status_code}: {response.text[:300]}")
+        data, rate = response.content, self.sample_rate
+        if self.format == "wav":
+            data, rate = _wav_to_pcm16(response.content)
+        resampler = PCMResampler(rate)
+        out = resampler.process(data) + resampler.flush()
+        if out:
+            yield out
+
+
 class ElevenLabsBackend(TTSBackend):
     """Cloud fallback — only used when tts.provider is explicitly elevenlabs."""
 
@@ -272,6 +313,8 @@ def build_backend(cfg: dict, root: Path) -> TTSBackend:
         return PiperBackend(tts_cfg.get("piper") or {}, root)
     if provider == "command":
         return CommandBackend(tts_cfg.get("command") or {}, root)
+    if provider == "http":
+        return HTTPBackend(tts_cfg.get("http") or {}, root)
     if provider == "elevenlabs":
         legacy = dict(cfg.get("voice") or {})
         legacy.update({k: v for k, v in (tts_cfg.get("elevenlabs") or {}).items() if v})

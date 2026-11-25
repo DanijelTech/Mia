@@ -77,7 +77,8 @@ restart.
 - [Hermes Agent](https://hermes-agent.nousresearch.com/docs/) installed and
   configured with an LLM provider
 - Python 3.11+
-- TTS: either local **Piper** (default, no key, fully offline) or an
+- TTS: local **Piper** (default, no key, fully offline), the more natural local
+  **Gepard** service (optional, GPU with CPU/RAM fallback), or an
   [ElevenLabs](https://elevenlabs.io) API key for cloud voices
 - Any modern browser on the LAN
 

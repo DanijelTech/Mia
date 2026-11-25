@@ -58,6 +58,65 @@ create a key at elevenlabs.io, pick a `voice_id`, add `ELEVENLABS_API_KEY` to
 quota bar. Note Flash v2.5 does not cover Slovenian or Serbian; use
 `eleven_v3_conversational` there.
 
+### Better voice: Gepard (optional, GPU with RAM offload)
+
+Piper is clear but flat. [texdata/Gepard-Slovenian-TTS](https://huggingface.co/texdata/Gepard-Slovenian-TTS)
+(Apache-2.0 LoRA, ~555 M, 22 kHz) has noticeably more natural Slovenian prosody.
+It is heavier than Piper, so it runs as a **service** — the model loads once, not
+per sentence:
+
+```bash
+.venv/bin/pip install accelerate
+.venv/bin/pip install "nemo_toolkit[tts]"
+.venv/bin/pip install git+https://github.com/nineninesix-ai/gepard-inference
+
+# start it (device picked automatically, see below)
+.venv/bin/python scripts/gepard_tts.py --serve --port 8770 \
+    --engine gepard --fallback-piper
+```
+
+Then point the voice server at it:
+
+```yaml
+tts:
+  provider: http
+  http:
+    url: http://127.0.0.1:8770/tts
+    format: wav
+    timeout: 120
+    name: gepard
+```
+
+**GPU vs RAM offload.** The service picks its device at startup:
+`--device auto` (default) uses CUDA only when at least `--min-free-vram-gb`
+(3 GB) is actually free; otherwise it runs on CPU/RAM. With `--offload auto` it
+first tries an accelerate `device_map` split (part GPU, part RAM), then falls
+back to pure CPU, and if the CUDA load itself fails it retries on CPU instead of
+crashing. That is what keeps Mia alive on a box where the LLM already owns the
+GPU:
+
+| Qwen3-30B-A3B | Whisper large-v3-turbo | Gepard | Fits 32 GB? |
+|---|---|---|---|
+| Q4_K_M ~18.6 GB | ~1.6 GB | ~2 GB | yes, comfortable |
+| Q5_K_M ~21.7 GB | ~1.6 GB | ~2 GB | yes |
+| Q6_K ~26.7 GB | ~1.6 GB | ~2 GB | tight — TTS drops to CPU |
+| Q8_0 ~32.5 GB | — | — | GPU is full — TTS and STT use CPU/RAM |
+
+`--fallback-piper` means: if the Gepard stack is missing or fails to load, the
+service still answers with the Piper voice instead of leaving Mia mute.
+Check what it chose with `curl -s localhost:8770/health` (`device`, `reason`,
+`free_vram_gb`).
+
+The same service can run on a second machine (e.g. the GPU workstation) — just
+put its address in `tts.http.url` and set `MIA_HUD_TOKEN` on both sides; the
+token is sent as `X-Mia-Token`.
+
+For a permanent start use systemd (`systemd --user`, `ExecStart=.../gepard_tts.py
+--serve --port 8770`) or `nohup ... &` on Linux, and Task Scheduler on Windows.
+
+Note: the LoRA card is Apache-2.0; check the base model
+(`nineninesix/gepard-1.0`) and the NeMo codec licenses before redistributing.
+
 ### Fully offline checklist
 
 | Item | Setting |

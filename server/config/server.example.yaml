@@ -28,8 +28,9 @@ hermes:
 
 stt:
   model: large-v3-turbo      # multilingual. `small.en` cannot transcribe SL/SR at all.
-  device: cuda               # "cpu" if there is no GPU
-  compute_type: float16      # "int8" on CPU
+  device: auto               # auto = CUDA when there is VRAM room, else CPU/RAM
+  min_free_vram_gb: 2.5      # below this free VRAM, `auto` picks CPU instead
+  compute_type: auto         # auto -> float16 on CUDA, int8 on CPU
   sample_rate: 16000
   language: sl               # sl | sr | en | "" ("" = auto-detect, less accurate)
   initial_prompt: "Mia, odpri, zapri, pokliči, nastavi, preberi, pošlji, preveri."
@@ -44,7 +45,7 @@ stt:
   #   timeout: 6
 
 tts:
-  provider: piper            # piper | command | elevenlabs (cloud)
+  provider: piper            # piper | http | command | elevenlabs (cloud)
   piper:
     mode: cli                # cli = separate process (keeps GPL piper out of this codebase)
     binary: piper            # or /path/to/venv/bin/piper
@@ -53,9 +54,16 @@ tts:
       sl: voices/sl_SI-artur-medium.onnx
       sr: voices/sr_RS-serbski_institut-medium.onnx
     length_scale: 1.0        # >1 slower, <1 faster
-  # Any other local TTS: text on stdin, WAV (or raw PCM16) on stdout.
+  # Local TTS *service*: model loads once, may run on another machine.
+  # Start it with: scripts/gepard_tts.py --serve --port 8770 --engine gepard --fallback-piper
+  http:
+    url: http://127.0.0.1:8770/tts
+    format: wav              # wav | raw (raw needs sample_rate)
+    timeout: 120
+    name: gepard
+  # Any other local TTS, loaded per sentence: text on stdin, WAV/PCM on stdout.
   command:
-    argv: ["python3", "scripts/gepard_tts.py"]
+    argv: ["python3", "scripts/gepard_tts.py", "--stdio", "--engine", "gepard"]
     format: wav
     sample_rate: 22050
   elevenlabs:                # cloud only; needs ELEVENLABS_API_KEY

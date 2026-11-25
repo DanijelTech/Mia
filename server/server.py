@@ -74,6 +74,29 @@ def _today() -> str:
     return time.strftime("%Y-%m-%d")
 
 
+def pick_stt_device(requested: str, min_free_gb: float = 2.5) -> str:
+    """`auto` = CUDA only when a GPU currently has room for Whisper, else CPU."""
+    requested = (requested or "auto").lower()
+    if requested in ("cpu", "cuda"):
+        return requested
+    try:
+        import torch  # RealtimeSTT already pulls torch; import errors mean no GPU stack
+    except Exception:
+        return "cpu"
+    try:
+        if not torch.cuda.is_available():
+            return "cpu"
+        free, _total = torch.cuda.mem_get_info()
+        free_gb = free / 1024**3
+        if free_gb < min_free_gb:
+            print(f"STT: {free_gb:.1f} GB VRAM free (< {min_free_gb} GB) -> CPU/RAM", flush=True)
+            return "cpu"
+        print(f"STT: {free_gb:.1f} GB VRAM free -> CUDA", flush=True)
+        return "cuda"
+    except Exception:
+        return "cpu"
+
+
 def _env_first(*names: str) -> str:
     """First non-empty environment value (MIA_* first, then pre-rebrand JARVIS_*)."""
     for name in names:
@@ -326,13 +349,21 @@ class VoicePipelineServer:
         self.stt_lock = asyncio.Lock()
         stt = cfg["stt"]
         self.stt_language = (stt.get("language") or "en")
+        self.stt_device = pick_stt_device(stt.get("device", "auto"),
+                                          float(stt.get("min_free_vram_gb", 2.5) or 0))
+        compute_type = stt.get("compute_type") or ""
+        if compute_type in ("", "auto"):
+            compute_type = "float16" if self.stt_device == "cuda" else "int8"
+        elif self.stt_device == "cpu" and compute_type in ("float16", "bfloat16"):
+            compute_type = "int8"          # fp16 on CPU is unsupported/very slow
+        print(f"STT: device={self.stt_device} compute_type={compute_type}", flush=True)
         self.tts = build_backend(cfg, ROOT)
         recorder_kwargs = {
             "model": stt["model"],
             "use_microphone": False,
             "spinner": False,
-            "device": stt.get("device", "cpu"),
-            "compute_type": stt.get("compute_type", "int8"),
+            "device": self.stt_device,
+            "compute_type": compute_type,
             "sample_rate": int(stt.get("sample_rate", 16000)),
             "language": self.stt_language,
             "beam_size": int(stt.get("beam_size", 1)),

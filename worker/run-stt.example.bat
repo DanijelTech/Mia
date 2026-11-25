@@ -5,5 +5,8 @@ rem   CreateObject("Wscript.Shell").Run "C:\path\to\run-stt.bat", 0, False
 set MIA_STT_TOKEN=YOUR_MIA_HUD_TOKEN
 set MIA_STT_MODEL=large-v3-turbo
 set MIA_STT_LANGUAGE=sl
+rem auto = CUDA when free VRAM allows, else CPU/RAM
+set MIA_STT_DEVICE=auto
+set MIA_STT_MIN_FREE_VRAM_GB=2.5
 cd /d %~dp0
 .venv\Scripts\python.exe stt_server.py >> stt_server.log 2>&1

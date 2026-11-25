@@ -33,6 +33,7 @@ for sub in ("cublas/bin", "cudnn/bin", "cuda_nvrtc/bin"):
         os.environ["PATH"] = str(p) + os.pathsep + os.environ.get("PATH", "")
 
 import numpy as np
+import torch
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from faster_whisper import WhisperModel
@@ -43,23 +44,51 @@ def _env(name: str, default: str = "") -> str:
 
 
 MODEL_NAME = _env("MIA_STT_MODEL", "large-v3-turbo")
+DEVICE_REQ = _env("MIA_STT_DEVICE", "auto")        # auto | cuda | cpu
+MIN_FREE_VRAM_GB = float(_env("MIA_STT_MIN_FREE_VRAM_GB", "2.5") or 0)
+COMPUTE_REQ = _env("MIA_STT_COMPUTE_TYPE")
 TOKEN = _env("MIA_STT_TOKEN")
 PORT = int(_env("MIA_STT_PORT", "8768"))
 LANGUAGE = _env("MIA_STT_LANGUAGE")      # "" = auto-detect; "sl", "sr", "en" ...
 INITIAL_PROMPT = _env("MIA_STT_INITIAL_PROMPT")
 
-print(f"Loading {MODEL_NAME} on CUDA...", flush=True)
+def resolve_device(requested: str) -> str:
+    """auto = CUDA when a GPU has room, else CPU/RAM (shared box with the LLM)."""
+    requested = (requested or "auto").lower()
+    if requested in ("cpu", "cuda"):
+        return requested
+    if not torch.cuda.is_available():
+        return "cpu"
+    free, _total = torch.cuda.mem_get_info()
+    free_gb = free / 1024**3
+    if free_gb < MIN_FREE_VRAM_GB:
+        print(f"only {free_gb:.1f} GB VRAM free (< {MIN_FREE_VRAM_GB}) -> CPU", flush=True)
+        return "cpu"
+    return "cuda"
+
+
+DEVICE = resolve_device(DEVICE_REQ)
+COMPUTE_TYPE = COMPUTE_REQ or ("float16" if DEVICE == "cuda" else "int8")
+print(f"Loading {MODEL_NAME} on {DEVICE.upper()} ({COMPUTE_TYPE})...", flush=True)
 t0 = time.time()
-model = WhisperModel(MODEL_NAME, device="cuda", compute_type="float16")
-print(f"Model ready in {time.time()-t0:.1f}s", flush=True)
+try:
+    model = WhisperModel(MODEL_NAME, device=DEVICE, compute_type=COMPUTE_TYPE)
+except Exception as exc:
+    if DEVICE == "cuda":
+        print(f"CUDA load failed ({type(exc).__name__}: {exc}) -> CPU fallback", flush=True)
+        DEVICE, COMPUTE_TYPE = "cpu", "int8"
+        model = WhisperModel(MODEL_NAME, device=DEVICE, compute_type=COMPUTE_TYPE)
+    else:
+        raise
+print(f"Model ready in {time.time()-t0:.1f}s on {DEVICE}", flush=True)
 
 app = FastAPI(title="Mia GPU STT")
 
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "model": MODEL_NAME, "device": "cuda",
-            "language": LANGUAGE or "auto"}
+    return {"status": "ok", "model": MODEL_NAME, "device": DEVICE,
+            "compute_type": COMPUTE_TYPE, "language": LANGUAGE or "auto"}
 
 
 @app.post("/stt")
