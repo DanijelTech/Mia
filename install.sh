@@ -23,6 +23,7 @@
 #   --no-stt-deps         skip RealtimeSTT/torch (if you already have them)
 #   --no-deps             skip every pip step
 #   --voice sl|sr|all|none
+#   --stt-device cpu|cuda|auto   Whisper device (cpu keeps the GPU for your LLM)
 #   --no-cert             skip TLS certificate generation
 #   --no-service          do not install/enable a service
 #   --no-start            install the unit but do not start it
@@ -45,6 +46,7 @@ DO_DEPS=1
 DO_STT_DEPS=1
 DO_VOICE=1
 VOICE_LANG="sl"
+STT_DEVICE=""
 DO_CERT=1
 DO_SERVICE=1
 DO_START=1
@@ -69,6 +71,7 @@ while [ $# -gt 0 ]; do
     --no-stt-deps) DO_STT_DEPS=0 ;;
     --no-deps) DO_DEPS=0 ;;
     --voice) VOICE_LANG="${2:-}"; shift ;;
+    --stt-device) STT_DEVICE="${2:-}"; shift ;;
     --no-cert) DO_CERT=0 ;;
     --no-service) DO_SERVICE=0 ;;
     --no-start) DO_START=0 ;;
@@ -332,6 +335,36 @@ else
   info "created $CFG (review voice/tts/language settings)"
 fi
 
+# Whisper device: an explicit --stt-device wins; otherwise warn when the config
+# will keep a CUDA context alive and steal VRAM from the LLM.
+if [ "$DRY_RUN" = 0 ] && [ -f "$CFG" ]; then
+  if [ -n "$STT_DEVICE" ]; then
+    $PYTHON - "$CFG" "$STT_DEVICE" <<'PY'
+import re, sys, pathlib
+path, want = pathlib.Path(sys.argv[1]), sys.argv[2]
+out, changed = [], False
+for line in path.read_text().splitlines():
+    if re.match(r"^  device:", line) and line.startswith("  device:"):
+        out.append(f"  device: {want}")
+        changed = True
+    else:
+        out.append(line)
+if changed:
+    path.write_text("\n".join(out) + "\n")
+print(f"    stt.device -> {want}")
+PY
+  else
+    CUR_STT="$(grep -m1 -E '^  device:' "$CFG" 2>/dev/null | awk '{print $2}')"
+    case "${CUR_STT:-}" in
+      cuda|auto)
+        info "stt.device is '${CUR_STT}': Mia will hold a CUDA context and take VRAM"
+        info "  from your LLM (a launcher that checks free VRAM may refuse to start)."
+        info "  Use './install.sh --stt-device cpu' or the GPU worker if that happens."
+        ;;
+    esac
+  fi
+fi
+
 # Port 443 needs root (or CAP_NET_BIND_SERVICE, which user services cannot get),
 # so a user-mode install listens for HTTPS on 8766 instead of 443.
 if [ "$DRY_RUN" = 0 ] && [ "$(id -u)" != "0" ]; then
@@ -518,16 +551,22 @@ fi
 say "7/7 Verification"
 write_manifest
 SERVICE_OK=""
+HUD_TOKEN_VAL="$(grep -hE '^(MIA_HUD_TOKEN|JARVIS_HUD_TOKEN)=' "$HERMES_ENV" 2>/dev/null \
+                 | tail -1 | cut -d= -f2- | tr -d '\"'"'"' ')"
 if [ "$DRY_RUN" = 0 ] && [ "$DO_SERVICE" = 1 ] && [ "$DO_START" = 1 ]; then
   if command -v curl >/dev/null 2>&1; then
     info "waiting for the voice server to warm up (up to 60 s)…"
     SERVICE_OK="no"
     for _ in $(seq 1 20); do
-      if curl -s -m 2 http://127.0.0.1:8765/api/hud-config >/dev/null 2>&1; then SERVICE_OK="yes"; break; fi
+      if curl -s -m 2 -H "X-Mia-Token: ${HUD_TOKEN_VAL:-}" \
+           "http://127.0.0.1:8765/api/hud-config" 2>/dev/null | grep -q tts_provider; then
+        SERVICE_OK="yes"; break
+      fi
       sleep 3
     done
     if [ "$SERVICE_OK" = "yes" ]; then
-      CUR_JSON="$(curl -s -m 3 http://127.0.0.1:8765/api/hud-config || true)"
+      CUR_JSON="$(curl -s -m 3 -H "X-Mia-Token: ${HUD_TOKEN_VAL:-}" \
+                     http://127.0.0.1:8765/api/hud-config || true)"
       info "voice server up: $CUR_JSON"
       [ -x "$SERVER_DIR/scripts/mia-health.sh" ] && bash "$SERVER_DIR/scripts/mia-health.sh" || true
     else

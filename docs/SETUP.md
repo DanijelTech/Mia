@@ -172,6 +172,30 @@ Za trajni zagon uporabi systemd (`systemd --user`, `ExecStart=.../gepard_tts.py
 Opomba: LoRA je Apache-2.0; preveri licenco osnovnega modela
 (`nineninesix/gepard-1.0`) in NeMo codec-a, preden karkoli distribuiraš.
 
+### Souporaba GPU z LLM (pomembno)
+
+Whisper lahko teče na GPU ali na CPU. **Če LLM teče na isti grafični kartici,
+pusti Whisper na CPU** (`stt.device: cpu`, privzeto v primeru konfiguracije):
+
+- na GPU porabi ~1,6 GB za model + ~0,5–0,8 GB za CUDA kontekst ≈ **2,4 GB**;
+- nekateri zagonski skripti za LLM (npr. tisti, ki pred nalaganjem preverijo
+  proste VRAM) ob tem javijo »GPU že uporablja drug proces« in modela ne naložijo;
+- vrstni red je pomemben: če hočeš vseeno GPU STT, najprej zaženi LLM/Hermes,
+  šele nato Mio — takrat `device: auto` vidi manj prostega VRAM in izbere CPU,
+  če pade pod `min_free_vram_gb`.
+
+Nastavitev zamenjaš z enim ukazom (prepiše `server.yaml` in ponovi zagon):
+
+```bash
+./install.sh --stt-device cpu      # ali cuda / auto
+systemctl --user restart mia-voice # oz. ./start.sh
+nvidia-smi                         # preveri, da Mii ni več na GPU
+```
+
+Če hočeš **hitro** GPU prepoznavo in hkrati LLM, daj STT na ločen stroj: panel
+»Opcijski dodatki« spodaj opisuje `worker/stt_server.py`, Mia pa uporablja
+`stt.remote` in ob nedosegljivosti pade na lokalni CPU model.
+
 ### Najboljša izgovorjava: Maya1 (opcijsko, GPU z RAM offloadom)
 
 [Maya1 Slovenian TTS](https://huggingface.co/texdata/Maya1-Slovenian-TTS)

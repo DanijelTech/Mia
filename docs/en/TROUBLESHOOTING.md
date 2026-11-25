@@ -5,6 +5,19 @@
 > Renamed from `jarvis_ai`: the server still accepts the old `JARVIS_HUD_TOKEN` env var, the `jarvis_token` cookie and `X-Jarvis-Token` header, so an upgrade cannot silently disable auth.
 
 
+**My LLM launcher refuses to start: "GPU already used by another process, pid …
+/usr/bin/python3"** — that is **Mia's voice server** holding Whisper on the GPU
+(~2.4 GB). Keep Whisper on CPU when the LLM shares the card:
+
+```bash
+cd ~/Mia && ./install.sh --stt-device cpu
+systemctl --user restart mia-voice
+nvidia-smi          # Mia's python3 should be gone
+```
+
+Then start the LLM. The reverse (GPU STT) only makes sense if the LLM is loaded
+first and there is VRAM to spare.
+
 **Install completes but `mia-health.sh` shows everything DOWN** — nearly always
 `faster-whisper` and `silero-vad` missing (RealtimeSTT treats them as optional
 extras but fails at runtime without them), or the server cannot bind its ports.

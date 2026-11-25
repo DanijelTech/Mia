@@ -165,6 +165,16 @@ For a permanent start use systemd (`systemd --user`, `ExecStart=.../gepard_tts.p
 Note: the LoRA card is Apache-2.0; check the base model
 (`nineninesix/gepard-1.0`) and the NeMo codec licenses before redistributing.
 
+### Sharing the GPU with your LLM (important)
+
+Whisper can run on GPU or CPU. **If the LLM runs on the same card, keep Whisper
+on CPU** (`stt.device: cpu`, the default in the example config): on GPU it holds
+~1.6 GB for the model plus ~0.5–0.8 GB of CUDA context (~2.4 GB), and launchers
+that check free VRAM before loading the LLM will refuse to start. If you do want
+GPU STT, start the LLM first so Mia sees less free VRAM (or set `cpu`), and use
+`./install.sh --stt-device cpu|cuda|auto` to switch. For fast STT *and* a local
+LLM, put the STT worker on another machine (`stt.remote`).
+
 ### Best pronunciation: Maya1 (optional, GPU with RAM offload)
 
 [Maya1 Slovenian TTS](https://huggingface.co/texdata/Maya1-Slovenian-TTS)

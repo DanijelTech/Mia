@@ -102,6 +102,19 @@ vrstic `server/logs/mia.out`. Najpogosteje manjkajoče odvisnosti
 (`server/logs/mia.pid`). V takem okolju systemd enote samo napišeta, ne
 aktivirata.
 
+**Moj LLM se ne zažene: »GPU že uporablja drug proces, pid … /usr/bin/python3«** —
+to je **Miin glasovni strežnik**, ki je Whisper naložil na GPU in drži ~2,4 GB.
+Če LLM teče na isti kartici, daj Whisper na CPU:
+
+```bash
+cd ~/Mia && ./install.sh --stt-device cpu
+systemctl --user restart mia-voice
+nvidia-smi          # python3 iz Mia ne sme biti več na seznamu
+```
+
+Nato zaženi svoj LLM launcher in šele zatem (po potrebi) Mio. Obratno (GPU STT)
+je smiselno le, če model naložiš prvi in imaš dovolj VRAM.
+
 **Namestitev uspe, a `mia-health.sh` kaže vse DOWN** — skoraj vedno manjkata
 `faster-whisper` in `silero-vad` (RealtimeSTT ju obravnava kot opcijska, ob zagonu
 pa brez njiju odpove), ali pa strežnik ne more vezati vrat. Poglej dnevnik:

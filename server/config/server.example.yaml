@@ -28,9 +28,14 @@ hermes:
 
 stt:
   model: large-v3-turbo      # multilingual. `small.en` cannot transcribe SL/SR at all.
-  device: auto               # auto = CUDA when there is VRAM room, else CPU/RAM
-  min_free_vram_gb: 2.5      # below this free VRAM, `auto` picks CPU instead
-  compute_type: auto         # auto -> float16 on CUDA, int8 on CPU
+  # Keep the GPU for your LLM. Whisper on CPU (int8) is slower but leaves every
+  # MiB of VRAM to the model; with 35B Q4 there is no room to share.
+  #   cpu              recommended when the LLM runs on this box
+  #   cuda             fastest STT; start Hermes/the LLM *before* Mia
+  #   auto             CUDA only if >= min_free_vram_gb is free at startup
+  device: cpu
+  min_free_vram_gb: 2.5      # only used by `auto`
+  compute_type: int8         # int8 on CPU, float16 on CUDA
   sample_rate: 16000
   language: sl               # sl | sr | en | "" ("" = auto-detect, less accurate)
   initial_prompt: "Mia, odpri, zapri, pokliči, nastavi, preberi, pošlji, preveri."
