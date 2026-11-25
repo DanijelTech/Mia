@@ -18,8 +18,10 @@
    (incl. `interrupted` flag), `run.completed` (token usage), `*approval*`
    (→ HUD approval cards).
 5. Text is sentence-split, markdown/think-block-stripped, **secret-redacted**,
-   then each sentence streams through ElevenLabs back to the client as raw PCM
-   while generation continues.
+   then each sentence streams through the configured TTS backend (`server/tts.py`:
+   local `piper` by default, `command` for any other local engine, or
+   `elevenlabs` for cloud) back to the client as 16 kHz PCM while generation
+   continues. Local voices at 22.05 kHz are resampled streamingly in-process.
 
 Why the Sessions API and not `/v1/responses` or `/v1/runs`: on Hermes v0.16,
 sessions are the only surface that combines named persistent memory, run ids,
@@ -58,7 +60,8 @@ approval_request{data,run_id} · error · done{timing}
 | `/api/hermes/{path}` | **allowlist** proxy to Hermes API, injects the bearer key (GET: health, capabilities, skills, toolsets, jobs, sessions; POST: v1/responses only) |
 | `/api/chat` | typed chat turn on the shared voice session |
 | `/api/machines` | host psutil stats + remote workers from config |
-| `/api/usage` | local token/char tally + ElevenLabs quota (needs user_read on the key) |
+| `/api/usage` | local token/char tally; ElevenLabs quota only when TTS is cloud-based |
+| `/api/hud-config` | HUD switches: `allow_external_media`, reply `language`, `tts_provider` |
 | `/api/summon` | broadcasts a holographic media panel (`{media, src, title, position}` or `{action:"dismiss"}`) to every connected HUD over its WebSocket — this is what the bundled `hud_display` Hermes plugin calls |
 | port 9443 (separate app) | TLS reverse proxy of the Hermes dashboard with WebSocket bridge and frame-header stripping, so the HTTPS HUD can iframe it |
 
@@ -70,7 +73,7 @@ PTT client, test scripts) send no Origin header and are exempt — the
 threat model is a malicious *website* doing cross-origin requests against your
 LAN, not your own processes. The Hermes API key never reaches any browser.
 
-## Latency profile (Apple Silicon, small.en on CPU)
+## Latency profile (Apple Silicon, local Whisper + Piper)
 
 STT finalize ~0.7 s · Hermes first token 1–3 s (more with tools) · first
 audible audio ~3 s · total simple turn ~4 s. The biggest lever is the LLM

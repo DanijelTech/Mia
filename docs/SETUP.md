@@ -28,16 +28,50 @@ Recommended: add voice-behavior rules to your global `~/.hermes/SOUL.md`
 actions and wait for approval). The agent — not the voice server — should own
 its personality.
 
-## 2. ElevenLabs (the voice)
+## 2. The voice: local Piper (offline) or ElevenLabs (cloud)
 
-Create an API key at elevenlabs.io and pick a voice from their library, noting
-its `voice_id`. Add to `~/.hermes/.env`:
+Default is **local Piper** — no API key, no network, ~0.7 s to synthesize a
+sentence on CPU (4–6× realtime):
 
 ```bash
-ELEVENLABS_API_KEY=...
+.venv/bin/pip install piper-tts          # GPL-3.0, used as a subprocess
+scripts/get-voice.sh sl                  # Slovenian (63 MB) — or `all` for sl + sr
 ```
 
-For the HUD's quota bar, give the key the **User → Read** permission.
+Voices land in `server/voices/` (gitignored). Then in `config/server.yaml`:
+
+```yaml
+tts:
+  provider: piper
+  piper:
+    language: sl                         # sl | sr — picks from `voices`
+    voices:
+      sl: voices/sl_SI-artur-medium.onnx
+      sr: voices/sr_RS-serbski_institut-medium.onnx
+```
+
+Other local engines plug in through `tts.provider: command`: any binary that
+reads text on stdin and writes a WAV (or raw PCM16) on stdout — e.g. a Gepard
+or Maya1 wrapper. `tts.provider: elevenlabs` remains available for cloud use:
+create a key at elevenlabs.io, pick a `voice_id`, add `ELEVENLABS_API_KEY` to
+`~/.hermes/.env`, and give the key the **User → Read** permission for the HUD
+quota bar. Note Flash v2.5 does not cover Slovenian or Serbian; use
+`eleven_v3_conversational` there.
+
+### Fully offline checklist
+
+| Item | Setting |
+|---|---|
+| TTS | `tts.provider: piper` (no key needed) |
+| LLM | local model behind Hermes (`hermes.base_url` → 127.0.0.1) |
+| STT | local Whisper (`stt.model: large-v3-turbo`) |
+| Cloud fallback | `hermes.fallback_provider: ""` |
+| External media panels | `hud.allow_external_media: false` |
+| Fonts | self-hosted in `server/hud/fonts/` |
+
+Verify: `curl -s localhost:8765/api/hud-config` returns
+`"tts_provider": "piper"` and `"allow_external_media": false`, and
+`/api/usage` returns `"elevenlabs": null` (no outbound request).
 
 ## 3. The voice pipeline server (this repo)
 
@@ -84,11 +118,13 @@ echo "JARVIS_HUD_TOKEN=jarvis-$(python3 -c 'import secrets;print(secrets.token_h
 The HUD asks for this once per device. Omit the variable entirely to disable
 auth (not recommended).
 
-### Boot greeting (one-time, ~110 ElevenLabs characters)
+### Boot greeting (one-time, local)
 
 ```bash
-scripts/make-boot-audio.sh YourFirstName
+scripts/make-boot-audio.sh YourFirstName    # writes hud/audio/boot_*.wav
 ```
+
+Uses the same local Piper voice — no cloud characters spent.
 
 ### Run it
 

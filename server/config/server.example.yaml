@@ -1,8 +1,13 @@
 # Copy to server.yaml and edit. Secrets live in ~/.hermes/.env (NOT here).
+#
+# This example is tuned for a fully offline, Slovenian-first stack:
+#   STT: faster-whisper large-v3-turbo (local, GPU or CPU)
+#   LLM: local model behind Hermes Agent (e.g. Qwen3-30B-A3B)
+#   TTS: Piper voice (local, CPU) — no cloud calls anywhere
 
 llm:
-  provider: hermes            # primary brain: Hermes Agent API. "anthropic" = basic fallback mode.
-  model: claude-haiku-4-5     # used only by the fallback provider
+  provider: hermes            # primary brain: Hermes Agent API. "anthropic" = cloud fallback (not offline).
+  model: local                # label only; the real model is configured inside Hermes
   api_key_env: ANTHROPIC_API_KEY
   max_tokens: 220
   temperature: 0.3
@@ -15,29 +20,48 @@ hermes:
   session_key: jarvis:user:main      # stable long-term memory scope
   timeout: 240
   ack_after_seconds: 0               # >0 = speak a short ack while the agent works
-  ack_texts: ["On it.", "Still working.", "Almost there."]
-  fallback_provider: anthropic
-  instructions: >
-    You are speaking aloud through a voice pipeline. Replies are converted
-    to speech, so use plain conversational prose only: no markdown, no lists,
-    no code blocks. Default to one to three short sentences unless asked for
-    more detail. Speak numbers, dates, times and phone numbers as natural
-    spoken words. Never speak secrets, API keys, or passwords aloud.
+  ack_texts: ["Takoj.", "Še delam.", "Skoraj."]
+  fallback_provider: ""              # "" = offline: never fall back to a cloud LLM
+  language_directive: "Odgovarjaj izključno v slovenščini, v kratkih govorjenih povedih."
+  # ^ Prepended to every turn sent to Hermes. Hermes' own system prompt is the
+  #   better place for persona rules; this line guarantees the reply language.
 
 stt:
-  model: small.en           # LOCAL model (fallback if remote configured; primary otherwise)
-  device: cpu
-  compute_type: int8
+  model: large-v3-turbo      # multilingual. `small.en` cannot transcribe SL/SR at all.
+  device: cuda               # "cpu" if there is no GPU
+  compute_type: float16      # "int8" on CPU
   sample_rate: 16000
-  partials: true            # live transcript while speaking
-  partial_interval: 1.2     # seconds of new audio between partial passes
+  language: sl               # sl | sr | en | "" ("" = auto-detect, less accurate)
+  initial_prompt: "Mia, odpri, zapri, pokliči, nastavi, preberi, pošlji, preveri."
+  beam_size: 1
+  partials: true             # live transcript while speaking
+  partial_interval: 1.2      # seconds of new audio between partial passes
   # Optional GPU worker (worker/stt_server.py on any NVIDIA machine):
-  # big-model accuracy at ~0.2s. Falls back to the local model automatically.
   # remote:
   #   name: gpu
   #   url: http://192.168.1.50:8768/stt
   #   token_env: JARVIS_HUD_TOKEN
   #   timeout: 6
+
+tts:
+  provider: piper            # piper | command | elevenlabs (cloud)
+  piper:
+    mode: cli                # cli = separate process (keeps GPL piper out of this codebase)
+    binary: piper            # or /path/to/venv/bin/piper
+    language: sl             # picks from `voices` below
+    voices:
+      sl: voices/sl_SI-artur-medium.onnx
+      sr: voices/sr_RS-serbski_institut-medium.onnx
+    length_scale: 1.0        # >1 slower, <1 faster
+  # Any other local TTS: text on stdin, WAV (or raw PCM16) on stdout.
+  command:
+    argv: ["python3", "scripts/gepard_tts.py"]
+    format: wav
+    sample_rate: 22050
+  elevenlabs:                # cloud only; needs ELEVENLABS_API_KEY
+    model: eleven_v3_conversational
+    voice_id: YOUR_ELEVENLABS_VOICE_ID
+    output_format: pcm_16000
 
 machines:                   # polled by /api/machines for the HUD panel (optional)
   - name: "GPU WORKER"
@@ -64,7 +88,10 @@ security:
   hud_token_env: JARVIS_HUD_TOKEN   # set in ~/.hermes/.env; unset = auth disabled
   extra_origin_hosts: []            # e.g. ["192.168.1.10"] if you open the HUD by raw IP
 
-voice:
+hud:
+  allow_external_media: false   # YouTube/iframe panels need internet; false = fully offline
+
+voice:                       # legacy block: only read when tts.provider is elevenlabs
   provider: elevenlabs
   model: eleven_flash_v2_5
   voice_name: "Your chosen voice"
@@ -73,5 +100,6 @@ voice:
 
 persona:                     # used only by the anthropic fallback path
   system_prompt: >
-    You are the spoken interface for the user's personal agent. Be direct,
-    calm, and concise. Default to one to three short sentences.
+    Govoriš kot Miin glasovni vmesnik. Odgovarjaj v slovenščini, mirno in kratko:
+    ena do tri kratke povedi, brez markdowna, brez seznamov. Številke, datume in
+    ure izgovarjaj z besedami. Nikoli ne izgovori skrivnosti, ključev ali gesel.

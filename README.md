@@ -76,8 +76,8 @@ restart.
 - [Hermes Agent](https://hermes-agent.nousresearch.com/docs/) installed and
   configured with an LLM provider
 - Python 3.11+
-- An [ElevenLabs](https://elevenlabs.io) API key (free tier works; ~0.5
-  credits/char on Flash)
+- TTS: either local **Piper** (default, no key, fully offline) or an
+  [ElevenLabs](https://elevenlabs.io) API key for cloud voices
 - Any modern browser on the LAN
 
 ## Install
@@ -104,10 +104,17 @@ cp config/server.example.yaml config/server.yaml   # edit: your ElevenLabs voice
 scripts/make-certs.sh                              # self-signed TLS (browser mic needs it)
 scripts/make-boot-audio.sh YourName                # one-time boot greeting synthesis
 
-# 3. Run
+# 3. Local voice (offline, Slovenian/Serbian) — skip if using ElevenLabs
+.venv/bin/pip install piper-tts
+scripts/get-voice.sh sl
+
+# 4. Run
 .venv/bin/python server.py
 # open https://YOUR_HOST/hud/ → accept cert → enter your JARVIS_HUD_TOKEN → talk
 ```
+
+Offline voice stack (Piper + local Whisper + local LLM, no cloud calls) is
+documented in [docs/SETUP.md](docs/SETUP.md#2-the-voice-local-piper-offline-or-elevenlabs-cloud).
 
 For auto-start on boot, see [launchd/](launchd/) (macOS) — the plists document
 two non-obvious macOS traps (external-drive TCC and log paths) that cost us an

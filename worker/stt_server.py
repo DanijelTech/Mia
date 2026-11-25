@@ -8,6 +8,7 @@ Setup (Windows or Linux, NVIDIA driver installed):
     python -m venv .venv
     .venv/Scripts/pip install faster-whisper fastapi uvicorn nvidia-cublas-cu12 nvidia-cudnn-cu12
     set JARVIS_STT_TOKEN=<same value as JARVIS_HUD_TOKEN on the server>
+    set JARVIS_STT_LANGUAGE=sl        (optional; "" = auto-detect)
     .venv/Scripts/python stt_server.py
 
 Then point the voice server's `stt.remote.url` at http://this-machine:8768/stt
@@ -39,6 +40,8 @@ from faster_whisper import WhisperModel
 MODEL_NAME = os.environ.get("JARVIS_STT_MODEL", "large-v3-turbo")
 TOKEN = os.environ.get("JARVIS_STT_TOKEN", "")
 PORT = int(os.environ.get("JARVIS_STT_PORT", "8768"))
+LANGUAGE = os.environ.get("JARVIS_STT_LANGUAGE", "")      # "" = auto-detect; "sl", "sr", "en" ...
+INITIAL_PROMPT = os.environ.get("JARVIS_STT_INITIAL_PROMPT", "")
 
 print(f"Loading {MODEL_NAME} on CUDA...", flush=True)
 t0 = time.time()
@@ -50,7 +53,8 @@ app = FastAPI(title="Jarvis GPU STT")
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "model": MODEL_NAME, "device": "cuda"}
+    return {"status": "ok", "model": MODEL_NAME, "device": "cuda",
+            "language": LANGUAGE or "auto"}
 
 
 @app.post("/stt")
@@ -62,8 +66,13 @@ async def stt(request: Request):
         return {"text": ""}
     audio = np.frombuffer(body[: len(body) // 2 * 2], dtype=np.int16).astype(np.float32) / 32768.0
     t0 = time.time()
+    language = request.query_params.get("language") or LANGUAGE or None
+    prompt = request.query_params.get("initial_prompt") or INITIAL_PROMPT or None
     try:
-        segments, _info = model.transcribe(audio, language="en", beam_size=1, vad_filter=False)
+        segments, _info = model.transcribe(
+            audio, language=language, beam_size=1, vad_filter=False,
+            initial_prompt=prompt,
+        )
         text = " ".join(s.text.strip() for s in segments).strip()
     except Exception as exc:  # silence/garbage audio -> empty transcript, not a 500
         print(f"transcribe error -> empty: {exc}", flush=True)

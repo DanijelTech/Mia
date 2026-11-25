@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="sl">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,8 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="JARVIS">
 <meta name="theme-color" content="#050b14">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Rajdhani:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
 :root{
   --bg:#050b14; --panel:#081523cc; --line:#0e2c40;
@@ -237,55 +236,55 @@ footer{
 <body>
 <div id="pinGate" style="display:none; position:fixed; inset:0; z-index:200; background:#020509f2;
   flex-direction:column; align-items:center; justify-content:center; gap:14px">
-  <div style="font-family:'Orbitron'; font-size:18px; letter-spacing:8px; color:var(--cyan); text-shadow:0 0 20px #00e5ff88">ACCESS CODE</div>
+  <div style="font-family:'Orbitron'; font-size:18px; letter-spacing:8px; color:var(--cyan); text-shadow:0 0 20px #00e5ff88">KODA DOSTOPA</div>
   <input id="pinInput" type="password" autocomplete="off" style="background:#06101c; border:1px solid var(--cyan-dim);
     color:#cfeefb; padding:10px 14px; font-family:'Orbitron'; font-size:16px; letter-spacing:4px; text-align:center; width:240px; outline:none">
-  <button class="btn" id="pinBtn">AUTHENTICATE</button>
+  <button class="btn" id="pinBtn">PRIJAVA</button>
   <div id="pinMsg" style="font-size:12px; color:var(--txt-dim); letter-spacing:2px">&nbsp;</div>
 </div>
 <div id="boot">
   <div id="bootLogo">J.A.R.V.I.S</div>
-  <div id="bootSub">HERMES NEURAL INTERFACE</div>
+  <div id="bootSub">HERMES NEVRALNI VMESNIK</div>
   <div id="bootLines"></div>
 </div>
 <div id="grid">
   <header>
     <h1>J.A.R.V.I.S</h1>
-    <div class="sub">HERMES AGENT INTERFACE &nbsp;//&nbsp; <span id="connState">LINK DOWN</span></div>
+    <div class="sub">HERMES AGENTNI VMESNIK &nbsp;//&nbsp; <span id="connState">POVEZAVA PREKINJENA</span></div>
     <div id="clock">--:--:--</div>
   </header>
 
   <!-- LEFT COLUMN -->
   <div class="col">
-    <div class="panel"><h2><span>VOICE LINK</span><span class="num">01</span></h2>
-      <div class="kv"><span><span class="dot" id="wsDot"></span>Socket</span><b id="wsState">offline</b></div>
-      <div class="kv"><span><span class="dot" id="micDot"></span>Microphone</span><b id="micState">idle</b></div>
-      <div class="kv"><span>Input level</span><b>&nbsp;</b></div>
+    <div class="panel"><h2><span>GLASOVNA POVEZAVA</span><span class="num">01</span></h2>
+      <div class="kv"><span><span class="dot" id="wsDot"></span>Vtičnica</span><b id="wsState">brez povezave</b></div>
+      <div class="kv"><span><span class="dot" id="micDot"></span>Mikrofon</span><b id="micState">miruje</b></div>
+      <div class="kv"><span>Raven vhoda</span><b>&nbsp;</b></div>
       <div class="bar"><i id="levelBar"></i></div>
       <div style="margin-top:8px; display:flex; gap:6px">
-        <button class="btn" id="talkBtn" style="flex:1">ENGAGE VOICE</button>
-        <button class="btn danger" id="stopBtn">■ STOP</button>
+        <button class="btn" id="talkBtn" style="flex:1">VKLOPI GLAS</button>
+        <button class="btn danger" id="stopBtn">■ USTAVI</button>
       </div>
     </div>
-    <div class="panel"><h2><span>AGENT ACTIVITY</span><span class="num">02</span></h2>
-      <div id="activity"><div>— no activity yet —</div></div>
+    <div class="panel"><h2><span>AKTIVNOST AGENTA</span><span class="num">02</span></h2>
+      <div id="activity"><div>— ni še aktivnosti —</div></div>
     </div>
-    <div class="panel"><h2><span>TURN METRICS</span><span class="num">03</span></h2>
-      <div class="kv"><span>Turns</span><b id="mTurns">0</b></div>
-      <div class="kv"><span>Last: speech→audio</span><b id="mFirst">—</b></div>
-      <div class="kv"><span>Last: total</span><b id="mTotal">—</b></div>
-      <div class="kv"><span>Brain</span><b id="mBrain">—</b></div>
+    <div class="panel"><h2><span>MERITVE IZMENJAVE</span><span class="num">03</span></h2>
+      <div class="kv"><span>Izmenjave</span><b id="mTurns">0</b></div>
+      <div class="kv"><span>Zadnji: govor→zvok</span><b id="mFirst">—</b></div>
+      <div class="kv"><span>Zadnji: skupaj</span><b id="mTotal">—</b></div>
+      <div class="kv"><span>Možgani</span><b id="mBrain">—</b></div>
     </div>
-    <div class="panel"><h2><span>VIEWS</span><span class="num">04</span></h2>
-      <button class="btn viewBtn" onclick="openView('KANBAN','/kanban')">▸ KANBAN BOARD</button>
-      <button class="btn viewBtn" onclick="openView('HERMES DASHBOARD','/')">▸ HERMES DASHBOARD</button>
-      <button class="btn viewBtn" onclick="openView('CHAT','/chat')">▸ DASHBOARD CHAT</button>
+    <div class="panel"><h2><span>POGLEDI</span><span class="num">04</span></h2>
+      <button class="btn viewBtn" onclick="openView('KANBAN','/kanban')">▸ KANBAN</button>
+      <button class="btn viewBtn" onclick="openView('HERMES DASHBOARD','/')">▸ HERMES NADZORNA PLOŠČA</button>
+      <button class="btn viewBtn" onclick="openView('CHAT','/chat')">▸ KLEPET</button>
     </div>
-    <div class="panel"><h2><span>SESSION</span><span class="num">05</span></h2>
-      <div class="kv"><span>Conversation</span><b>jarvis-main</b></div>
-      <div class="kv"><span>Memory scope</span><b>jarvis:user:main</b></div>
-      <div class="kv"><span>Active sessions</span><b id="hSessions">—</b></div>
-      <div class="kv"><span>Running agents</span><b id="hAgents">—</b></div>
+    <div class="panel"><h2><span>SEJA</span><span class="num">05</span></h2>
+      <div class="kv"><span>Pogovor</span><b>jarvis-main</b></div>
+      <div class="kv"><span>Obseg spomina</span><b>jarvis:user:main</b></div>
+      <div class="kv"><span>Aktivne seje</span><b id="hSessions">—</b></div>
+      <div class="kv"><span>Tekоči agenti</span><b id="hAgents">—</b></div>
     </div>
   </div>
 
@@ -294,44 +293,44 @@ footer{
     <div id="approvals"></div>
     <div id="reactorWrap" title="Click to talk">
       <canvas id="reactor"></canvas>
-      <div id="coreState"><div class="st" id="stateLabel">STANDBY</div><div class="hint" id="stateHint">CLICK RING OR SPACE TO TALK</div></div>
+      <div id="coreState"><div class="st" id="stateLabel">PRIPRAVLJEN</div><div class="hint" id="stateHint">KLIKNI OBROČ ALI PRESLEDNICO</div></div>
     </div>
     <div id="feed"></div>
     <div id="chatRow">
-      <input id="chatInput" placeholder="Type to Hermes… (/new resets · voice: click the ring)" autocomplete="off">
-      <button class="btn" id="sendBtn">SEND</button>
-      <button class="btn" id="clearBtn" title="Clear the visible chat (history stays in Hermes)">CLR</button>
+      <input id="chatInput" placeholder="Piši Hermesu … (/new ponastavi · glas: klikni obroč)" autocomplete="off">
+      <button class="btn" id="sendBtn">POŠLJI</button>
+      <button class="btn" id="clearBtn" title="Clear the visible chat (history stays in Hermes)">POČISTI</button>
     </div>
   </div>
 
   <!-- RIGHT COLUMN -->
   <div class="col">
-    <div class="panel"><h2><span>MODELS LOADOUT</span><span class="num">06</span></h2>
-      <div class="kv"><span>Brain</span><b>hermes-agent</b></div>
+    <div class="panel"><h2><span>MODELI</span><span class="num">06</span></h2>
+      <div class="kv"><span>Možgani</span><b>hermes-agent</b></div>
       <div class="kv"><span>STT</span><b>whisper base.en</b></div>
       <div class="kv"><span>TTS</span><b>ElevenLabs Flash v2.5</b></div>
-      <div class="kv"><span>Fallback</span><b>claude-haiku-4-5</b></div>
+      <div class="kv"><span>Rezerva</span><b>claude-haiku-4-5</b></div>
       <div style="border-top:1px solid var(--line); margin:6px 0 4px"></div>
-      <div class="kv"><span>Tokens today</span><b id="uTok">—</b></div>
-      <div class="kv" id="uCostRow" style="display:none"><span>Est. cost today</span><b id="uCost">—</b></div>
-      <div class="kv"><span>Turns today</span><b id="uTurns">—</b></div>
-      <div class="kv"><span>11Labs quota</span><b id="uTts">—</b></div>
+      <div class="kv"><span>Žetoni danes</span><b id="uTok">—</b></div>
+      <div class="kv" id="uCostRow" style="display:none"><span>Ocena stroškov danes</span><b id="uCost">—</b></div>
+      <div class="kv"><span>Izmenjave danes</span><b id="uTurns">—</b></div>
+      <div class="kv"><span>TTS</span><b id="uTts">—</b></div>
       <div class="bar"><i id="ttsBar"></i></div>
     </div>
-    <div class="panel"><h2><span>MACHINES</span><span class="num">07</span></h2>
-      <div id="machinesList"><div class="kv"><span>loading…</span></div></div>
+    <div class="panel"><h2><span>STROJI</span><span class="num">07</span></h2>
+      <div id="machinesList"><div class="kv"><span>nalaganje …</span></div></div>
     </div>
-    <div class="panel"><h2><span>SKILLS</span><span class="num">08</span></h2>
-      <div class="kv"><span>Loaded skills</span><b id="skillCount">—</b></div>
+    <div class="panel"><h2><span>VEŠČINE</span><span class="num">08</span></h2>
+      <div class="kv"><span>Naložene veščine</span><b id="skillCount">—</b></div>
       <div id="skillsList"></div>
     </div>
-    <div class="panel"><h2><span>DIAGNOSTICS</span><span class="num">09</span></h2>
+    <div class="panel"><h2><span>DIAGNOSTIKA</span><span class="num">09</span></h2>
       <div class="kv"><span><span class="dot" id="apiDot"></span>Hermes API</span><b id="apiState">—</b></div>
       <div class="kv"><span>CPU</span><b id="hCpu">—</b></div>
-      <div class="kv"><span>Memory</span><b id="hMem">—</b></div>
-      <div class="kv"><span>Refreshed</span><b id="hWhen">—</b></div>
+      <div class="kv"><span>Pomnilnik</span><b id="hMem">—</b></div>
+      <div class="kv"><span>Osveženo</span><b id="hWhen">—</b></div>
     </div>
-    <div class="panel"><h2><span>AUTOMATIONS</span><span class="num">10</span></h2>
+    <div class="panel"><h2><span>AVTOMATIZACIJE</span><span class="num">10</span></h2>
       <div id="jobsList"><div>—</div></div>
     </div>
   </div>
@@ -343,7 +342,7 @@ footer{
       <div id="viewerBar">
         <h3 id="viewerTitle">KANBAN</h3>
         <div class="vbtns">
-          <button class="btn" id="viewerPop">OPEN TAB</button>
+          <button class="btn" id="viewerPop">ODPRI ZAVIHEK</button>
           <button class="btn danger" id="viewerClose">✕ CLOSE</button>
         </div>
       </div>
@@ -353,7 +352,7 @@ footer{
 
   <footer>
     <span></span>
-    <span id="footMsg">READY</span>
+    <span id="footMsg">PRIPRAVLJEN</span>
     <span>NOUS HERMES AGENT v0.16</span>
   </footer>
 </div>
@@ -469,8 +468,8 @@ function showApproval(e){
   const id=data.approval_id||data.id||"";
   const desc=data.preview||data.command||data.description||JSON.stringify(data).slice(0,300);
   const card=document.createElement("div"); card.className="appr";
-  card.innerHTML=`<h3>⚠ APPROVAL REQUIRED</h3><pre>${esc(desc)}</pre>
-    <div class="row"><button class="btn">ALLOW</button><button class="btn danger">DENY</button></div>`;
+  card.innerHTML=`<h3>⚠ POTREBNA ODOBRITEV</h3><pre>${esc(desc)}</pre>
+    <div class="row"><button class="btn">DOVOLI</button><button class="btn danger">ZAVRNI</button></div>`;
   const [allowB,denyB]=card.querySelectorAll("button");
   const send=dec=>{ if(wsReady)ws.send(JSON.stringify({type:"approval_decision",run_id:e.run_id||currentRun,approval_id:id,decision:dec})); card.remove(); };
   allowB.onclick=()=>send("allow"); denyB.onclick=()=>send("deny");
@@ -482,8 +481,8 @@ function showApproval(e){
 function wsUrl(){return (location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws"}
 function connect(){
   ws=new WebSocket(wsUrl()); ws.binaryType="arraybuffer";
-  ws.onopen=()=>{wsReady=true;$("wsDot").className="dot on";$("wsState").textContent="online";$("connState").textContent="LINK ACTIVE";$("footMsg").textContent="VOICE SERVER CONNECTED"};
-  ws.onclose=()=>{wsReady=false;$("wsDot").className="dot off";$("wsState").textContent="offline";$("connState").textContent="LINK DOWN";setState("standby","STANDBY");setTimeout(connect,3000)};
+  ws.onopen=()=>{wsReady=true;$("wsDot").className="dot on";$("wsState").textContent="povezan";$("connState").textContent="POVEZAVA VZPOSTAVLJENA";$("footMsg").textContent="GLASOVNI STREŽNIK POVEZAN"};
+  ws.onclose=()=>{wsReady=false;$("wsDot").className="dot off";$("wsState").textContent="brez povezave";$("connState").textContent="POVEZAVA PREKINJENA";setState("standby","PRIPRAVLJEN");setTimeout(connect,3000)};
   ws.onerror=()=>{};
   ws.onmessage=ev=>{
     if(ev.data instanceof ArrayBuffer){playChunk(ev.data);return}
@@ -495,12 +494,12 @@ function connect(){
     else if(e.type==="run_started"){ currentRun=e.run_id; showStop(true); }
     else if(e.type==="approval_request"){ showApproval(e); }
     else if(e.type==="agent_status"){
-      if(e.state==="thinking"){setState("thinking","PROCESSING");showStop(true)}
-      else if(e.state==="tool_use"){setState("tool","WORKING");addActivity("",e.tool||"tool",e.preview)}
-      else if(e.state==="speaking")setState("speaking","SPEAKING");
-      else if(e.state==="stopped"){setState("standby","STANDBY");showStop(false);stopPlayback();addMsg("sys","run stopped")}
+      if(e.state==="thinking"){setState("thinking","OBDELUJEM");showStop(true)}
+      else if(e.state==="tool_use"){setState("tool","DELAM");addActivity("",e.tool||"tool",e.preview)}
+      else if(e.state==="speaking")setState("speaking","GOVORIM");
+      else if(e.state==="stopped"){setState("standby","PRIPRAVLJEN");showStop(false);stopPlayback();addMsg("sys","izvajanje ustavljeno")}
     }
-    else if(e.type==="error"){ clearLive(); addMsg("sys","error: "+e.message); setState("standby","STANDBY"); showStop(false); }
+    else if(e.type==="error"){ clearLive(); addMsg("sys","napaka: "+e.message); setState("standby","PRIPRAVLJEN"); showStop(false); }
     else if(e.type==="done"){
       currentRun=null; showStop(false);
       const tm=e.timing||{};
@@ -509,7 +508,7 @@ function connect(){
       if(tm.total_turn_seconds!=null)$("mTotal").textContent=tm.total_turn_seconds+"s";
       $("mBrain").textContent=tm.llm_provider||"—";
       if(tm.response_text)addMsg("jarvis",tm.response_text);
-      setTimeout(()=>{if(state!=="listening")setState("standby","STANDBY")},400);
+      setTimeout(()=>{if(state!=="listening")setState("standby","PRIPRAVLJEN")},400);
     }
   };
 }
@@ -588,26 +587,26 @@ async function initMic(){
     };
     srcNode.connect(workletNode);
   }
-  $("micDot").className="dot on"; $("micState").textContent="ready";
+  $("micDot").className="dot on"; $("micState").textContent="pripravljen";
 }
 
 /* ============================== talk flow ========================== */
 async function toggleTalk(){
-  if(!wsReady){addMsg("sys","voice server offline");return}
+  if(!wsReady){addMsg("sys","glasovni strežnik ni dosegljiv");return}
   if(capturing){ // stop talking
     capturing=false;
     ws.send(JSON.stringify({type:"stop"}));
-    $("talkBtn").textContent="ENGAGE VOICE"; $("micState").textContent="ready"; $("levelBar").style.width="0%";
-    setState("thinking","PROCESSING");
+    $("talkBtn").textContent="VKLOPI GLAS"; $("micState").textContent="pripravljen"; $("levelBar").style.width="0%";
+    setState("thinking","OBDELUJEM");
     return;
   }
-  try{await initMic()}catch(err){addMsg("sys","mic blocked: "+err.message);return}
+  try{await initMic()}catch(err){addMsg("sys","mikrofon blokiran: "+err.message);return}
   stopPlayback();                       // barge-in
   audioArrived=false;
   ws.send(JSON.stringify({type:"start",sample_rate:16000,format:"pcm_s16le",channels:1,conversation:CONV}));
   capturing=true;
-  $("talkBtn").textContent="■ STOP & SEND"; $("micState").textContent="LIVE";
-  setState("listening","LISTENING","CLICK AGAIN TO SEND");
+  $("talkBtn").textContent="■ USTAVI IN POŠLJI"; $("micState").textContent="V ŽIVO";
+  setState("listening","POSLUŠAM","KLIKNI ZNOVA ZA POŠILJANJE");
 }
 $("talkBtn").onclick=toggleTalk;
 $("reactorWrap").onclick=toggleTalk;
@@ -640,22 +639,22 @@ addEventListener("keydown",e=>{
 /* ============================== typed chat ========================= */
 async function sendChat(){
   const inp=$("chatInput"); const text=inp.value.trim(); if(!text)return;
-  inp.value=""; addMsg("you",text); setState("thinking","PROCESSING");
+  inp.value=""; addMsg("you",text); setState("thinking","OBDELUJEM");
   try{
     const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({input:text,conversation:CONV})});
     const j=await r.json();
     if(!r.ok)throw new Error(j.error||r.status);
     (j.tools||[]).forEach(t=>addActivity("",t.name,t.preview));
-    addMsg("jarvis",j.text||"(no reply)");
+    addMsg("jarvis",j.text||"(brez odgovora)");
     if(/^\/(new|reset|clear)\b/i.test(text)){     // slash reset → also clear the visible feed
-      setTimeout(()=>{feed.innerHTML="";addMsg("sys","conversation reset");},800);
+      setTimeout(()=>{feed.innerHTML="";addMsg("sys","pogovor ponastavljen");},800);
     }
-  }catch(err){ addMsg("sys","chat error: "+err.message); }
-  if(state!=="listening")setState("standby","STANDBY");
+  }catch(err){ addMsg("sys","napaka klepeta: "+err.message); }
+  if(state!=="listening")setState("standby","PRIPRAVLJEN");
 }
 $("sendBtn").onclick=sendChat;
-$("clearBtn").onclick=()=>{feed.innerHTML="";addMsg("sys","chat cleared (history stays in Hermes — type /new to reset the conversation)");};
+$("clearBtn").onclick=()=>{feed.innerHTML="";addMsg("sys","klepet počiščen (zgodovina ostane v Hermesu — za ponastavitev vpiši /new)");};
 $("chatInput").addEventListener("keydown",e=>{if(e.key==="Enter")sendChat()});
 
 /* ============================== widgets ============================ */
@@ -698,9 +697,9 @@ async function refreshMachines(){
       if(m.vram_used!=null&&m.vram_total!=null)bits.push(`VRAM ${m.vram_used}/${m.vram_total}G`);
       if(m.gpu_temp!=null)bits.push(`${m.gpu_temp}°`);
       if(!bits.length&&m.note)bits.push(m.note);
-      return `<div class="kv"><span><span class="dot ${m.online?"on":"off"}"></span>${m.name}</span><b>${bits.join(" · ")||(m.online?"online":"offline")}</b></div>`;
+      return `<div class="kv"><span><span class="dot ${m.online?"on":"off"}"></span>${m.name}</span><b>${bits.join(" · ")||(m.online?"povezan":"brez povezave")}</b></div>`;
     }).join("");
-  }catch{ $("machinesList").innerHTML="<div class='kv'><span>unavailable</span></div>"; }
+  }catch{ $("machinesList").innerHTML="<div class='kv'><span>ni na voljo</span></div>"; }
 }
 const fmtK=n=>n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(1)+"k":String(n||0);
 async function refreshUsage(){
@@ -713,12 +712,12 @@ async function refreshUsage(){
     const e=j.elevenlabs;
     if(e&&e.limit){
       const pct=Math.round(e.used/e.limit*100);
-      $("uTts").textContent=`${fmtK(e.used)} / ${fmtK(e.limit)} (${100-pct}% left)`;
+      $("uTts").textContent=`${fmtK(e.used)} / ${fmtK(e.limit)} (${100-pct}% prosto)`;
       $("ttsBar").style.width=pct+"%";
       $("uTts").className=pct>90?"err":pct>70?"warn":"";
     }else{
       // quota API unavailable (key needs user_read permission) → local tally
-      $("uTts").textContent=fmtK(t.tts_chars||0)+" chars today";
+      $("uTts").textContent=fmtK(t.tts_chars||0)+" znakov danes";
       $("ttsBar").style.width="0%";
     }
   }catch{}
@@ -760,10 +759,17 @@ function embedURL(src){
   if(yt) return `https://www.youtube.com/embed/${yt[1]}?autoplay=1`;
   return src;
 }
+let ALLOW_EXTERNAL=false;
+fetch("/api/hud-config").then(r=>r.json()).then(c=>{ALLOW_EXTERNAL=!!c.allow_external_media}).catch(()=>{});
+function isExternal(src){
+  if(!src) return false;
+  if(src.startsWith("/")||src.startsWith("data:")||src.startsWith("blob:")) return false;
+  try{return new URL(src,location.href).origin!==location.origin}catch{return true}
+}
 let lastSummon={key:"",t:0};
 function summonPanel(opts){
   const o=opts||{};
-  const media=o.media||o.type||"iframe", src=o.src||"", title=(o.title||"INCOMING FEED").toUpperCase();
+  const media=o.media||o.type||"iframe", src=o.src||"", title=(o.title||"PRIHAJAJOČI SIGNAL").toUpperCase();
   // dedupe: stale WS reconnects can deliver the same broadcast multiple times
   const key=media+"|"+src+"|"+title;
   if(key===lastSummon.key && Date.now()-lastSummon.t<8000) return null;
@@ -773,7 +779,9 @@ function summonPanel(opts){
   p.className="holo pos-"+position; p.dataset.fx="hologram";
   let inner="";
   const esrc=encodeURI(src);
-  if(media==="image") inner=`<img class="holoContent" src="${esrc}" alt="">`;
+  if(isExternal(src)&&!ALLOW_EXTERNAL)
+    inner=`<div class="holoContent" style="display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;font-family:'Orbitron';letter-spacing:2px;color:var(--amber)">ZUNANJI MEDIJI SO IZKLOPLJENI<br><span style="font-family:'Rajdhani';letter-spacing:1px;color:var(--txt-dim);font-size:12px;margin-top:10px">hud.allow_external_media: false</span></div>`;
+  else if(media==="image") inner=`<img class="holoContent" src="${esrc}" alt="">`;
   else if(media==="video" && !/youtube|youtu\.be/.test(src))
     inner=`<video class="holoContent" src="${esrc}" controls autoplay playsinline></video>`;
   else inner=`<iframe class="holoContent" src="${embedURL(src)}" allow="autoplay; fullscreen; encrypted-media"></iframe>`;
@@ -832,7 +840,7 @@ $("pinBtn").onclick=async()=>{
   const v=$("pinInput").value.trim(); if(!v)return;
   document.cookie=`jarvis_token=${encodeURIComponent(v)}; path=/; max-age=31536000; secure; samesite=lax`;
   const r=await fetch("/api/usage");
-  if(r.status===401){$("pinMsg").textContent="ACCESS DENIED";$("pinInput").value="";return}
+  if(r.status===401){$("pinMsg").textContent="DOSTOP ZAVRNJEN";$("pinInput").value="";return}
   location.reload();
 };
 $("pinInput")&&$("pinInput").addEventListener("keydown",e=>{if(e.key==="Enter")$("pinBtn").click()});
@@ -841,10 +849,10 @@ checkAuth();
 /* ============================== boot sequence ====================== */
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const BOOT_LINES=[
-  ["INITIALIZING NEURAL INTERFACE",380],["LOADING HUD MODULES",300],
-  ["CONNECTING HERMES CORE",650],["VOICE LINK ESTABLISHED",420],
-  ["MEMORY SYSTEMS SYNCHRONIZED",420],["WEAPONS OFFLINE. KETTLE ONLINE.",300],
-  ["ALL SYSTEMS NOMINAL",550],
+  ["INICIALIZACIJA NEVRALNEGA VMESNIKA",380],["NALAGANJE MODULOV HUD",300],
+  ["POVEZOVANJE Z JEDROM HERMES",650],["GLASOVNA POVEZAVA VZPOSTAVLJENA",420],
+  ["SPOMINSKI SISTEMI USKLAJENI",420],["OROZJA IZKLOPLJENA. GRELNIK VKLOPLJEN.",300],
+  ["VSI SISTEMI DELUJEJO",550],
 ];
 let bootRunning=false;
 async function bootSequence(full){
@@ -855,7 +863,7 @@ async function bootSequence(full){
   const bl=$("bootLines"); bl.innerHTML="";
   const scale=full?1:0.32;
   for(const [t,d] of BOOT_LINES){
-    if(!full&&t.startsWith("WEAPONS"))continue;   // easter egg only in full boot
+    if(!full&&t.startsWith("OROZJA"))continue;   // easter egg only in full boot
     const div=document.createElement("div"); div.innerHTML="▸ "+t+" <b>OK</b>";
     bl.appendChild(div); await sleep(d*scale);
   }
@@ -868,7 +876,7 @@ async function bootSequence(full){
     try{
       const h=new Date().getHours();
       const f=h<12?"morning":h<18?"afternoon":"evening";
-      await new Audio("audio/boot_"+f+".mp3").play();
+      await new Audio("audio/boot_"+f+".wav").play();
     }catch{/* audio needs a user gesture; B-key boots always have one */}
   }
   setTimeout(()=>{boot.style.display="none"},900);
@@ -879,7 +887,7 @@ addEventListener("keydown",e=>{
 });
 bootSequence(new URLSearchParams(location.search).get("boot")==="full");
 
-addMsg("sys","Jarvis HUD online. Click the ring or press Space to talk.");
+addMsg("sys","Jarvis HUD je pripravljen. Klikni obroč ali pritisni preslednico.");
 </script>
 </body>
 </html>

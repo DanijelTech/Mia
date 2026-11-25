@@ -22,6 +22,7 @@ and approval events. Falls back to direct Anthropic ("basic mode") if unreachabl
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import os
 import re
@@ -35,16 +36,31 @@ import requests
 import uvicorn
 import yaml
 import numpy as np
-from anthropic import Anthropic
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+
+try:  # newer starlette raises a distinct error on receive-after-disconnect
+    from starlette.websockets import WebSocketDisconnected
+except ImportError:  # pragma: no cover
+    WebSocketDisconnected = WebSocketDisconnect
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from RealtimeSTT import AudioToTextRecorder
+
+from tts import build_backend
 
 try:
     import psutil
 except ImportError:  # machines panel degrades gracefully
     psutil = None
+
+
+def _anthropic_client(key: str):
+    """Imported lazily: offline installs do not need the SDK at all."""
+    try:
+        from anthropic import Anthropic
+    except ImportError as exc:
+        raise RuntimeError("anthropic SDK not installed (offline mode needs no fallback)") from exc
+    return Anthropic(api_key=key)
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "config" / "server.yaml"
@@ -299,17 +315,26 @@ class VoicePipelineServer:
         self.turn_counter = 0
         self.hermes = HermesAPI(cfg)
         self.stt_lock = asyncio.Lock()
+        stt = cfg["stt"]
+        self.stt_language = (stt.get("language") or "en")
+        self.tts = build_backend(cfg, ROOT)
+        recorder_kwargs = {
+            "model": stt["model"],
+            "use_microphone": False,
+            "spinner": False,
+            "device": stt.get("device", "cpu"),
+            "compute_type": stt.get("compute_type", "int8"),
+            "sample_rate": int(stt.get("sample_rate", 16000)),
+            "language": self.stt_language,
+            "beam_size": int(stt.get("beam_size", 1)),
+            "faster_whisper_vad_filter": False,
+            "no_log_file": True,
+        }
+        if stt.get("initial_prompt"):
+            recorder_kwargs["initial_prompt"] = stt["initial_prompt"]
+        supported = set(inspect.signature(AudioToTextRecorder).parameters)
         self.recorder = AudioToTextRecorder(
-            model=cfg["stt"]["model"],
-            use_microphone=False,
-            spinner=False,
-            device=cfg["stt"].get("device", "cpu"),
-            compute_type=cfg["stt"].get("compute_type", "int8"),
-            sample_rate=int(cfg["stt"].get("sample_rate", 16000)),
-            language="en",
-            beam_size=1,
-            faster_whisper_vad_filter=False,
-            no_log_file=True,
+            **{k: v for k, v in recorder_kwargs.items() if k in supported}
         )
 
     def next_turn_id(self) -> int:
@@ -352,7 +377,13 @@ class VoicePipelineServer:
         if token:
             headers["X-Jarvis-Token"] = token
         try:
+            params = {}
+            if self.stt_language:
+                params["language"] = self.stt_language
+            if (self.cfg["stt"] or {}).get("initial_prompt"):
+                params["initial_prompt"] = self.cfg["stt"]["initial_prompt"]
             r = requests.post(remote["url"], data=audio, headers=headers,
+                              params=params or None,
                               timeout=float(remote.get("timeout", 6)))
             if r.ok:
                 return (r.json().get("text") or "").strip()
@@ -394,7 +425,7 @@ class VoicePipelineServer:
             key = os.environ.get(llm.get("api_key_env", "ANTHROPIC_API_KEY"))
             if not key:
                 raise RuntimeError("ANTHROPIC_API_KEY not found")
-            client = Anthropic(api_key=key)
+            client = _anthropic_client(key)
             with client.messages.stream(
                 model=llm["model"],
                 max_tokens=int(llm.get("max_tokens", 220)),
@@ -415,8 +446,10 @@ class VoicePipelineServer:
         timing.llm_provider = "hermes"
         timing.llm_model = "hermes-agent"
         timeout = float(h.get("timeout", 240))
+        directive = (h.get("language_directive") or "").strip()
+        payload = f"{directive}\n\n{transcript}" if directive else transcript
         try:
-            it = self.hermes.chat_stream_events(session_id, transcript, timeout)
+            it = self.hermes.chat_stream_events(session_id, payload, timeout)
             for kind, value in it:
                 if kind == "text" and timing.llm_first_token_monotonic is None:
                     timing.llm_first_token_monotonic = time.perf_counter()
@@ -425,7 +458,7 @@ class VoicePipelineServer:
             # stale session id (e.g. Hermes DB reset) -> recreate once
             if "404" in str(exc):
                 session_id = self.hermes.get_session_id(conversation, force_new=True)
-                for kind, value in self.hermes.chat_stream_events(session_id, transcript, timeout):
+                for kind, value in self.hermes.chat_stream_events(session_id, payload, timeout):
                     if kind == "text" and timing.llm_first_token_monotonic is None:
                         timing.llm_first_token_monotonic = time.perf_counter()
                     yield (kind, value)
@@ -435,41 +468,14 @@ class VoicePipelineServer:
     # ------------------------------------------------------------------ TTS
 
     def tts_chunks_sync(self, text: str, timing: TurnTiming) -> Iterator[bytes]:
-        voice = self.cfg["voice"]
-        key = os.environ.get("ELEVENLABS_API_KEY") or os.environ.get("ELEVEN_API_KEY") or os.environ.get("XI_API_KEY")
-        if not key:
-            raise RuntimeError("ElevenLabs API key not found")
-        timing.tts_model = voice["model"]
-        timing.voice_id = voice["voice_id"]
+        timing.tts_model = self.tts.label
+        timing.voice_id = getattr(self.tts, "voice_id", "") or ""
         timing.tts_request_start_monotonic = timing.tts_request_start_monotonic or time.perf_counter()
         record_usage(tts_chars=len(text))
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice['voice_id']}/stream"
-        params = {"output_format": voice.get("output_format", "pcm_16000")}
-        payload = {
-            "text": text,
-            "model_id": voice["model"],
-            "voice_settings": {
-                "stability": 0.55, "similarity_boost": 0.70,
-                "style": 0.10, "use_speaker_boost": True,
-            },
-        }
-        response = requests.post(
-            url, params=params,
-            headers={"xi-api-key": key, "Accept": "application/octet-stream", "Content-Type": "application/json"},
-            json=payload, stream=True, timeout=120,
-        )
-        if response.status_code >= 400:
-            response.close()
-            raise RuntimeError(f"ElevenLabs HTTP {response.status_code}: {response.text[:1000]}")
-        try:
-            for chunk in response.iter_content(chunk_size=4096):
-                if not chunk:
-                    continue
-                if timing.first_tts_audio_byte_monotonic is None:
-                    timing.first_tts_audio_byte_monotonic = time.perf_counter()
-                yield chunk
-        finally:
-            response.close()  # barge-in cancels mid-stream; don't leak the connection
+        for chunk in self.tts.synth(text):
+            if timing.first_tts_audio_byte_monotonic is None:
+                timing.first_tts_audio_byte_monotonic = time.perf_counter()
+            yield chunk
 
     # ------------------------------------------------------------- Turn flow
 
@@ -799,6 +805,18 @@ async def hud_chat(request: Request) -> JSONResponse:
 _ELEVEN_CACHE: dict = {"ts": 0.0, "data": None}
 
 
+def _tts_provider() -> str:
+    tts_cfg = CFG.get("tts") or {}
+    provider = (tts_cfg.get("provider") or "").lower()
+    if not provider:
+        provider = "elevenlabs" if CFG.get("voice") else "piper"
+    return provider
+
+
+def _tts_is_elevenlabs() -> bool:
+    return _tts_provider() == "elevenlabs"
+
+
 @app.get("/api/usage")
 async def usage() -> JSONResponse:
     """LLM token usage (local tally) + ElevenLabs subscription quota."""
@@ -819,9 +837,12 @@ async def usage() -> JSONResponse:
         },
         "elevenlabs": None,
     }
-    # ElevenLabs subscription — NEVER blocks the response: serve the cache and
-    # refresh it in the background when stale.
+    # ElevenLabs subscription — only when TTS is actually cloud-based. Local
+    # providers must not generate any outbound request.
     now = time.time()
+    if not _tts_is_elevenlabs():
+        out["elevenlabs"] = None
+        return JSONResponse(out)
     if (_ELEVEN_CACHE["data"] is None or now - _ELEVEN_CACHE["ts"] > 300) and not _ELEVEN_CACHE.get("refreshing"):
         key = os.environ.get("ELEVENLABS_API_KEY") or os.environ.get("ELEVEN_API_KEY") or os.environ.get("XI_API_KEY")
         if key:
@@ -888,6 +909,17 @@ async def summon(request: Request) -> JSONResponse:
 
 
 _WORKER_CACHE: dict = {"ts": 0.0, "data": [], "refreshing": False}
+
+
+@app.get("/api/hud-config")
+async def hud_config() -> JSONResponse:
+    """HUD behaviour switches: external media, UI language, TTS provider."""
+    hud_cfg = CFG.get("hud") or {}
+    return JSONResponse({
+        "allow_external_media": bool(hud_cfg.get("allow_external_media", False)),
+        "language": (CFG.get("stt") or {}).get("language") or "en",
+        "tts_provider": _tts_provider(),
+    })
 
 
 @app.get("/api/machines")
@@ -1195,7 +1227,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                 if conn.recording:
                     conn.audio_chunks.append(message["bytes"])
                     _maybe_schedule_partial(ws, pipeline, conn)
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, WebSocketDisconnected):
         if conn.turn_task and not conn.turn_task.done():
             conn.turn_task.cancel()
         print("Client disconnected", flush=True)
