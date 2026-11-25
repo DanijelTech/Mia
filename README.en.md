@@ -96,12 +96,12 @@ sudo ./install.sh --yes --open --with-gepard  # lighter GPU voice
 Afterwards, start/open again at any time with:
 
 ```bash
-./start.sh                # start (if needed), wait, open the HUD
-./start.sh --no-open      # just start and print URL + token
-./stop.sh                 # stop the voice server (and the TTS service)
-./stop.sh --status        # what is running, which ports are held
-./stop.sh --restart       # stop, start again and open
-./stop.sh --free-ports    # if a port stays held, kill its owner
+./start-mia.sh                # start (if needed), wait, open the HUD
+./start-mia.sh --no-open      # just start and print URL + token
+./stop-mia.sh                 # stop the voice server (and the TTS service)
+./stop-mia.sh --status        # what is running, which ports are held
+./stop-mia.sh --restart       # stop, start again and open
+./stop-mia.sh --free-ports    # if a port stays held, kill its owner
 ./update.sh               # pull the latest release from GitHub and restart
 ./update.sh --check       # only show what is new
 ```
@@ -200,12 +200,19 @@ evening.
 ```
 server/          FastAPI voice pipeline + HUD host (the core of this project)
 server/hud/      single-file HUD (vanilla JS, no build step)
-server/scripts/  start/stop/health/smoke + cert & boot-audio generators
+server/tts.py    local TTS backends: piper, http (Gepard/Maya1), command, elevenlabs
+server/scripts/  mia-start/stop/health/smoke + cert & boot-audio generators
 client/          optional Windows/Linux push-to-talk Python client (wake word capable)
-worker/          optional GPU sidecars: big-model STT server + stats agent for the Machines panel
+worker/          optional GPU sidecars: big-model STT server + stats agent
 hermes-plugin/   Hermes tool plugin: lets the agent summon/dismiss HUD media panels
 launchd/         macOS auto-start templates with hard-won TCC + FD-limit notes
-docs/            Slovenian docs; docs/en/ the English copies (SETUP, ARCHITECTURE, TROUBLESHOOTING)
+docs/            Slovenian docs; docs/en/ the English copies
+install.sh       install (no venv, root or user) + manifest
+start-mia.sh     start, wait for the server, open the HUD in a browser
+stop-mia.sh      stop (systemd/launchd/background), status, --restart, --free-ports
+update.sh        git pull --ff-only + service restart + Ctrl+Shift+R reminder
+uninstall.sh     exact removal of everything install.sh created
+build-package.sh offline tarball for a machine without internet
 ```
 
 ## Security model

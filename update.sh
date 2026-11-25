@@ -96,14 +96,14 @@ if [ "$DO_RESTART" = 1 ]; then
       fi
     done
     if [ "$RESTARTED" = 0 ]; then
-      info "no active Mia unit to restart (start it with ./start.sh)"
+      info "no active Mia unit to restart (start it with ./start-mia.sh)"
     fi
   elif [ -f server/logs/mia.pid ]; then
-    info "background mode detected — restarting via stop.sh/start.sh"
-    ./stop.sh >/dev/null 2>&1 && ./start.sh --no-open >/dev/null 2>&1 \
-      && info "restarted in the background" || warn "restart failed, run ./start.sh"
+    info "background mode detected — restarting via stop-mia.sh/start-mia.sh"
+    ./stop-mia.sh >/dev/null 2>&1 && ./start-mia.sh --no-open >/dev/null 2>&1 \
+      && info "restarted in the background" || warn "restart failed, run ./start-mia.sh"
   else
-    info "nothing running (start it with ./start.sh)"
+    info "nothing running (start it with ./start-mia.sh)"
   fi
 fi
 
@@ -111,5 +111,5 @@ echo
 say "Updated to $(git rev-parse --short HEAD)"
 [ "$needs_install" = 1 ] && warn "installer/service files changed — run: ./install.sh --yes"
 [ "$hud_changed" = 1 ] && info "HUD files changed — hard-refresh the page: Ctrl+Shift+R"
-info "check with: ./stop.sh --status   ·   server/scripts/mia-health.sh"
+info "check with: ./stop-mia.sh --status   ·   server/scripts/mia-health.sh"
 exit 0

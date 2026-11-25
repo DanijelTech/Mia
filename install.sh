@@ -594,7 +594,7 @@ if [ "$DRY_RUN" = 0 ] && [ "$DO_SERVICE" = 1 ] && [ "$DO_START" = 1 ]; then
       elif [ -f "$SERVER_DIR/logs/mia.out" ]; then
         tail -n 20 "$SERVER_DIR/logs/mia.out" | sed 's/^/    /'
       fi
-      warn "fix the error above, then run: ./start.sh"
+      warn "fix the error above, then run: ./start-mia.sh"
     fi
   fi
 fi
@@ -623,10 +623,10 @@ Next steps
 
 $( [ "$MODE" = "user" ] && printf 'Keep it running after logout/reboot:  loginctl enable-linger %s\n\n' "$(id -un)" )
 
-Day to day:  ./start.sh   ·   ./stop.sh   ·   ./stop.sh --status   ·   ./update.sh
+Day to day:  ./start-mia.sh   ·   ./stop-mia.sh   ·   ./stop-mia.sh --status   ·   ./update.sh
 Remove everything again:  ./uninstall.sh --dry-run   then   ./uninstall.sh
 DONE
 
-if [ "$DO_OPEN" = 1 ] && [ "$DRY_RUN" = 0 ] && [ -x "$REPO_DIR/start.sh" ]; then
-  exec "$REPO_DIR/start.sh"
+if [ "$DO_OPEN" = 1 ] && [ "$DRY_RUN" = 0 ] && [ -x "$REPO_DIR/start-mia.sh" ]; then
+  exec "$REPO_DIR/start-mia.sh"
 fi

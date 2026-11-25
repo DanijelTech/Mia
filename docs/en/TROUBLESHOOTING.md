@@ -120,7 +120,7 @@ current ones do not. Fix:
 
 ```bash
 cd ~/Mia && git pull && ./install.sh --yes     # rewrites the unit without capabilities
-systemctl --user restart mia-voice && ./start.sh
+systemctl --user restart mia-voice && ./start-mia.sh
 ```
 
 **Log shows `PermissionError` / `SystemExit(1)` on port 443** — you are not root.

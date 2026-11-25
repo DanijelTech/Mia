@@ -21,12 +21,17 @@ pretvori v piškotek in ga odstrani iz naslovne vrstice). Poznejši zagoni in
 ustavljanje:
 
 ```bash
-./start.sh              # zaženi (če je treba), počakaj, odpri HUD
-./stop.sh               # ustavi strežnik in TTS storitev (nič ne briše)
-./stop.sh --status      # kaj teče in katera vrata so zasedena
-./stop.sh --restart     # ustavi + zaženi + odpri
-./stop.sh --free-ports  # zadnja možnost: ubij proces, ki drži vrata
+./start-mia.sh              # zaženi (če je treba), počakaj, odpri HUD
+./stop-mia.sh               # ustavi strežnik in TTS storitev (nič ne briše)
+./stop-mia.sh --status      # kaj teče in katera vrata so zasedena
+./stop-mia.sh --restart     # ustavi + zaženi + odpri
+./stop-mia.sh --free-ports  # zadnja možnost: ubij proces, ki drži vrata
 ```
+
+> Skripti sta se prej imenovali `./start.sh` in `./stop.sh`; zdaj sta
+> **`./start-mia.sh`** in **`./stop-mia.sh`** (da se ne zaletita z drugimi
+> sistemi, ki uporabljajo `start`/`stop`). Če imaš alise ali cron vnose, jih
+> posodobi.
 
 Namestitvenik:
 - namesti pakete (ob „externally managed“ Pythonu sam ponovi z
@@ -255,7 +260,7 @@ tts:
     format: wav
     timeout: 120
     name: gepard
-    engine: gepard          # gepard | maya1 — kaj zažene start.sh
+    engine: gepard          # gepard | maya1 — kaj zažene start-mia.sh
 ```
 
 **GPU proti RAM-u.** Storitev izbere napravo ob zagonu: `--device auto`
@@ -302,7 +307,7 @@ Nastavitev zamenjaš z enim ukazom (prepiše `server.yaml` in ponovi zagon):
 
 ```bash
 ./install.sh --stt-device cpu      # ali cuda / auto
-systemctl --user restart mia-voice # oz. ./start.sh
+systemctl --user restart mia-voice # oz. ./start-mia.sh
 nvidia-smi                         # preveri, da Mii ni več na GPU
 ```
 

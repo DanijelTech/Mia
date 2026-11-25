@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Start Mia and open the HUD in your browser.
 #
-#   ./start.sh                    # start (systemd if installed, else background), wait, open
-#   ./start.sh --no-open          # just start and print the URL/token
-#   ./start.sh --no-start         # assume it is running; only wait + open
-#   ./start.sh --host 192.168.1.10
-#   ./start.sh --wait 180         # longer wait (first run downloads the Whisper model)
-#   ./start.sh --no-token-in-url  # open /hud/ without the one-click login token
+#   ./start-mia.sh                    # start (systemd if installed, else background), wait, open
+#   ./start-mia.sh --no-open          # just start and print the URL/token
+#   ./start-mia.sh --no-start         # assume it is running; only wait + open
+#   ./start-mia.sh --host 192.168.1.10
+#   ./start-mia.sh --wait 180         # longer wait (first run downloads the Whisper model)
+#   ./start-mia.sh --no-token-in-url  # open /hud/ without the one-click login token
 #
 # Exit codes: 0 ok · 1 not installed · 2 server did not come up
 set -uo pipefail
@@ -168,7 +168,7 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
   if [ -f "$PIDFILE" ] && ! kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; then
     warn "the voice server exited during startup"
     [ -f "$REPO/server/logs/mia.out" ] && tail -n 20 "$REPO/server/logs/mia.out" | sed 's/^/    /'
-    die "fix the error above, then retry: ./start.sh --no-start" 2
+    die "fix the error above, then retry: ./start-mia.sh --no-start" 2
   fi
   sleep 2
 done
@@ -184,7 +184,7 @@ if [ "$READY" != 1 ]; then
     printf '\n    --- last log lines ---\n'
     tail -n 20 "$REPO/server/logs/mia.out" | sed 's/^/    /'
   fi
-  die "fix the error above, then retry: ./start.sh --no-start" 2
+  die "fix the error above, then retry: ./start-mia.sh --no-start" 2
 fi
 info "voice server is up"
 

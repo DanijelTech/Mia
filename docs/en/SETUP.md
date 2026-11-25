@@ -20,12 +20,16 @@ and opens `https://<lan-ip>/hud/?token=…` in the default browser (the HUD turn
 that parameter into a cookie and removes it from the address bar). Later:
 
 ```bash
-./start.sh              # start (if needed), wait, open the HUD
-./stop.sh               # stop the server and the TTS service (removes nothing)
-./stop.sh --status      # what is running, which ports are held
-./stop.sh --restart     # stop, start again, open
-./stop.sh --free-ports  # last resort: kill whatever holds the port
+./start-mia.sh              # start (if needed), wait, open the HUD
+./stop-mia.sh               # stop the server and the TTS service (removes nothing)
+./stop-mia.sh --status      # what is running, which ports are held
+./stop-mia.sh --restart     # stop, start again, open
+./stop-mia.sh --free-ports  # last resort: kill whatever holds the port
 ```
+
+> These scripts used to be `./start.sh` and `./stop.sh`; they are now
+> **`./start-mia.sh`** and **`./stop-mia.sh`** so they cannot collide with other
+> systems that use `start`/`stop`. Update aliases and cron entries.
 
 It installs the Python packages (retrying with `--break-system-packages` when the
 distro marks Python as externally managed), downloads the Slovenian voice,

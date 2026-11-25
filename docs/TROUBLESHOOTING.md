@@ -104,12 +104,12 @@ premagajo shem orodij; vtičnik jih.
 uporabi surov IP (in ga dodaj v `security.extra_origin_hosts` v `server.yaml`,
 da preverjanje izvora WebSocketa sprejme zahtevo).
 
-**`./start.sh` javi, da se je strežnik ustavil med zagonom** — izpiše zadnjih 20
+**`./start-mia.sh` javi, da se je strežnik ustavil med zagonom** — izpiše zadnjih 20
 vrstic `server/logs/mia.out`. Najpogosteje manjkajoče odvisnosti
-(`pip install …`) ali zasedena vrata. Po odpravi: `./start.sh --no-start`.
+(`pip install …`) ali zasedena vrata. Po odpravi: `./start-mia.sh --no-start`.
 
 **Sistemske storitve se ne zaženejo (container/WSL)** — `install.sh` in
-`start.sh` zaznata, da systemd ne teče, in uporabita proces v ozadju
+`start-mia.sh` zaznata, da systemd ne teče, in uporabita proces v ozadju
 (`server/logs/mia.pid`). V takem okolju systemd enote samo napišeta, ne
 aktivirata.
 
@@ -235,7 +235,7 @@ Rešitev:
 
 ```bash
 cd ~/Mia && git pull && ./install.sh --yes     # prepiše enoto brez capabilities
-systemctl --user restart mia-voice && ./start.sh
+systemctl --user restart mia-voice && ./start-mia.sh
 ```
 
 **V dnevniku je `PermissionError` ali `SystemExit(1)` pri vratih 443** — tečeš
@@ -258,4 +258,4 @@ okolju ali Mio zaženi v venv-u (namestitvenik tega ne počne, ker si želel bre
 
 **Žeton se je znašel v zgodovini brskalnika** — `?token=` se po prijavi odstrani
 iz naslova, a ostane v zgodovini. Če te to moti, uporabi
-`./start.sh --no-token-in-url` in žeton vpiši ročno.
+`./start-mia.sh --no-token-in-url` in žeton vpiši ročno.

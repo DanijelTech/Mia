@@ -68,7 +68,7 @@ tts:
     format: wav              # wav | raw (raw needs sample_rate)
     timeout: 120
     name: gepard
-    engine: gepard           # gepard | maya1 — what start.sh launches
+    engine: gepard           # gepard | maya1 — what start-mia.sh launches
     # Extra arguments for the TTS service (passed to gepard_tts.py).
     # Female, gentle Slovenian voice with Maya1:
     #   args: ["--maya-voice", "zenski-nezni"]

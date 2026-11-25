@@ -95,12 +95,12 @@ Različice:
 Pozneje kadar koli zaženi/odpri znova:
 
 ```bash
-./start.sh                # zaženi (če je treba), počakaj, odpri HUD
-./start.sh --no-open      # samo zaženi in izpiši URL + žeton
-./stop.sh                 # ustavi glasovni strežnik (in TTS storitev)
-./stop.sh --status        # kaj teče, katera vrata so zasedena
-./stop.sh --restart       # ustavi in znova zaženi + odpri
-./stop.sh --free-ports    # če vrata ostanejo zasedena, ubij lastnika
+./start-mia.sh                # zaženi (če je treba), počakaj, odpri HUD
+./start-mia.sh --no-open      # samo zaženi in izpiši URL + žeton
+./stop-mia.sh                 # ustavi glasovni strežnik (in TTS storitev)
+./stop-mia.sh --status        # kaj teče, katera vrata so zasedena
+./stop-mia.sh --restart       # ustavi in znova zaženi + odpri
+./stop-mia.sh --free-ports    # če vrata ostanejo zasedena, ubij lastnika
 ./update.sh               # potegni novo izdajo z GitHuba in osveži storitev
 ./update.sh --check       # samo pokaži, kaj je novega
 ```
@@ -192,14 +192,14 @@ server/hud/      HUD v eni datoteki (vanilla JS, brez gradnje)
 server/tts.py    lokalni TTS pogoni: piper, http (Gepard/Maya1), command, elevenlabs
 server/scripts/  mia-start/stop/health/smoke + generatorji certifikatov in boot zvoka
 client/          opcijski Windows/Linux odjemalec za pritisk na tipko (z zaznavo budnice)
-worker/          opcijska GPU sidecarja: STT strežnik z velikim modelom + statistika za panel Stroji
+worker/          opcijska GPU sidecarja: STT strežnik z velikim modelom + statistika
 hermes-plugin/   Hermes vtičnik: agent lahko prikliče/skrije medijske panele na HUD-u
-launchd/         predloge za samodejni zagon na macOS (s pripombami o TCC in FD limitih)
+launchd/         predloge za samodejni zagon na macOS (pripombe o TCC in FD limitih)
 docs/            slovenska dokumentacija: SETUP, ARCHITECTURE, TROUBLESHOOTING
 docs/en/         ista dokumentacija v angleščini
 install.sh       namestitev (brez venv, root ali uporabnik) + manifest
-start.sh         zagon, čakanje na strežnik in odpiranje HUD-a v brskalniku
-stop.sh          ustavljanje (systemd/launchd/ozadje), status, --restart, --free-ports
+start-mia.sh     zagon, čakanje na strežnik, odpiranje HUD-a v brskalniku
+stop-mia.sh      ustavljanje (systemd/launchd/ozadje), status, --restart, --free-ports
 update.sh        git pull --ff-only + restart storitve + opozorilo za Ctrl+Shift+R
 uninstall.sh     natančna odstranitev vsega, kar je namestil install.sh
 build-package.sh arhiv za namestitev na stroju brez interneta
@@ -210,7 +210,7 @@ build-package.sh arhiv za namestitev na stroju brez interneta
 - Hermesov API ključ nikoli ne doseže brskalnika: HUD komunicira prek strogo
   omejenega proxyja na glasovnem strežniku.
 - Vse HUD končne točke + proxy do plošče + brskalniški WebSocketi so zaščiteni z
-  žetonom (piškotek, vnesen enkrat na napravo; `start.sh` ga lahko vnese
+  žetonom (piškotek, vnesen enkrat na napravo; `start-mia.sh` ga lahko vnese
   samodejno prek `?token=`).
 - Hermesov API in plošča poslušata samo na loopbacku.
 - Nizi, ki izgledajo kot skrivnosti, se prekrijejo, preden gredo v oblačni TTS.

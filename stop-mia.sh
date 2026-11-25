@@ -2,11 +2,11 @@
 # Stop Mia — the voice server and (if running) the TTS service.
 # Nothing is removed: config, voices, certificates and the token stay in place.
 #
-#   ./stop.sh                # graceful stop (systemd unit, launchd agent or background pid)
-#   ./stop.sh --status       # only show what is running
-#   ./stop.sh --restart      # stop, then ./start.sh
-#   ./stop.sh --free-ports   # also kill whatever still holds Mia's ports
-#   ./stop.sh --wait 20      # seconds to wait for a graceful exit (default 10)
+#   ./stop-mia.sh                # graceful stop (systemd unit, launchd agent or background pid)
+#   ./stop-mia.sh --status       # only show what is running
+#   ./stop-mia.sh --restart      # stop, then ./start-mia.sh
+#   ./stop-mia.sh --free-ports   # also kill whatever still holds Mia's ports
+#   ./stop-mia.sh --wait 20      # seconds to wait for a graceful exit (default 10)
 #
 # Exit codes: 0 stopped or was not running · 2 something is still running
 set -uo pipefail
@@ -190,7 +190,7 @@ if [ "$HAVE_SYSTEMD" = 1 ]; then
         info "systemd: $unit stopped"
         STOPPED=1
       else
-        warn "systemd: could not stop $unit (need 'sudo ./stop.sh' for a system unit?)"
+        warn "systemd: could not stop $unit (need 'sudo ./stop-mia.sh' for a system unit?)"
       fi
     fi
   done
@@ -199,7 +199,7 @@ elif [ "$IS_MAC" = 0 ] && [ -n "$(unit_path mia-voice 2>/dev/null)" ]; then
   warn "a systemd unit is installed but systemd is not running here — falling back to pidfiles"
 fi
 
-# 3) background processes started by start.sh
+# 3) background processes started by start-mia.sh
 for pidfile in "$LOGDIR/mia-tts.pid" "$LOGDIR/mia.pid"; do
   [ -f "$pidfile" ] || continue
   pid="$(cat "$pidfile" 2>/dev/null)"
@@ -243,7 +243,7 @@ fi
 
 if [ "$DO_RESTART" = 1 ]; then
   say "Restarting"
-  exec "$REPO/start.sh"
+  exec "$REPO/start-mia.sh"
 fi
 
 if [ -n "$STILL" ]; then
@@ -258,5 +258,5 @@ else
   say "Mia was not running"
 fi
 info "config, voices, certificates and the token were left untouched"
-info "start again with: ./start.sh"
+info "start again with: ./start-mia.sh"
 exit 0
