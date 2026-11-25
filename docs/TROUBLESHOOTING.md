@@ -171,7 +171,35 @@ cd ~/Mia && git pull && systemctl --user restart mia-voice
 `https://<lan-ip>:8766/hud/?token=$(grep '^MIA_HUD_TOKEN=' ~/.hermes/.env | cut -d= -f2)`.
 
 **V dnevniku gatewaya je `GET /v1/skills failed … TypeError: find_all_skills() got
-an unexpected keyword argument 'include_editorial'`** — to ni Mia: njen proxy samo
+an unexpected keyword argument 'include_editorial'`** — to je **napaka v samem
+Hermesu** (izdaja v0.23.4 / tag v2026.9.24, enako tudi na `main`):
+`gateway/platforms/api_server.py` kliče `find_all_skills(…, include_editorial=True)`,
+`tools/skills_tool.py` pa sprejema samo `skip_disabled`. Zato `/v1/skills` vrne 500
+in HUD v panelu VEŠČINE pokaže `—`. Glas in klepet delujeta naprej.
+
+Začasni lokalni popravek (ena vrstica, z varnostno kopijo):
+
+```bash
+cd /mnt/models/hermes-home/hermes-agent-src
+cp tools/skills_tool.py tools/skills_tool.py.bak.$(date +%Y%m%d-%H%M%S)
+python3 - <<'PY'
+import pathlib
+p = pathlib.Path("tools/skills_tool.py")
+s = p.read_text()
+old = "def find_all_skills(*, skip_disabled: bool = False)"
+new = "def find_all_skills(*, skip_disabled: bool = False, include_editorial: bool = False)"
+if old not in s:
+    print("vzorec ni najden — morda je že popravljeno"); raise SystemExit(1)
+p.write_text(s.replace(old, new, 1)); print("popravljeno:", p)
+PY
+hermes gateway restart
+sleep 10
+curl -s -H "Authorization: Bearer $(grep '^API_SERVER_KEY=' /home/user/.hermes/.env | cut -d= -f2-)" "http://127.0.0.1:8642/v1/skills" | head -c 200
+```
+
+Popravek bo ob naslednji posodobitvi Hermesa prepisan — takrat preveri, ali je
+napaka že odpravljena zgoraj, in ga po potrebi ponovi. Stari opis (checkout proti
+runtime) velja le, če se sporočilo razlikuje od tega:` — to ni Mia: njen proxy samo
 posreduje klic. Hermes teče iz **izvorne kode** (`…/hermes-agent-src`), uvožena
 knjižnica `agent`/`skills` pa je iz nameščenega paketa druge različice. Reši tako,
 da oba dela prideta iz istega drevesa:

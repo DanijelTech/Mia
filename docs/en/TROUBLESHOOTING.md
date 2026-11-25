@@ -63,7 +63,35 @@ If 4401 persists, the token does not match — open
 `https://<lan-ip>:8766/hud/?token=$(grep '^MIA_HUD_TOKEN=' ~/.hermes/.env | cut -d= -f2)`.
 
 **Gateway log shows `GET /v1/skills failed … TypeError: find_all_skills() got an
-unexpected keyword argument 'include_editorial'`** — this is not Mia: its proxy
+unexpected keyword argument 'include_editorial'`** — this is a **bug in Hermes
+itself** (release v0.23.4 / tag v2026.9.24, and still on `main`):
+`gateway/platforms/api_server.py` calls `find_all_skills(…, include_editorial=True)`
+while `tools/skills_tool.py` only accepts `skip_disabled`. So `/v1/skills` returns
+500 and the HUD SKILLS panel shows `—`. Voice and chat keep working.
+
+Minimal local patch (one line, with a backup):
+
+```bash
+cd /mnt/models/hermes-home/hermes-agent-src
+cp tools/skills_tool.py tools/skills_tool.py.bak.$(date +%Y%m%d-%H%M%S)
+python3 - <<'PY'
+import pathlib
+p = pathlib.Path("tools/skills_tool.py")
+s = p.read_text()
+old = "def find_all_skills(*, skip_disabled: bool = False)"
+new = "def find_all_skills(*, skip_disabled: bool = False, include_editorial: bool = False)"
+if old not in s:
+    print("pattern not found — already patched?"); raise SystemExit(1)
+p.write_text(s.replace(old, new, 1)); print("patched:", p)
+PY
+hermes gateway restart
+sleep 10
+curl -s -H "Authorization: Bearer $(grep '^API_SERVER_KEY=' /home/user/.hermes/.env | cut -d= -f2-)" "http://127.0.0.1:8642/v1/skills" | head -c 200
+```
+
+A Hermes update will overwrite the patch — re-check whether upstream fixed it and
+re-apply if needed. The older description (checkout vs runtime) only applies if
+your error text differs from this one:` — this is not Mia: its proxy
 just forwards the call. Hermes runs from a **source checkout**
 (`…/hermes-agent-src`) while the imported `agent`/`skills` library comes from a
 different installed version. Make both come from the same tree:
