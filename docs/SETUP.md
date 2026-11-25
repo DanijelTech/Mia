@@ -6,10 +6,17 @@
 system Python (no virtualenv) — the same way a root Hermes install runs:
 
 ```bash
+git clone https://github.com/DanijelTech/Mia.git && cd Mia
 sudo ./install.sh --dry-run          # 1. see exactly what will happen
-sudo ./install.sh                    # 2. do it
+sudo ./install.sh --yes --open       # 2. install, start and open the HUD
 sudo ./install.sh --with-gepard      #    ...plus the Gepard TTS service
+sudo ./install.sh --with-maya1       #    ...or Maya1 (best pronunciation)
 ```
+
+`--open` waits for the voice server, prints the LAN URL and the access token,
+and opens `https://<lan-ip>/hud/?token=…` in the default browser (the HUD turns
+that parameter into a cookie and removes it from the address bar). Later runs:
+`./start.sh` (or `./start.sh --no-open` to just start and print the URL).
 
 It installs the Python packages (retrying with `--break-system-packages` when the
 distro marks Python as externally managed), downloads the Slovenian voice,

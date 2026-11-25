@@ -70,6 +70,36 @@ One brain, many faces: voice and typed chat share a single persistent Hermes
 session, so each knows what you said to the other — and memory survives every
 restart.
 
+## Quick start (one command)
+
+```bash
+git clone https://github.com/DanijelTech/Mia.git && cd Mia && sudo ./install.sh --yes --open
+```
+
+That single line clones the repo, installs the Python packages into the system
+interpreter (no virtualenv), downloads the Slovenian voice, generates the TLS
+certificate, adds `MIA_HUD_TOKEN` to `~/.hermes/.env`, writes and starts the
+systemd unit, then opens the HUD in your browser **already logged in**
+(`?token=` is converted to a cookie and stripped from the URL).
+
+Without root, drop `sudo` — it installs into `pip --user` and `systemctl --user`.
+Variants:
+
+```bash
+sudo ./install.sh --yes --open --with-maya1   # best Slovenian pronunciation
+sudo ./install.sh --yes --open --with-gepard  # lighter GPU voice
+./install.sh --dry-run                        # see everything first
+```
+
+Afterwards, start/open again at any time with:
+
+```bash
+./start.sh                # start (if needed), wait, open the HUD
+./start.sh --no-open      # just start and print URL + token
+```
+
+The certificate is self-signed, so the browser asks once — accept it.
+
 ## Requirements
 
 - A machine for the server (tested: Mac mini, Apple Silicon). Linux should

@@ -743,7 +743,8 @@ def _request_authed(request: Request) -> bool:
     token = hud_token()
     if not token:
         return True
-    return _supplied_token(request) == token
+    # ?token= lets `start.sh` open the HUD already logged in (HUD converts it to a cookie)
+    return _supplied_token(request) == token or request.query_params.get("token") == token
 
 
 @app.middleware("http")

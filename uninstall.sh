@@ -134,13 +134,17 @@ if [ -s "$TMP/svc" ]; then
       run launchctl bootout "gui/$(id -u)/$svc" 2>/dev/null || true
     done < "$TMP/svc"
   else
-    if [ "$(id -u)" = "0" ]; then SCTL=(systemctl); else SCTL=(systemctl --user); fi
+    if [ -d /run/systemd/system ]; then
+      if [ "$(id -u)" = "0" ]; then SCTL=(systemctl); else SCTL=(systemctl --user); fi
+    else
+      SCTL=()   # no systemd manager: units are just files here
+    fi
     while IFS= read -r svc; do
       [ -n "$svc" ] || continue
       info "stopping and disabling $svc"
-      run "${SCTL[@]}" disable --now "$svc" 2>/dev/null || true
+      [ ${#SCTL[@]} -gt 0 ] && run timeout 20 "${SCTL[@]}" disable --now "$svc" 2>/dev/null || true
     done < "$TMP/svc"
-    run "${SCTL[@]}" daemon-reload 2>/dev/null || true
+    [ ${#SCTL[@]} -gt 0 ] && run timeout 20 "${SCTL[@]}" daemon-reload 2>/dev/null || true
   fi
   info "$SVC_COUNT service(s) handled"
 else
@@ -150,7 +154,7 @@ else
   for svc in mia-voice mia-tts; do
     $SYSTEMCTL is-enabled "$svc" >/dev/null 2>&1 && {
       info "stopping leftover $svc"
-      run "${SCTL[@]}" disable --now "$svc" 2>/dev/null || true
+      [ ${#SCTL[@]} -gt 0 ] && run timeout 20 "${SCTL[@]}" disable --now "$svc" 2>/dev/null || true
     }
   done
 fi

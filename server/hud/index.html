@@ -825,6 +825,14 @@ function dismissAllPanels(){document.querySelectorAll(".holo").forEach(dismissPa
 window.summonPanel=summonPanel; window.dismissAllPanels=dismissAllPanels;
 
 /* ============================== auth gate ========================== */
+/* one-click login: /hud/?token=... stores the cookie and removes it from the URL */
+(()=>{
+  const p=new URLSearchParams(location.search).get("token");
+  if(!p)return;
+  document.cookie=`mia_token=${encodeURIComponent(p)}; path=/; max-age=31536000; secure; samesite=lax`;
+  const clean=new URL(location.href); clean.searchParams.delete("token");
+  history.replaceState({}, "", clean.pathname+(clean.search||"")+(clean.hash||""));
+})();
 async function checkAuth(){
   try{
     const r=await fetch("/api/usage");

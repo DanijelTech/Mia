@@ -10,6 +10,7 @@
 #   ./install.sh --with-gepard        # also install the Gepard TTS service
 #   ./install.sh --with-maya1         # ...or the Maya1 TTS service (better SL)
 #   ./install.sh --dry-run            # show every action, change nothing
+#   ./install.sh --yes --open         # install, start and open the HUD
 #
 # Common options:
 #   --yes                 no prompts
@@ -26,6 +27,7 @@
 #   --no-service          do not install/enable a service
 #   --no-start            install the unit but do not start it
 #   --no-token            do not touch ~/.hermes/.env
+#   --open                start Mia (if needed) and open the HUD in the browser
 #   --service-dir DIR     where unit/plist files go (default: system-dependent)
 #   --hermes-env PATH     env file for the HUD token (default: ~/.hermes/.env)
 #
@@ -47,6 +49,7 @@ DO_CERT=1
 DO_SERVICE=1
 DO_START=1
 DO_TOKEN=1
+DO_OPEN=0
 ASSUME_YES=0
 DRY_RUN=0
 SERVICE_DIR=""
@@ -70,6 +73,7 @@ while [ $# -gt 0 ]; do
     --no-service) DO_SERVICE=0 ;;
     --no-start) DO_START=0 ;;
     --no-token) DO_TOKEN=0 ;;
+    --open) DO_OPEN=1 ;;
     --service-dir) SERVICE_DIR="${2:-}"; shift ;;
     --hermes-env) HERMES_ENV="${2:-}"; shift ;;
     --port-tts) PORT_TTS="${2:-}"; shift ;;
@@ -407,9 +411,15 @@ UNIT
     if [ "$TTS_ENGINE" != "none" ] && [ "$TTS_ENGINE" != "piper" ]; then
       unit tts "scripts/gepard_tts.py" "--serve --port $PORT_TTS --engine $TTS_ENGINE --fallback-piper"
     fi
-    run "${SCTL[@]}" daemon-reload 2>/dev/null || warn "systemctl not available here (unit written, not activated)"
-    if [ "$DO_START" = 1 ]; then
-      for s in $(cat "$TMP_MF/svc"); do run "${SCTL[@]}" enable --now "$s"; done
+    if [ ! -d /run/systemd/system ]; then
+      warn "systemd is not running here — unit written to $SERVICE_DIR, not activated"
+    else
+      run timeout 20 "${SCTL[@]}" daemon-reload 2>/dev/null || warn "daemon-reload failed"
+      if [ "$DO_START" = 1 ]; then
+        for s in $(cat "$TMP_MF/svc"); do
+          run timeout 30 "${SCTL[@]}" enable --now "$s" || warn "could not start $s"
+        done
+      fi
     fi
   else
     printf '    [dry-run] would write units to %s for: mia-voice%s\n' "$SERVICE_DIR" \
@@ -455,3 +465,7 @@ Next steps
 
 Remove everything again:  ./uninstall.sh --dry-run   then   ./uninstall.sh
 DONE
+
+if [ "$DO_OPEN" = 1 ] && [ "$DRY_RUN" = 0 ] && [ -x "$REPO_DIR/start.sh" ]; then
+  exec "$REPO_DIR/start.sh"
+fi

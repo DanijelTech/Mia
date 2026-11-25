@@ -62,6 +62,7 @@ tts:
     format: wav              # wav | raw (raw needs sample_rate)
     timeout: 120
     name: gepard
+    engine: gepard           # gepard | maya1 — what start.sh launches
   # Any other local TTS, loaded per sentence: text on stdin, WAV/PCM on stdout.
   command:
     argv: ["python3", "scripts/gepard_tts.py", "--stdio", "--engine", "gepard"]
