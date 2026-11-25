@@ -73,6 +73,33 @@ Verify: `curl -s localhost:8765/api/hud-config` returns
 `"tts_provider": "piper"` and `"allow_external_media": false`, and
 `/api/usage` returns `"elevenlabs": null` (no outbound request).
 
+### Upgrading an existing install (jarvis_ai → Mia)
+
+Everything user-visible is renamed, but the old names keep working so you can
+migrate at your own pace:
+
+| Old | New | Compatibility |
+|---|---|---|
+| `JARVIS_HUD_TOKEN`, `JARVIS_STT_*`, `JARVIS_SUMMON_URL`, `JARVIS_WORKER_NAME` | `MIA_*` | old env vars are still read when the new one is unset |
+| cookie `jarvis_token`, header `X-Jarvis-Token` | `mia_token`, `X-Mia-Token` | both accepted on input |
+| `jarvis.local`, `jarvis` | `mia.local`, `mia` | both allowed as HUD origins |
+| `scripts/jarvis-*.sh` | `scripts/mia-*.sh` | old names removed — update your aliases/cron |
+| `com.jarvis.voice`, `com.jarvis.dashboard` | `com.mia.voice`, `com.mia.dashboard` | old LaunchAgents keep running until you swap them |
+| `hud/jarvis.cer` | `hud/mia.cer` | phones must install the new profile (old cert still trusted) |
+
+Two changes are not cosmetic:
+
+- **`hermes.session_key`** went from `jarvis:user:main` to `mia:user:main`.
+  That starts a fresh long-term memory scope. To keep the old memories, set
+  `session_key: jarvis:user:main` back in `config/server.yaml`.
+- **launchd** needs a swap on macOS:
+  ```bash
+  launchctl bootout gui/$(id -u)/com.jarvis.voice 2>/dev/null
+  launchctl bootout gui/$(id -u)/com.jarvis.dashboard 2>/dev/null
+  cp launchd/com.mia.*.plist ~/Library/LaunchAgents/
+  scripts/mia-start.sh
+  ```
+
 ## 3. The voice pipeline server (this repo)
 
 ```bash
@@ -102,17 +129,17 @@ scripts/make-certs.sh            # auto-detects your LAN IP for the SAN
 
 Trust `certs/cert.pem` on each device (macOS: Keychain; Windows:
 `certutil -user -addstore Root cert.pem`; iPhone: download
-`https://host:8765/hud/jarvis.cer`, install profile, then enable in
+`https://host:8765/hud/mia.cer`, install profile, then enable in
 Settings → General → About → Certificate Trust Settings).
 
 Optional but nice: rename your host's mDNS name (`sudo scutil --set
-LocalHostName jarvis` on macOS) so the HUD lives at `https://jarvis.local/hud/`.
+LocalHostName mia` on macOS) so the HUD lives at `https://mia.local/hud/`.
 Port 443 needs the wildcard bind already set in the example config.
 
 ### HUD access token
 
 ```bash
-echo "JARVIS_HUD_TOKEN=jarvis-$(python3 -c 'import secrets;print(secrets.token_hex(3))')" >> ~/.hermes/.env
+echo "MIA_HUD_TOKEN=mia-$(python3 -c 'import secrets;print(secrets.token_hex(3))')" >> ~/.hermes/.env
 ```
 
 The HUD asks for this once per device. Omit the variable entirely to disable
@@ -133,7 +160,7 @@ Uses the same local Piper voice — no cloud characters spent.
 ```
 
 Wait ~40 s for the STT model to warm, then open `https://YOUR_HOST/hud/`.
-Run `scripts/jarvis-health.sh` to check all five services.
+Run `scripts/mia-health.sh` to check all five services.
 
 ## 4. Auto-start on boot (macOS)
 
@@ -141,13 +168,13 @@ Copy the two plists from `launchd/`, edit the `/PATH/TO` and `YOUR_USER`
 placeholders, then:
 
 ```bash
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jarvis.voice.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jarvis.dashboard.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mia.voice.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mia.dashboard.plist
 ```
 
 **Read the comments in the plists** — there are two macOS traps (external-drive
 TCC permissions and log-path location) that produce silent hangs or `EX_CONFIG`
-errors if ignored. Day-to-day management: `scripts/jarvis-{start,stop,restart,health}.sh`.
+errors if ignored. Day-to-day management: `scripts/mia-{start,stop,restart,health}.sh`.
 
 ## 5. Optional extras
 
@@ -170,7 +197,7 @@ NVIDIA machine on the LAN. On that machine:
 cd worker
 python -m venv .venv
 .venv/Scripts/pip install faster-whisper fastapi uvicorn nvidia-cublas-cu12 nvidia-cudnn-cu12
-copy run-stt.example.bat run-stt.bat    # fill in your JARVIS_HUD_TOKEN value
+copy run-stt.example.bat run-stt.bat    # fill in your MIA_HUD_TOKEN value
 run-stt.bat
 ```
 
@@ -178,7 +205,7 @@ Then uncomment the `stt.remote:` block in the server's `server.yaml` (point
 `url` at the GPU machine) and restart the voice server. Result: `large-v3-turbo`
 accuracy at ~0.2 s per utterance, with automatic fallback to the local model
 whenever the GPU machine is off. For auto-start at Windows logon, drop a
-`JarvisSTT.vbs` in `shell:startup` (template in the .bat comments).
+`MiaSTT.vbs` in `shell:startup` (template in the .bat comments).
 
 **Phone app feel**: open the HUD in Safari/Chrome on your phone →
 Share → Add to Home Screen.
@@ -194,7 +221,7 @@ hermes plugins enable hud_display     # repeat with -p <profile> if you use prof
 # restart your hermes gateway
 ```
 
-The plugin needs `JARVIS_HUD_TOKEN` in `~/.hermes/.env` (same token as the
+The plugin needs `MIA_HUD_TOKEN` in `~/.hermes/.env` (same token as the
 HUD). Directory name must stay a valid Python module name — hyphens silently
 break plugin discovery. The agent then has `hud_display` / `hud_dismiss`
 tools; YouTube links play as embedded video, `position` left/right lets it
@@ -203,8 +230,8 @@ fly in multiple panels from different vectors.
 ## 6. Verify everything
 
 ```bash
-scripts/jarvis-health.sh   # all five rows OK
-scripts/jarvis-smoke.sh    # synthesized voice turn through the full stack (macOS)
+scripts/mia-health.sh   # all five rows OK
+scripts/mia-smoke.sh    # synthesized voice turn through the full stack (macOS)
 ```
 
 Then the real test: click the ring and ask "what's in your memory file?" —

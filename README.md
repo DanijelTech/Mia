@@ -1,4 +1,4 @@
-# J.A.R.V.I.S — Voice + HUD for Hermes Agent
+# MIA — Voice + HUD for Hermes Agent
 
 A self-hosted, Iron-Man-style voice assistant and command center built on top of
 [Hermes Agent](https://github.com/NousResearch/hermes-agent) (NousResearch's
@@ -6,15 +6,16 @@ open-source autonomous agent). Talk to a *real* agent — one with persistent
 memory, terminal access, web search, file tools, and 80+ skills — through a
 glowing arc-reactor HUD in any browser on your LAN, or a push-to-talk client.
 
-**Everything runs on your own hardware.** The only cloud calls are your LLM
-provider (via Hermes) and ElevenLabs for the voice. Speech-to-text is fully
-local (Whisper on CPU).
+**Everything runs on your own hardware.** By default nothing leaves the
+machine: Whisper for speech-to-text, a local Piper voice for speech, and your
+own model behind Hermes. Cloud LLMs and ElevenLabs remain optional — the
+offline setup needs no API keys at all.
 
 ## Demo
 
-[![Watch the J.A.R.V.I.S demo](https://img.youtube.com/vi/YNI9pm3h6x8/hqdefault.jpg)](https://youtu.be/YNI9pm3h6x8)
-
-▶ **[Watch the demo on YouTube](https://youtu.be/YNI9pm3h6x8)** — live transcription, agent tool calls, holographic media panels, and the cinematic boot, all in real time.
+The original upstream project ([eadmin2/jarvis_ai](https://github.com/eadmin2/jarvis_ai))
+has a demo video; this fork runs with a local voice engine and a Slovenian UI,
+so its look and sound differ.
 
 ## What it does
 
@@ -49,7 +50,7 @@ The HUD around the ring is a real control center:
   the included sidecar and transcription jumps to `large-v3-turbo` at ~0.2 s,
   with automatic fallback to local Whisper when that machine is off
 - **Mobile-ready** — responsive layout + Add to Home Screen = full-screen
-  Jarvis app on your phone
+  Mia app on your phone
 
 ## Architecture
 
@@ -89,14 +90,14 @@ Full walkthrough in [docs/SETUP.md](docs/SETUP.md). Short version:
 cat >> ~/.hermes/.env <<EOF
 API_SERVER_ENABLED=true
 API_SERVER_KEY=$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')
-JARVIS_HUD_TOKEN=$(python3 -c 'import secrets;print("jarvis-"+secrets.token_hex(3))')
+MIA_HUD_TOKEN=$(python3 -c 'import secrets;print("mia-"+secrets.token_hex(3))')
 ELEVENLABS_API_KEY=your-key-here
 EOF
 hermes gateway   # or set up its LaunchAgent / service
 
 # 2. This repo
-git clone https://github.com/YOURNAME/jarvis-hermes-hud
-cd jarvis-hermes-hud/server
+git clone https://github.com/YOURNAME/mia-hermes-hud
+cd mia-hermes-hud/server
 python3 -m venv .venv
 .venv/bin/pip install fastapi uvicorn requests pyyaml numpy anthropic \
     RealtimeSTT faster-whisper silero-vad websockets psutil
@@ -110,7 +111,7 @@ scripts/get-voice.sh sl
 
 # 4. Run
 .venv/bin/python server.py
-# open https://YOUR_HOST/hud/ → accept cert → enter your JARVIS_HUD_TOKEN → talk
+# open https://YOUR_HOST/hud/ → accept cert → enter your MIA_HUD_TOKEN → talk
 ```
 
 Offline voice stack (Piper + local Whisper + local LLM, no cloud calls) is
@@ -164,4 +165,7 @@ STT by [faster-whisper](https://github.com/SYSTRAN/faster-whisper) /
 [RealtimeSTT](https://github.com/KoljaB/RealtimeSTT). Voice by
 [ElevenLabs](https://elevenlabs.io).
 
-MIT — see [LICENSE](LICENSE). Use it, fork it, build your own Jarvis.
+Originally derived from [eadmin2/jarvis_ai](https://github.com/eadmin2/jarvis_ai)
+(MIT, © Chris Lassiter); rebranded and extended for local Slovenian/Serbian voice.
+
+MIT — see [LICENSE](LICENSE). Use it, fork it, build your own Mia.

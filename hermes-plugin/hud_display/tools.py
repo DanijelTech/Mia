@@ -1,17 +1,21 @@
-"""Handlers: POST to the Jarvis voice server's /api/summon broadcast."""
+"""Handlers: POST to the Mia voice server's /api/summon broadcast."""
 import json
 import os
 import urllib.request
 
 # Plain-HTTP loopback port of the voice server (no TLS dance needed locally).
-SUMMON_URL = os.environ.get("JARVIS_SUMMON_URL", "http://127.0.0.1:8765/api/summon")
+SUMMON_URL = (os.environ.get("MIA_SUMMON_URL")
+              or os.environ.get("JARVIS_SUMMON_URL")   # pre-rebrand installs
+              or "http://127.0.0.1:8765/api/summon")
 
 
 def _post(payload: dict) -> str:
-    token = os.environ.get("JARVIS_HUD_TOKEN", "")
+    token = (os.environ.get("MIA_HUD_TOKEN")
+             or os.environ.get("JARVIS_HUD_TOKEN")       # pre-rebrand installs
+             or "")
     req = urllib.request.Request(
         SUMMON_URL, data=json.dumps(payload).encode(), method="POST",
-        headers={"Content-Type": "application/json", "X-Jarvis-Token": token},
+        headers={"Content-Type": "application/json", "X-Mia-Token": token},
     )
     try:
         with urllib.request.urlopen(req, timeout=8) as r:

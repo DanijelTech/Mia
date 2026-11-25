@@ -35,7 +35,10 @@ DTYPE = "int16"
 CHUNK_MS = 80
 CHUNK_FRAMES = int(SAMPLE_RATE * CHUNK_MS / 1000)
 DEFAULT_SERVER = "ws://YOUR_SERVER_IP:8765/ws"
-DEFAULT_WAKE_WORD = "hey_jarvis"
+# openWakeWord ships no "hey mia" model — "hey_jarvis" is the closest stock one.
+# Set MIA_WAKE_WORD (or --wake-word) to any model your install has, or train a
+# custom .onnx. Push-to-talk (--push-to-talk) needs no wake word at all.
+DEFAULT_WAKE_WORD = os.environ.get("MIA_WAKE_WORD") or "hey_jarvis"
 
 
 @dataclass

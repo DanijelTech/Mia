@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Jarvis GPU STT server — run on any machine with an NVIDIA GPU.
+"""Mia GPU STT server — run on any machine with an NVIDIA GPU.
 
 Gives the voice pipeline big-model transcription (~0.2s for a sentence on a
 modern GPU) while the host machine keeps a small local model as fallback.
@@ -7,14 +7,14 @@ modern GPU) while the host machine keeps a small local model as fallback.
 Setup (Windows or Linux, NVIDIA driver installed):
     python -m venv .venv
     .venv/Scripts/pip install faster-whisper fastapi uvicorn nvidia-cublas-cu12 nvidia-cudnn-cu12
-    set JARVIS_STT_TOKEN=<same value as JARVIS_HUD_TOKEN on the server>
-    set JARVIS_STT_LANGUAGE=sl        (optional; "" = auto-detect)
+    set MIA_STT_TOKEN=<same value as MIA_HUD_TOKEN on the server>
+    set MIA_STT_LANGUAGE=sl        (optional; "" = auto-detect)
     .venv/Scripts/python stt_server.py
 
 Then point the voice server's `stt.remote.url` at http://this-machine:8768/stt
 
 API:
-    POST /stt    body: raw int16 16 kHz mono PCM, header X-Jarvis-Token
+    POST /stt    body: raw int16 16 kHz mono PCM, header X-Mia-Token
                  -> {"text": "..."}
     GET  /health -> {"status":"ok", ...}
 """
@@ -37,18 +37,23 @@ import uvicorn
 from fastapi import FastAPI, Request, Response
 from faster_whisper import WhisperModel
 
-MODEL_NAME = os.environ.get("JARVIS_STT_MODEL", "large-v3-turbo")
-TOKEN = os.environ.get("JARVIS_STT_TOKEN", "")
-PORT = int(os.environ.get("JARVIS_STT_PORT", "8768"))
-LANGUAGE = os.environ.get("JARVIS_STT_LANGUAGE", "")      # "" = auto-detect; "sl", "sr", "en" ...
-INITIAL_PROMPT = os.environ.get("JARVIS_STT_INITIAL_PROMPT", "")
+def _env(name: str, default: str = "") -> str:
+    """Read MIA_* first, then the pre-rebrand JARVIS_* equivalent."""
+    return os.environ.get(name) or os.environ.get(name.replace("MIA_", "JARVIS_", 1)) or default
+
+
+MODEL_NAME = _env("MIA_STT_MODEL", "large-v3-turbo")
+TOKEN = _env("MIA_STT_TOKEN")
+PORT = int(_env("MIA_STT_PORT", "8768"))
+LANGUAGE = _env("MIA_STT_LANGUAGE")      # "" = auto-detect; "sl", "sr", "en" ...
+INITIAL_PROMPT = _env("MIA_STT_INITIAL_PROMPT")
 
 print(f"Loading {MODEL_NAME} on CUDA...", flush=True)
 t0 = time.time()
 model = WhisperModel(MODEL_NAME, device="cuda", compute_type="float16")
 print(f"Model ready in {time.time()-t0:.1f}s", flush=True)
 
-app = FastAPI(title="Jarvis GPU STT")
+app = FastAPI(title="Mia GPU STT")
 
 
 @app.get("/health")
@@ -59,7 +64,7 @@ async def health() -> dict:
 
 @app.post("/stt")
 async def stt(request: Request):
-    if TOKEN and request.headers.get("x-jarvis-token") != TOKEN:
+    if TOKEN and request.headers.get("x-mia-token") != TOKEN:
         return Response(status_code=401, content="auth required")
     body = await request.body()
     if len(body) < 3200:  # <0.1s of audio

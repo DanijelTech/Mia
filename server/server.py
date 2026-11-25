@@ -3,7 +3,7 @@
 
 WebSocket protocol (client → server):
   {"type":"start", "sample_rate":16000, "format":"pcm_s16le", "channels":1,
-   "conversation": "jarvis-main"?}          begin a turn (mid-turn = barge-in)
+   "conversation": "mia-main"?}          begin a turn (mid-turn = barge-in)
   <binary int16 16 kHz mono PCM chunks>
   {"type":"stop"}                            end of speech, process turn
   {"type":"stop_run"}                        halt the running agent turn
@@ -72,6 +72,15 @@ _USAGE_LOCK = threading.Lock()
 
 def _today() -> str:
     return time.strftime("%Y-%m-%d")
+
+
+def _env_first(*names: str) -> str:
+    """First non-empty environment value (MIA_* first, then pre-rebrand JARVIS_*)."""
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return ""
 
 
 def record_usage(llm_in: int = 0, llm_out: int = 0, turns: int = 0, tts_chars: int = 0) -> None:
@@ -373,9 +382,9 @@ class VoicePipelineServer:
     def _remote_stt(self, audio: bytes, remote: dict) -> str | None:
         """POST raw PCM to the GPU STT worker. None = unavailable (use fallback)."""
         headers = {"Content-Type": "application/octet-stream"}
-        token = os.environ.get(remote.get("token_env", "JARVIS_HUD_TOKEN"), "")
+        token = _env_first(remote.get("token_env", "MIA_HUD_TOKEN"), "JARVIS_HUD_TOKEN")
         if token:
-            headers["X-Jarvis-Token"] = token
+            headers["X-Mia-Token"] = token
         try:
             params = {}
             if self.stt_language:
@@ -679,27 +688,37 @@ _WARM_STARTED = False
 
 # ------------------------------------------------------------------ Auth
 
-ALLOWED_ORIGIN_HOSTS = {"jarvis.local", "jarvis", "localhost", "127.0.0.1"}
+# jarvis.* entries keep pre-rebrand certificate/hostname setups working
+ALLOWED_ORIGIN_HOSTS = {"mia.local", "mia", "localhost", "127.0.0.1",
+                        "jarvis.local", "jarvis"}
 ALLOWED_ORIGIN_HOSTS |= set((CFG.get("security") or {}).get("extra_origin_hosts") or [])
 
 
 def hud_token() -> str | None:
-    env_name = (CFG.get("security") or {}).get("hud_token_env", "JARVIS_HUD_TOKEN")
-    return os.environ.get(env_name) or None
+    env_name = (CFG.get("security") or {}).get("hud_token_env", "MIA_HUD_TOKEN")
+    legacy = env_name.replace("MIA_", "JARVIS_", 1) if env_name.startswith("MIA_") else ""
+    return _env_first(env_name, legacy) or None
+
+
+def _supplied_token(request: Request | WebSocket) -> str | None:
+    """Token from the new cookie/header, falling back to the pre-rebrand name."""
+    headers = request.headers
+    cookies = request.cookies
+    return (headers.get("x-mia-token") or headers.get("x-jarvis-token")
+            or cookies.get("mia_token") or cookies.get("jarvis_token"))
 
 
 def _request_authed(request: Request) -> bool:
     token = hud_token()
     if not token:
         return True
-    supplied = request.headers.get("x-jarvis-token") or request.cookies.get("jarvis_token")
-    return supplied == token
+    return _supplied_token(request) == token
 
 
 @app.middleware("http")
 async def api_auth_middleware(request: Request, call_next):
     if request.url.path.startswith("/api/") and not _request_authed(request):
-        return Response(status_code=401, content="jarvis auth required")
+        return Response(status_code=401, content="mia auth required")
     return await call_next(request)
 
 
@@ -715,7 +734,7 @@ def _ws_allowed(ws: WebSocket) -> bool:
     token = hud_token()
     if not token:
         return True
-    return ws.cookies.get("jarvis_token") == token or ws.query_params.get("token") == token
+    return (_supplied_token(ws) == token) or ws.query_params.get("token") == token
 
 
 # --------------------------------------------------------------- HUD + proxy
@@ -762,7 +781,7 @@ async def hud_chat(request: Request) -> JSONResponse:
     """Typed chat from the HUD — same Hermes session as voice."""
     body = await request.json()
     text = (body.get("input") or "").strip()
-    conversation = body.get("conversation") or (CFG.get("hermes") or {}).get("conversation", "jarvis-main")
+    conversation = body.get("conversation") or (CFG.get("hermes") or {}).get("conversation", "mia-main")
     if not text:
         return JSONResponse({"error": "empty input"}, status_code=400)
     out: dict = {"text": "", "tools": [], "run_id": None}
@@ -887,7 +906,7 @@ async def summon(request: Request) -> JSONResponse:
 
     Body: {"media": "video"|"iframe"|"image", "src": "...", "title": "...",
            "position": "center"|"left"|"right"}  or  {"action": "dismiss"}
-    Hermes can call this (curl with X-Jarvis-Token) to display media on the HUD.
+    Hermes can call this (curl with X-Mia-Token) to display media on the HUD.
     """
     body = await request.json()
     if body.get("action") == "dismiss":
@@ -1000,7 +1019,7 @@ _STRIP_HEADERS = {"x-frame-options", "content-security-policy", "content-length"
 @dash_app.middleware("http")
 async def dash_auth_middleware(request: Request, call_next):
     if not _request_authed(request):
-        return Response(status_code=401, content="jarvis auth required")
+        return Response(status_code=401, content="mia auth required")
     return await call_next(request)
 
 
@@ -1013,7 +1032,7 @@ def _dash_target() -> str:
 async def dash_ws_proxy(ws: WebSocket, path: str) -> None:
     import websockets as wslib
     token = hud_token()
-    if token and ws.cookies.get("jarvis_token") != token:
+    if token and _supplied_token(ws) != token:
         await ws.close(code=4401)
         return
     await ws.accept()
@@ -1077,7 +1096,7 @@ class ConnState:
     timing: TurnTiming | None = None
     turn_task: asyncio.Task | None = None
     current_run_id: str | None = None
-    conversation: str = "jarvis-main"
+    conversation: str = "mia-main"
     spoken_sentences: list = field(default_factory=list)
     interrupt_note: str | None = None
     partial_task: asyncio.Task | None = None
@@ -1179,7 +1198,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     await ws.accept()
     WS_CLIENTS.add(ws)
     pipeline = get_pipeline()
-    conn = ConnState(conversation=(CFG.get("hermes") or {}).get("conversation", "jarvis-main"))
+    conn = ConnState(conversation=(CFG.get("hermes") or {}).get("conversation", "mia-main"))
     await ws.send_json({"type": "status", "message": "Hermes voice server connected."})
     try:
         while True:
