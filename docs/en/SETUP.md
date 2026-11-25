@@ -396,6 +396,17 @@ fly in multiple panels from different vectors.
 
 ## 6. Verify everything
 
+**Updating to a new release:**
+
+```bash
+cd ~/Mia && ./update.sh          # git pull --ff-only + service restart
+./update.sh --check              # only show what is new
+```
+
+Your `server/config/server.yaml`, voices and certificates are gitignored and are
+not touched by an update; if the installer or the systemd unit changed,
+`update.sh` says so and suggests `./install.sh --yes`.
+
 ```bash
 scripts/mia-health.sh   # all five rows OK
 scripts/mia-smoke.sh    # synthesized voice turn through the full stack (macOS)

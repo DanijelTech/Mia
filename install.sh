@@ -616,7 +616,7 @@ Next steps
 
 $( [ "$MODE" = "user" ] && printf 'Keep it running after logout/reboot:  loginctl enable-linger %s\n\n' "$(id -un)" )
 
-Day to day:  ./start.sh   ·   ./stop.sh   ·   ./stop.sh --status
+Day to day:  ./start.sh   ·   ./stop.sh   ·   ./stop.sh --status   ·   ./update.sh
 Remove everything again:  ./uninstall.sh --dry-run   then   ./uninstall.sh
 DONE
 

@@ -102,6 +102,8 @@ Afterwards, start/open again at any time with:
 ./stop.sh --status        # what is running, which ports are held
 ./stop.sh --restart       # stop, start again and open
 ./stop.sh --free-ports    # if a port stays held, kill its owner
+./update.sh               # pull the latest release from GitHub and restart
+./update.sh --check       # only show what is new
 ```
 
 The certificate is self-signed, so the browser asks once — accept it.

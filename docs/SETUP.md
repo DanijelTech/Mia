@@ -419,6 +419,17 @@ različnih strani.
 
 ## 6. Preveri vse skupaj
 
+**Posodobitev na novo izdajo:**
+
+```bash
+cd ~/Mia && ./update.sh          # git pull --ff-only + restart storitve
+./update.sh --check              # samo prikaže, kaj je novega
+```
+
+Tvoj `server/config/server.yaml`, glasovi in certifikati so gitignored in se ob
+posodobitvi ne spremenijo; če se je spremenil namestitvenik ali systemd enota,
+`update.sh` to pove in predlaga `./install.sh --yes`.
+
 ```bash
 scripts/mia-health.sh   # vseh pet vrstic OK (in TTS storitev, če je http)
 scripts/mia-smoke.sh    # sintetiziran glasovni krog skozi celoten sklad (macOS)
