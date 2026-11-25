@@ -611,6 +611,37 @@ vtičnikov. Agent dobi orodji `hud_display` / `hud_dismiss`; YouTube povezave se
 predvajajo kot vgrajen video, `position` left/right omogoča več panelov z
 različnih strani.
 
+**Skill `mia-companion`** (priporočeno): nauči agenta Mijin način govora
+(kratka slovenska povedi, ženske oblike), dolžnost trajnega spomina (navade in
+dogovori uporabnika), predvajanje glasbe v namiznem Chrome oknu in brskanje:
+
+```bash
+# tudi tu velja AKTIVNI HERMES_HOME (ne nujno ~/.hermes)
+cp -R skills/mia-companion "$HERMES_HOME/skills/mia-companion"
+# skill velja za nove seje — po namestitvi ponastavi glasovno sejo
+rm -f server/logs/hermes_sessions.json   # + preimenuj staro sejo v Hermesu
+```
+
+**Namizna integracija** (glasba/okna na namizju): agent teče pod systemd
+brez grafičnega okolja — da lahko odpira Chrome okna (glasba, Google), dodaj
+drop-in za gateway enoto:
+
+```bash
+mkdir -p ~/.config/systemd/user/<hermes-gateway-enota>.service.d
+cat > ~/.config/systemd/user/<hermes-gateway-enota>.service.d/display.conf <<EOF
+[Service]
+Environment=DISPLAY=:1
+Environment=XAUTHORITY=/run/user/1000/gdm/Xauthority
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+EOF
+systemctl --user daemon-reload && systemctl --user restart <hermes-gateway-enota>
+```
+
+Vrednosti prilagodi svojemu seji (`systemctl --user show-environment`).
+Glasba se odpre z `google-chrome --new-window --app=<youtube-url>` in zapre
+s `pkill -f 'chr[o]me.*--app=https://www.youtube.com'` (skill to že zna).
+
 ## 6. Preveri vse skupaj
 
 **Posodobitev na novo izdajo:**
