@@ -41,13 +41,13 @@ curl -sk -m 3 -o /dev/null "https://127.0.0.1:$DASH_PORT/" && ok "dash proxy ($D
 curl -s  -m 3 -o /dev/null http://127.0.0.1:9119/ && ok "hermes dashboard (lo)" OK || ok "hermes dashboard (lo)" "DOWN (optional)"
 
 # Hermes side: is the gateway process there and is the API configured at all?
-if command -v pgrep >/dev/null 2>&1; then
-  if pgrep -f "hermes.*gateway" >/dev/null 2>&1; then
-    ok "hermes gateway" "running (pid $(pgrep -f 'hermes.*gateway' | head -1))"
-  else
-    ok "hermes gateway" "NOT running — hermes gateway install --start-now"
-  fi
-fi
+GW_PIDS="$(pgrep -f 'hermes.*gateway' 2>/dev/null | tr '\n' ' ')"
+GW_COUNT=$(printf '%s' "$GW_PIDS" | wc -w | tr -d ' ')
+case "${GW_COUNT:-0}" in
+  0) ok "hermes gateway" "NOT running — hermes gateway install --start-now" ;;
+  1) ok "hermes gateway" "running (pid $GW_PIDS)" ;;
+  *) ok "hermes gateway" "$GW_COUNT instances ($GW_PIDS) — duplicates? hermes gateway stop --all" ;;
+esac
 ENV_FILE="$HOME/.hermes/.env"
 if [ -f "$ENV_FILE" ]; then
   if grep -qE '^API_SERVER_(ENABLED|KEY)=' "$ENV_FILE"; then
@@ -66,7 +66,12 @@ fi
 if [ -n "$KEY" ] && curl -s -m 5 -H "Authorization: Bearer $KEY" http://127.0.0.1:8642/health | grep -q ok; then
   ok "hermes api (8642)" OK
 else
-  ok "hermes api (8642)" "DOWN (start: hermes gateway)"
+  ok "hermes api (8642)" "DOWN"
+  if [ "${GW_COUNT:-0}" -ge 1 ]; then
+    ok "  why?" "gateway runs but nothing listens — grep -i 'API Server' ~/.hermes/logs/gateway.log"
+  else
+    ok "  why?" "no gateway process — hermes gateway install --start-now"
+  fi
 fi
 
 # optional external TTS service (tts.provider: http)
