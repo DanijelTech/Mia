@@ -58,8 +58,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--from-files", nargs="*", type=Path, default=None,
                     help="existing mono WAV recordings instead of the microphone")
-    ap.add_argument("--threshold", type=float, default=None,
-                    help="print a suggested threshold only (no enrollment change)")
+    ap.add_argument("--samples", type=int, default=SAMPLES,
+                    help=f"how many recordings to take (default {SAMPLES}; use more "
+                         "when mixing languages, e.g. 2x Slovenian + 2x Serbian)")
+    ap.add_argument("--append", action="store_true",
+                    help="ADD to the existing profile instead of replacing it "
+                         "(e.g. enrol Serbian on top of Slovenian)")
     args = ap.parse_args()
 
     gate = SpeakerGate(PROFILE)
@@ -71,17 +75,19 @@ def main() -> int:
             print(f"naloženo: {p}")
     else:
         print("KALIBRACIJA GLASU — govori naravno, kot bi se pogovarjal z Mio.")
-        print("Nekaj predlogov: »Mia, koliko je ura?«, »Mia, odpri mi splet.«\n")
-        for i in range(1, SAMPLES + 1):
+        print("Nekaj predlogov: »Mia, koliko je ura?«, »Mia, odpri mi splet.«")
+        if args.append:
+            print("(dodajanje obstoječemu profilu — govori v jeziku, ki ga dodajaš)\n")
+        for i in range(1, args.samples + 1):
             for c in (3, 2, 1):
-                print(f"  posnetek {i}/{SAMPLES} čez {c} …", end="\r", flush=True)
+                print(f"  posnetek {i}/{args.samples} čez {c} …", end="\r", flush=True)
                 time.sleep(1)
             print(f"  ● POSNAMEM {SAMPLE_SECONDS} s — GOVORI ZDAJ          ", flush=True)
             samples.append(record_sample(SAMPLE_SECONDS))
             print(f"  ✓ posnetek {i} zajet ({samples[-1].size / 16000:.1f} s)\n")
 
     print("računam glasovni odtis …")
-    path = gate.enroll(samples)
+    path = gate.enroll(samples, append=args.append)
 
     # self-check: how well do the samples match the profile, pairwise spread
     scores = [float(np.dot(gate.embed(s), np.load(path)["embedding"])) for s in samples]
