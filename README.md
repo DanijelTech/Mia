@@ -84,7 +84,28 @@ restart.
 
 ## Install
 
-Full walkthrough in [docs/SETUP.md](docs/SETUP.md). Short version:
+One command, no virtualenv (installs into the system Python, which is how a
+root Hermes install runs anyway):
+
+```bash
+sudo ./install.sh                  # system-wide (root): deps, voice, cert, token, systemd
+./install.sh --dry-run             # show every action first
+sudo ./install.sh --with-gepard    # + optional Gepard TTS service
+```
+
+It records everything it creates in a manifest, so removal is exact:
+
+```bash
+sudo ./uninstall.sh --dry-run      # preview
+sudo ./uninstall.sh                # stop services, remove units, certs, voices, token line
+sudo ./uninstall.sh --purge-deps   # ...and pip-uninstall the packages it added
+```
+
+Offline machine? `./build-package.sh` produces a tarball (installer included,
+no voices) that you can copy over and run with `./install.sh`.
+
+Manual walkthrough (and what the installer automates) is in
+[docs/SETUP.md](docs/SETUP.md). Short version without the installer:
 
 ```bash
 # 1. Enable the Hermes Agent API server

@@ -1,5 +1,38 @@
 # Full Setup Guide
 
+## 0. Automated install (recommended)
+
+`install.sh` performs sections 2–5 of this guide in one pass, straight into the
+system Python (no virtualenv) — the same way a root Hermes install runs:
+
+```bash
+sudo ./install.sh --dry-run          # 1. see exactly what will happen
+sudo ./install.sh                    # 2. do it
+sudo ./install.sh --with-gepard      #    ...plus the Gepard TTS service
+```
+
+It installs the Python packages (retrying with `--break-system-packages` when the
+distro marks Python as externally managed), downloads the Slovenian voice,
+generates the TLS certificate, adds `MIA_HUD_TOKEN` to `~/.hermes/.env` if it is
+missing, writes and starts the systemd unit (launchd on macOS), and finishes
+with the health check.
+
+Everything it creates is written to a manifest
+(`/var/lib/mia/install-manifest.json` for root, `~/.local/state/mia/...` for a
+user install). `uninstall.sh` uses that manifest, so removal is exact:
+
+```bash
+sudo ./uninstall.sh --dry-run        # preview
+sudo ./uninstall.sh                  # stop+disable service, remove unit, certs,
+                                     # voices, boot audio, logs, server.yaml, token line
+sudo ./uninstall.sh --purge-deps     # also pip-uninstall the recorded packages
+sudo ./uninstall.sh --keep-data      # keep voices/certs/logs/config
+```
+
+It never touches Hermes, its sessions/memory, your models, or the source tree.
+
+To build a tarball for an offline machine: `./build-package.sh`.
+
 Tested on macOS (Apple Silicon) with Hermes Agent v0.16. Allow ~1 hour.
 
 ## 1. Hermes Agent (the brain)

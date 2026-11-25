@@ -24,3 +24,6 @@ nohup.out
 
 # local TTS voices (large, downloaded by scripts/get-voice.sh)
 server/voices/
+
+# packaging output
+/dist/
