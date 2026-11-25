@@ -95,9 +95,20 @@ KEY=$(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)
 curl -H "Authorization: Bearer $KEY" http://127.0.0.1:8642/health
 ```
 
-If Hermes runs as **root** and Mia as a normal user (or vice versa), the key is in
-the other user's env file and Mia cannot read it — copy it over or run both as the
-same user.
+If the key is not there at all, enable the API server and create one:
+
+```bash
+grep -q '^API_SERVER_ENABLED=' ~/.hermes/.env || echo 'API_SERVER_ENABLED=true' >> ~/.hermes/.env
+grep -q '^API_SERVER_KEY=' ~/.hermes/.env || \
+  echo "API_SERVER_KEY=$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')" >> ~/.hermes/.env
+systemctl --user restart mia-voice        # Mia reads the env at startup
+hermes gateway                            # the gateway must re-read it too
+```
+
+If Hermes runs as **a different user** (e.g. root) than Mia, the key in
+`/root/.hermes/.env` is not visible to you — copy it over or run both as the same
+user. When Hermes is installed in your own home, it is the same file
+(`~/.hermes/.env`) and nothing needs copying.
 
 **Transcripts are wrong/garbled words** — make sure you're on the current HUD
 (hard refresh): mic must capture at 16 kHz natively. Upgrading `stt.model` to

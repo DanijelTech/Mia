@@ -23,9 +23,20 @@ KEY=$(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)
 curl -H "Authorization: Bearer $KEY" http://127.0.0.1:8642/health
 ```
 
-Če Hermes teče kot **root**, Mia pa kot navaden uporabnik, ključ v
-`/root/.hermes/.env` Mii ni viden (in obratno). Kopiraj ga v okoljsko datoteko
-uporabnika, ki poganja Mio, ali poganjaj oba kot isti uporabnik.
+Če ključa ni v datoteki, ga ustvari in vključi API strežnik:
+
+```bash
+grep -q '^API_SERVER_ENABLED=' ~/.hermes/.env || echo 'API_SERVER_ENABLED=true' >> ~/.hermes/.env
+grep -q '^API_SERVER_KEY=' ~/.hermes/.env || \
+  echo "API_SERVER_KEY=$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')" >> ~/.hermes/.env
+systemctl --user restart mia-voice        # Mia bere env ob zagonu
+hermes gateway                            # gateway mora znova prebrati env
+```
+
+Če Hermes teče kot **drug uporabnik** (npr. root), Mia pa kot tvoj, ključ v
+`/root/.hermes/.env` ni viden — prekopiraj ga v svojo datoteko ali poganjaj oba
+kot isti uporabnik. Če Hermes ni nameščen v `/root`, temveč v tvojem domu, je
+datoteka ista (`~/.hermes/.env`) in kopiranje ni potrebno.
 
 **Prepis je napačen / besede so zmešane** — poskrbi, da si na aktualnem HUD-u
 (trda osvežitev): mikrofon mora zajemati pri 16 kHz. Pomaga tudi večji model

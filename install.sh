@@ -434,9 +434,19 @@ fi
 # this user can read (running Mia as another user than Hermes is a common trap).
 if [ -f "$HERMES_ENV" ] && ! grep -qE '^API_SERVER_KEY=' "$HERMES_ENV"; then
   warn "no API_SERVER_KEY in $HERMES_ENV — Mia will report 'Agent backend offline'"
-  info "  fix: copy the key from the Hermes user's env file, e.g."
-  info "       sudo grep '^API_SERVER_KEY=' /root/.hermes/.env >> $HERMES_ENV"
-  info "  or run Mia as the same user that runs Hermes"
+  if grep -qE '^API_SERVER_ENABLED=(true|1)' "$HERMES_ENV" 2>/dev/null; then
+    info "  the API server is enabled but the key is missing. Add one:"
+  else
+    info "  Hermes' API server is not configured here. Enable it and add a key:"
+    info "    echo 'API_SERVER_ENABLED=true' >> $HERMES_ENV"
+  fi
+  info "    echo \"API_SERVER_KEY=\$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')\" >> $HERMES_ENV"
+  info "  then restart Hermes (hermes gateway) and Mia:"
+  info "    systemctl --user restart mia-voice"
+  if [ "$MODE" = "system" ]; then
+    info "  (if Hermes runs as another user, copy its key instead:"
+    info "    sudo grep '^API_SERVER_KEY=' /root/.hermes/.env >> $HERMES_ENV )"
+  fi
 fi
 
 # ---------------------------------------------------------------- 6. service

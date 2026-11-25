@@ -41,6 +41,9 @@ curl -sk -m 3 -o /dev/null "https://127.0.0.1:$DASH_PORT/" && ok "dash proxy ($D
 curl -s  -m 3 -o /dev/null http://127.0.0.1:9119/ && ok "hermes dashboard (lo)" OK || ok "hermes dashboard (lo)" "DOWN (optional)"
 
 KEY=$(grep '^API_SERVER_KEY=' ~/.hermes/.env 2>/dev/null | cut -d= -f2)
+if [ -z "$KEY" ]; then
+  ok "hermes key" "MISSING — add API_SERVER_KEY to ~/.hermes/.env"
+fi
 if [ -n "$KEY" ] && curl -s -m 5 -H "Authorization: Bearer $KEY" http://127.0.0.1:8642/health | grep -q ok; then
   ok "hermes api (8642)" OK
 else
