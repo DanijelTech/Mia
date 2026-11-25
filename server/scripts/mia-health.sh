@@ -40,6 +40,25 @@ curl -sk -m 3 -o /dev/null "$HUD/hud/" && ok "HUD (${TLS_PORT})" OK || ok "HUD (
 curl -sk -m 3 -o /dev/null "https://127.0.0.1:$DASH_PORT/" && ok "dash proxy ($DASH_PORT)" OK || ok "dash proxy ($DASH_PORT)" DOWN
 curl -s  -m 3 -o /dev/null http://127.0.0.1:9119/ && ok "hermes dashboard (lo)" OK || ok "hermes dashboard (lo)" "DOWN (optional)"
 
+# Hermes side: is the gateway process there and is the API configured at all?
+if command -v pgrep >/dev/null 2>&1; then
+  if pgrep -f "hermes.*gateway" >/dev/null 2>&1; then
+    ok "hermes gateway" "running (pid $(pgrep -f 'hermes.*gateway' | head -1))"
+  else
+    ok "hermes gateway" "NOT running — hermes gateway install --start-now"
+  fi
+fi
+ENV_FILE="$HOME/.hermes/.env"
+if [ -f "$ENV_FILE" ]; then
+  if grep -qE '^API_SERVER_(ENABLED|KEY)=' "$ENV_FILE"; then
+    ok "hermes api env" "present in $ENV_FILE"
+  else
+    ok "hermes api env" "MISSING — add API_SERVER_ENABLED=true + API_SERVER_KEY"
+  fi
+else
+  ok "hermes api env" "no $ENV_FILE"
+fi
+
 KEY=$(grep '^API_SERVER_KEY=' ~/.hermes/.env 2>/dev/null | cut -d= -f2)
 if [ -z "$KEY" ]; then
   ok "hermes key" "MISSING — add API_SERVER_KEY to ~/.hermes/.env"

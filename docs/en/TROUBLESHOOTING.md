@@ -77,6 +77,14 @@ hermes gateway restart
 
 Until then the HUD shows `—` and "ni dosegljivo (Hermes)" in SKILLS.
 
+**Gateway log shows `Local session … receipt refused: ValueError: stored identity
+mismatch at _checked_entry:119`** — at startup Hermes restores old local sessions
+and **refuses + skips** any whose stored identity (profile/user/route) does not
+match the current one. They are warnings, not failures: new sessions are created
+fresh and work. They appear after moving `~/.hermes` (another home, another disk,
+e.g. `/media/…/hermes-home`) or changing the profile identity. Nothing needs
+deleting; for a clean slate back up `~/.hermes` and prune the old session store.
+
 **HUD shows "Hermes API offline", SKILLS "?", AUTOMATIONS "—", CPU/memory "—"** —
 all of that comes from Hermes **through Mia's proxy** (`/api/hermes/...`), so it
 needs (1) `API_SERVER_KEY` in the env file of the user running Mia and (2)

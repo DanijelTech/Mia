@@ -185,6 +185,15 @@ hermes gateway restart
 
 Dokler to ni urejeno, HUD v panelu VEŠČINE kaže `—` in »ni dosegljivo (Hermes)«.
 
+**V dnevniku gatewaya je `Local session … receipt refused: ValueError: stored
+identity mismatch at _checked_entry:119`** — Hermes ob zagonu obnavlja stare
+lokalne seje in vsako, katere shranjena identiteta (profil/uporabnik/vrata) se ne
+ujema s trenutno, **zavrne in preskoči**. To so opozorila, ne napaka: nove seje se
+ustvarijo na novo in delujejo. Pojavijo se, kadar se je `~/.hermes` preselil (drug
+dom, drug disk, npr. `/media/…/hermes-home`) ali se je zamenjala identiteta
+profila. Nič ni treba brisati; če želiš čisto stanje, naredi varnostno kopijo
+`~/.hermes`, nato pa v Hermesu odstrani/popravi staro shrambo sej.
+
 **HUD kaže »Hermes API offline«, VEŠČINE »?«, AVTOMATIZACIJE »—«, CPU/pomnilnik »—«** —
 vse to pride iz Hermesa **prek Miinega proxyja** (`/api/hermes/...`), zato
 potrebuje dvoje: (1) `API_SERVER_KEY` v okoljski datoteki uporabnika, ki poganja
