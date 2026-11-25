@@ -570,20 +570,56 @@ def wav_bytes(result: SynthResult) -> bytes:
     return buf.getvalue()
 
 
+def pitch_shift_pcm(pcm: np.ndarray, rate: int, semitones: float) -> np.ndarray:
+    """Raise pitch AND formants by `semitones` via ffmpeg (asetrate + atempo).
+
+    The formant shift is the point: the Slovenian Maya1 adapter was trained on
+    a male speaker, and prompt steering alone leaves the voice masculine. A
+    resample-based shift shortens the virtual vocal tract, which is what makes
+    the result read as a woman's voice rather than a sped-up man.
+    """
+    import shutil
+    import subprocess
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg or not semitones:
+        return pcm
+    ratio = 2.0 ** (semitones / 12.0)
+    af = f"asetrate={int(round(rate * ratio))},aresample={rate},atempo={1.0 / ratio:.6f}"
+    proc = subprocess.run(
+        [ffmpeg, "-hide_banner", "-loglevel", "error",
+         "-f", "s16le", "-ar", str(rate), "-ac", "1", "-i", "pipe:0",
+         "-af", af,
+         "-f", "s16le", "-ac", "1", "-ar", str(rate), "pipe:1"],
+        input=pcm.tobytes(), capture_output=True, timeout=120,
+    )
+    if proc.returncode != 0 or not proc.stdout:
+        print(f"[tts] pitch shift failed ({proc.stderr.decode('utf-8', 'replace')[:200]})"
+              " — returning the original voice", file=sys.stderr, flush=True)
+        return pcm
+    out = np.frombuffer(proc.stdout, dtype=np.int16)
+    return out if out.size else pcm
+
+
+def apply_pitch(result: SynthResult, semitones: float) -> SynthResult:
+    if semitones:
+        result.pcm = pitch_shift_pcm(result.pcm, result.sample_rate, semitones)
+    return result
+
+
 # ------------------------------------------------------------------------ main
 
-def run_stdio(engine: Engine) -> int:
+def run_stdio(engine: Engine, pitch: float = 0.0) -> int:
     text = clean_text(sys.stdin.read())
     if not text:
         print("no text on stdin", file=sys.stderr)
         return 2
-    result = engine.synth(text)
+    result = apply_pitch(engine.synth(text), pitch)
     sys.stdout.buffer.write(wav_bytes(result))
     sys.stdout.buffer.flush()
     return 0
 
 
-def run_server(engine: Engine, host: str, port: int, token: str) -> int:
+def run_server(engine: Engine, host: str, port: int, token: str, pitch: float = 0.0) -> int:
     from fastapi import FastAPI, Header, HTTPException, Request, Response  # noqa: PLC0415
     import uvicorn  # noqa: PLC0415
 
@@ -615,7 +651,7 @@ def run_server(engine: Engine, host: str, port: int, token: str) -> int:
         text = clean_text(str((payload or {}).get("text") or ""))
         if not text:
             raise HTTPException(status_code=400, detail="empty text")
-        result = engine.synth(text)
+        result = apply_pitch(engine.synth(text), pitch)
         return Response(content=wav_bytes(result), media_type="audio/wav",
                         headers={"X-TTS-Engine": result.engine, "X-TTS-Device": result.device,
                                  "X-TTS-Seconds": f"{result.seconds:.2f}",
@@ -662,6 +698,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="free-form English voice description (overrides presets), "
                          "e.g. 'A soft, gentle Slovenian female voice.'")
     ap.add_argument("--maya-max-new-tokens", type=int, default=1800)
+    ap.add_argument("--pitch-semitones", type=float, default=0.0,
+                    help="post-shift pitch+formants by N semitones (e.g. 4 feminizes a "
+                         "male-trained voice; needs ffmpeg; 0 = off)")
     ap.add_argument("--cfg-scale", type=float, default=4.5)
     ap.add_argument("--cfg-frames", type=int, default=25)
     ap.add_argument("--repetition-penalty", type=float, default=1.45)
@@ -681,8 +720,8 @@ def main(argv: list[str] | None = None) -> int:
     engine = build_engine(args)
     token = os.environ.get(args.token_env) or os.environ.get("JARVIS_HUD_TOKEN") or ""
     if args.serve:
-        return run_server(engine, args.host, args.port, token)
-    return run_stdio(engine)
+        return run_server(engine, args.host, args.port, token, pitch=args.pitch_semitones)
+    return run_stdio(engine, pitch=args.pitch_semitones)
 
 
 if __name__ == "__main__":

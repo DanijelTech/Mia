@@ -21,11 +21,16 @@ that parameter into a cookie and removes it from the address bar). Later:
 
 ```bash
 ./start-mia.sh              # start (if needed), wait, open the HUD
-./stop-mia.sh               # stop the server and the TTS service (removes nothing)
+./stop-mia.sh               # stop the server, the TTS service and (with a `stack:` section) Hermes + llama-server
 ./stop-mia.sh --status      # what is running, which ports are held
 ./stop-mia.sh --restart     # stop, start again, open
 ./stop-mia.sh --free-ports  # last resort: kill whatever holds the port
 ```
+
+> With a `stack:` section in `server.yaml`, `start-mia.sh` also brings up the
+> local model (llama-server) and the Hermes gateway before Mia — each step is
+> skipped when the service already answers. `stop-mia.sh` stops them in
+> reverse order, freeing RAM/VRAM.
 
 > These scripts used to be `./start.sh` and `./stop.sh`; they are now
 > **`./start-mia.sh`** and **`./stop-mia.sh`** so they cannot collide with other

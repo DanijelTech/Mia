@@ -363,6 +363,8 @@ footer{
 /* ============================== state ============================== */
 const CONV = "mia-main";
 let ws=null, wsReady=false, capturing=false, continuous=false, state="standby";
+let autoListen=true;  // continuous listening re-arms itself on every (re)connect until the user turns it off
+let lastFrameAt=0, micWarned=false;
 let audioCtx=null, workletNode=null, mediaStream=null, srcNode=null;
 let playhead=0, activeSources=[], leftoverByte=null, audioArrived=false;
 let level=0, turns=0;
@@ -482,7 +484,7 @@ function showApproval(e){
 function wsUrl(){return (location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws"}
 function connect(){
   ws=new WebSocket(wsUrl()); ws.binaryType="arraybuffer";
-  ws.onopen=()=>{wsReady=true;$("wsDot").className="dot on";$("wsState").textContent="povezan";$("connState").textContent="POVEZAVA VZPOSTAVLJENA";$("footMsg").textContent="GLASOVNI STREŽNIK POVEZAN"};
+  ws.onopen=()=>{wsReady=true;$("wsDot").className="dot on";$("wsState").textContent="povezan";$("connState").textContent="POVEZAVA VZPOSTAVLJENA";$("footMsg").textContent="GLASOVNI STREŽNIK POVEZAN";maybeAutoListen()};
   ws.onclose=ev=>{wsReady=false;continuous=false;capturing=false;
     if($("contBtn")){$("contBtn").textContent="STALNO";}
     $("wsDot").className="dot off";$("wsState").textContent="brez povezave";$("connState").textContent="POVEZAVA PREKINJENA";setState("standby","PRIPRAVLJEN");
@@ -589,7 +591,14 @@ async function initMic(){
     mediaStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,sampleRate:16000,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
     srcNode=audioCtx.createMediaStreamSource(mediaStream);
     workletNode=new AudioWorkletNode(audioCtx,"pcm16k");
+    // Chrome renders audio graphs pull-based: a worklet with no output path may
+    // never run, so sink it through a muted gain node — this is what actually
+    // guarantees process() fires and mic frames reach the server.
+    const micSink=audioCtx.createGain(); micSink.gain.value=0;
+    workletNode.connect(micSink); micSink.connect(audioCtx.destination);
+    lastFrameAt=Date.now();
     workletNode.port.onmessage=e=>{
+      lastFrameAt=Date.now();
       if(capturing&&wsReady)ws.send(e.data);
       // level meter
       const a=new Int16Array(e.data); let s=0;
@@ -603,9 +612,61 @@ async function initMic(){
 }
 
 /* ============================== talk flow ========================== */
+function showAudioBanner(){
+  if($("audioBanner"))return;
+  const b=document.createElement("div"); b.id="audioBanner";
+  b.style.cssText="position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:99;"
+    +"padding:14px 22px;border:1px solid var(--amber);background:rgba(20,10,0,.94);"
+    +"color:var(--amber);font-family:'Orbitron';letter-spacing:2px;cursor:pointer;text-align:center";
+  b.textContent="▶ KLIKNI ZA AKTIVACIJO MIKROFONA IN ZVOKA";
+  b.onclick=async()=>{try{await audioCtx.resume()}catch{}; if(audioCtx.state==="running")b.remove();};
+  document.body.appendChild(b);
+}
+
+// mic watchdog: continuous mode with no frames = the user is talking to a wall
+setInterval(()=>{
+  if(!continuous){micWarned=false;return}
+  const silent=!lastFrameAt||Date.now()-lastFrameAt>3000;
+  if(silent&&!micWarned){
+    micWarned=true;
+    addMsg("sys","mikrofon ne pošilja zvoka — preveri dovoljenje in izbiro mikrofona v brskalniku");
+    $("micState").textContent="NI ZVOKA";
+  }else if(!silent&&micWarned){
+    micWarned=false;
+    addMsg("sys","mikrofon spet pošilja zvok");
+    $("micState").textContent="V ŽIVO";
+  }
+},1500);
+
+function maybeAutoListen(){
+  if(!autoListen||continuous||!wsReady)return;
+  setTimeout(()=>{ if(wsReady&&autoListen&&!continuous)startContinuous(true); },400);
+}
+
+async function startContinuous(auto){
+  try{await initMic()}catch(err){addMsg("sys","mikrofon blokiran: "+err.message);return}
+  stopPlayback();
+  ws.send(JSON.stringify({type:"start",sample_rate:16000,format:"pcm_s16le",channels:1,
+                          conversation:CONV,mode:"continuous"}));
+  capturing=true; continuous=true;
+  $("contBtn").textContent="■ STALNO";
+  $("talkBtn").textContent="VKLOPI GLAS"; $("micState").textContent="V ŽIVO";
+  setState("listening","POSLUŠAM","RECI »MIA …« · PRESLEDNICA POŠLJE TAKOJ");
+  addMsg("sys",(auto?"samodejno poslušanje vklopljeno":"neprestano poslušanje vklopljeno")+" — reci »Mia …«");
+  if(audioCtx&&audioCtx.state==="suspended"){
+    // browsers gate AudioContext behind a user gesture; capture waits for one click
+    showAudioBanner();
+    addMsg("sys","za mikrofon in zvok klikni gumb na vrhu strani (zahteva brskalnika)");
+    const resume=()=>{audioCtx&&audioCtx.resume().then(()=>{const b=$("audioBanner");if(b&&audioCtx.state==="running")b.remove();});
+      removeEventListener("pointerdown",resume);removeEventListener("keydown",resume)};
+    addEventListener("pointerdown",resume); addEventListener("keydown",resume);
+  }
+}
+
 async function toggleContinuous(){
   if(!wsReady){addMsg("sys","glasovni strežnik ni dosegljiv");return}
   if(continuous){
+    autoListen=false;  // manual off wins over auto-rearm until the user re-enables it
     continuous=false; capturing=false;
     try{ws.send(JSON.stringify({type:"stop"}))}catch{}
     $("contBtn").textContent="STALNO";
@@ -615,15 +676,8 @@ async function toggleContinuous(){
     addMsg("sys","neprestano poslušanje izklopljeno");
     return;
   }
-  try{await initMic()}catch(err){addMsg("sys","mikrofon blokiran: "+err.message);return}
-  stopPlayback();
-  ws.send(JSON.stringify({type:"start",sample_rate:16000,format:"pcm_s16le",channels:1,
-                          conversation:CONV,mode:"continuous"}));
-  capturing=true; continuous=true;
-  $("contBtn").textContent="■ STALNO";
-  $("talkBtn").textContent="VKLOPI GLAS"; $("micState").textContent="V ŽIVO";
-  setState("listening","POSLUŠAM","RECI »MIA …« · PRESLEDNICA POŠLJE TAKOJ");
-  addMsg("sys","neprestano poslušanje vklopljeno — reci »Mia …«");
+  autoListen=true;
+  await startContinuous(false);
 }
 
 async function toggleTalk(){

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Stop Mia — the voice server and (if running) the TTS service.
-# Nothing is removed: config, voices, certificates and the token stay in place.
+# Stop Mia — the voice server, the TTS service, and (when configured under
+# `stack:` in server.yaml) the Hermes gateway and the llama-server behind it,
+# so RAM/VRAM is actually freed. Nothing is removed: config, voices,
+# certificates and the token stay in place.
 #
 #   ./stop-mia.sh                # graceful stop (systemd unit, launchd agent or background pid)
 #   ./stop-mia.sh --status       # only show what is running
@@ -59,6 +61,20 @@ TLS_PORT="$(cfg server.tls_ports 443)"; TLS_PORT="${TLS_PORT:-443}"
 DASH_PORT="$(cfg server.dashboard_proxy.port 9443)"; DASH_PORT="${DASH_PORT:-9443}"
 PORTS="$WS_PORT $TLS_PORT $DASH_PORT"
 [ "$(cfg tts.provider piper)" = "http" ] && PORTS="$PORTS 8770"
+
+# brain stack (optional `stack:` section — same keys start-mia.sh reads)
+url_port() { printf '%s' "$1" | sed -nE 's|^[a-z]+://[^/:]+:([0-9]+).*|\1|p'; }
+LLAMA_PORT="$(url_port "$(cfg stack.llama.health '')")"
+HERMES_PORT="$(url_port "$(cfg stack.hermes.health '')")"
+HERMES_UNIT="$(cfg stack.hermes.unit '')"
+LLAMA_SUPERVISOR="$(cfg stack.llama.supervisor '')"
+LLAMA_PIDFILE="$REPO/server/$(cfg stack.llama.pidfile logs/llama-server.pid)"
+HERMES_PIDFILE="$REPO/server/$(cfg stack.hermes.pidfile logs/hermes-gateway.pid)"
+DASH_PORT="$(url_port "$(cfg stack.dashboard.health '')")"
+DASH_PIDFILE="$REPO/server/$(cfg stack.dashboard.pidfile logs/hermes-dashboard.pid)"
+[ -n "$LLAMA_PORT" ] && PORTS="$PORTS $LLAMA_PORT"
+[ -n "$HERMES_PORT" ] && PORTS="$PORTS $HERMES_PORT"
+[ -n "$DASH_PORT" ] && PORTS="$PORTS $DASH_PORT"
 
 # --------------------------------------------------------------- environment
 IS_MAC=0; [ "$(uname -s)" = "Darwin" ] && IS_MAC=1
@@ -142,7 +158,8 @@ show_status() {
       if launchctl print "gui/$(id -u)/$unit" >/dev/null 2>&1; then info "launchd  $unit: loaded"; else info "launchd  $unit: not loaded"; fi
     done
   elif [ "$HAVE_SYSTEMD" = 1 ]; then
-    for unit in mia-voice mia-tts; do
+    for unit in mia-voice mia-tts $HERMES_UNIT; do
+      [ -n "$unit" ] || continue
       if unit_path "$unit" >/dev/null; then
         state="$(timeout 5 "${SCTL[@]}" is-active "$unit" 2>/dev/null || true)"
         info "systemd  $unit: ${state:-unknown} ($(unit_path "$unit"))"
@@ -182,11 +199,12 @@ if [ "$IS_MAC" = 1 ]; then
   done
 fi
 
-# 2) systemd units (system or --user)
+# 2) systemd units (system or --user) — Mia first, then the Hermes gateway
 if [ "$HAVE_SYSTEMD" = 1 ]; then
-  for unit in mia-tts mia-voice; do
+  for unit in mia-tts mia-voice $HERMES_UNIT; do
+    [ -n "$unit" ] || continue
     if unit_path "$unit" >/dev/null; then
-      if timeout 20 "${SCTL[@]}" stop "$unit" 2>/dev/null; then
+      if timeout 90 "${SCTL[@]}" stop "$unit" 2>/dev/null; then
         info "systemd: $unit stopped"
         STOPPED=1
       else
@@ -199,8 +217,8 @@ elif [ "$IS_MAC" = 0 ] && [ -n "$(unit_path mia-voice 2>/dev/null)" ]; then
   warn "a systemd unit is installed but systemd is not running here — falling back to pidfiles"
 fi
 
-# 3) background processes started by start-mia.sh
-for pidfile in "$LOGDIR/mia-tts.pid" "$LOGDIR/mia.pid"; do
+# 3) background processes started by start-mia.sh (incl. gateway/llama/dashboard)
+for pidfile in "$LOGDIR/mia-tts.pid" "$LOGDIR/mia.pid" "$HERMES_PIDFILE" "$LLAMA_PIDFILE" "$DASH_PIDFILE"; do
   [ -f "$pidfile" ] || continue
   pid="$(cat "$pidfile" 2>/dev/null)"
   if [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null; then
@@ -214,6 +232,24 @@ for pidfile in "$LOGDIR/mia-tts.pid" "$LOGDIR/mia.pid"; do
   fi
   rm -f "$pidfile"
 done
+
+# 3b) llama-server started outside start-mia.sh: the supervisor traps SIGTERM
+# and takes the model down with it; without this the RAM stays allocated.
+if [ -n "$LLAMA_SUPERVISOR" ] && [ -n "$LLAMA_PORT" ] && listening "$LLAMA_PORT"; then
+  SUP_PIDS="$(pgrep -f "$LLAMA_SUPERVISOR" 2>/dev/null)"
+  for pid in $SUP_PIDS; do
+    kill "$pid" 2>/dev/null && info "sent SIGTERM to llama supervisor (pid $pid)"
+  done
+  for _ in $(seq 1 "$WAIT_S"); do listening "$LLAMA_PORT" || break; sleep 1; done
+  if listening "$LLAMA_PORT"; then
+    for pid in $SUP_PIDS; do kill -9 "$pid" 2>/dev/null; done
+    for pid in $(port_pids "$LLAMA_PORT"); do
+      warn "llama-server (pid $pid) ignored SIGTERM — sending SIGKILL"
+      kill -9 "$pid" 2>/dev/null
+    done
+  fi
+  [ -n "$SUP_PIDS" ] && STOPPED=1
+fi
 
 # 4) wait until the ports are actually free
 for p in $PORTS; do

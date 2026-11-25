@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Start Mia and open the HUD in your browser.
 #
+# Brings up the whole local stack, in order, skipping whatever already answers:
+#   1. llama-server  (the local 35B model Hermes thinks with — stack.llama in server.yaml)
+#   2. Hermes gateway (systemd unit or `hermes gateway run` — stack.hermes)
+#   3. Mia voice server + local TTS service
+#
 #   ./start-mia.sh                    # start (systemd if installed, else background), wait, open
 #   ./start-mia.sh --no-open          # just start and print the URL/token
 #   ./start-mia.sh --no-start         # assume it is running; only wait + open
@@ -85,15 +90,60 @@ print(cur[0] if isinstance(cur, list) and cur else sys.argv[3])' "$CFG" "$1" "${
     || printf '%s\n' "${2:-}"
 }
 
+cfgargv() {  # cfgargv <dotted.key> — a YAML list as NUL-separated argv (safe for regex/space args)
+  [ "$CFG_OK" = 1 ] || return 1
+  $PY - "$CFG" "$1" <<'PY' 2>/dev/null
+import os, sys, yaml
+cfg = yaml.safe_load(open(sys.argv[1])) or {}
+cur = cfg
+for part in sys.argv[2].split("."):
+    cur = cur.get(part) if isinstance(cur, dict) else None
+if not isinstance(cur, list) or not cur:
+    raise SystemExit(1)
+os.write(1, b"\0".join(str(a).encode() for a in cur) + b"\0")
+PY
+}
+
+read_argv() {  # read_argv <dotted.key> <array-name>
+  local -n _out="$2"
+  _out=()
+  local a
+  while IFS= read -r -d '' a; do _out+=("$a"); done < <(cfgargv "$1") || true
+}
+
 HUD_PORT="$(cfg server.port 8765)"
 TLS_PORT="$(cfglist server.tls_ports 443)"
 TTS_PROVIDER="$(cfg tts.provider piper)"
 TTS_URL="$(cfg tts.http.url '')"
 TTS_ENGINE_CFG="$(cfg tts.http.engine gepard)"
-TTS_ARGS="$(cfglist tts.http.args '')"
+
+# brain stack (see the `stack:` section in server.yaml; all optional)
+LLAMA_HEALTH="$(cfg stack.llama.health '')"
+LLAMA_TIMEOUT="$(cfg stack.llama.start_timeout 420)"
+LLAMA_PIDFILE="$REPO/server/$(cfg stack.llama.pidfile logs/llama-server.pid)"
+LLAMA_LOG="$REPO/server/$(cfg stack.llama.log logs/llama-server.out)"
+LLAMA_SUPERVISOR="$(cfg stack.llama.supervisor '')"
+HERMES_HEALTH="$(cfg stack.hermes.health '')"
+HERMES_TIMEOUT="$(cfg stack.hermes.start_timeout 90)"
+HERMES_UNIT="$(cfg stack.hermes.unit '')"
+HERMES_PIDFILE="$REPO/server/$(cfg stack.hermes.pidfile logs/hermes-gateway.pid)"
+HERMES_LOG="$REPO/server/$(cfg stack.hermes.log logs/hermes-gateway.out)"
+DASH_HEALTH="$(cfg stack.dashboard.health '')"
+DASH_TIMEOUT="$(cfg stack.dashboard.start_timeout 180)"
+DASH_PIDFILE="$REPO/server/$(cfg stack.dashboard.pidfile logs/hermes-dashboard.pid)"
+DASH_LOG="$REPO/server/$(cfg stack.dashboard.log logs/hermes-dashboard.out)"
 
 # ------------------------------------------------------------------ 1. start
 port_open() { curl -s -m 1 -o /dev/null "$1" 2>/dev/null; }
+
+wait_health() {  # wait_health <url> <seconds> — poll until the endpoint answers
+  local deadline=$(( $(date +%s) + $2 ))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    port_open "$1" && return 0
+    sleep 2
+  done
+  return 1
+}
 
 start_background() { # $1 = label, $2 = pidfile, $3 = logfile, $4... = command
   local label="$1" pidfile="$2" logfile="$3"; shift 3
@@ -120,7 +170,72 @@ unit_exists() {  # ask the filesystem, never systemd (a dead manager would hang)
 }
 
 if [ "$DO_START" = 1 ]; then
-  say "1/3 Starting Mia"
+  say "1/4 Starting the brain (llama-server + Hermes gateway)"
+
+  if [ -z "$LLAMA_HEALTH" ] && [ -z "$HERMES_HEALTH" ]; then
+    info "no stack: section in server.yaml — assuming the brain runs elsewhere"
+  fi
+
+  if [ -n "$LLAMA_HEALTH" ]; then
+    if port_open "$LLAMA_HEALTH"; then
+      info "llama-server already answering"
+    else
+      LLAMA_ARGV=()
+      read_argv stack.llama.argv LLAMA_ARGV
+      if [ ${#LLAMA_ARGV[@]} -eq 0 ]; then
+        warn "stack.llama.argv missing in server.yaml — Hermes will have no model"
+      else
+        [ -n "$LLAMA_SUPERVISOR" ] && [ -x "$LLAMA_SUPERVISOR" ] \
+          && LLAMA_ARGV=("$LLAMA_SUPERVISOR" "${LLAMA_ARGV[@]}")
+        info "starting llama-server (a 35B model needs minutes to load)…"
+        start_background "llama-server" "$LLAMA_PIDFILE" "$LLAMA_LOG" "${LLAMA_ARGV[@]}"
+        if wait_health "$LLAMA_HEALTH" "$LLAMA_TIMEOUT"; then
+          info "llama-server is up"
+        else
+          warn "llama-server did not answer within ${LLAMA_TIMEOUT}s — see $LLAMA_LOG"
+        fi
+      fi
+    fi
+  fi
+
+  if [ -n "$HERMES_HEALTH" ]; then
+    if port_open "$HERMES_HEALTH"; then
+      info "Hermes gateway already answering"
+    elif [ -n "$HERMES_UNIT" ] && unit_exists "$HERMES_UNIT"; then
+      timeout 30 "${SCTL[@]}" start "$HERMES_UNIT" && info "systemd: $HERMES_UNIT started" \
+        || warn "systemctl could not start $HERMES_UNIT"
+      wait_health "$HERMES_HEALTH" "$HERMES_TIMEOUT" && info "Hermes gateway is up" \
+        || warn "Hermes gateway did not answer within ${HERMES_TIMEOUT}s"
+    else
+      HERMES_ARGV=()
+      read_argv stack.hermes.argv HERMES_ARGV
+      if [ ${#HERMES_ARGV[@]} -eq 0 ]; then
+        warn "no Hermes unit and no stack.hermes.argv — start the gateway manually"
+      else
+        start_background "hermes gateway" "$HERMES_PIDFILE" "$HERMES_LOG" "${HERMES_ARGV[@]}"
+        wait_health "$HERMES_HEALTH" "$HERMES_TIMEOUT" && info "Hermes gateway is up" \
+          || warn "Hermes gateway did not answer within ${HERMES_TIMEOUT}s — see $HERMES_LOG"
+      fi
+    fi
+  fi
+
+  if [ -n "$DASH_HEALTH" ]; then
+    if port_open "$DASH_HEALTH"; then
+      info "Hermes dashboard already answering"
+    else
+      DASH_ARGV=()
+      read_argv stack.dashboard.argv DASH_ARGV
+      if [ ${#DASH_ARGV[@]} -eq 0 ]; then
+        warn "stack.dashboard.argv missing in server.yaml — HUD views will be dead"
+      else
+        start_background "hermes dashboard" "$DASH_PIDFILE" "$DASH_LOG" "${DASH_ARGV[@]}"
+        wait_health "$DASH_HEALTH" "$DASH_TIMEOUT" && info "Hermes dashboard is up" \
+          || warn "Hermes dashboard did not answer within ${DASH_TIMEOUT}s — see $DASH_LOG"
+      fi
+    fi
+  fi
+
+  say "2/4 Starting Mia"
   if unit_exists mia-voice; then
     timeout 20 "${SCTL[@]}" start mia-voice && info "systemd: mia-voice started" \
       || start_background "voice server" "$REPO/server/logs/mia.pid" "$REPO/server/logs/mia.out" \
@@ -147,19 +262,21 @@ if [ "$DO_START" = 1 ]; then
       timeout 20 "${SCTL[@]}" start mia-tts && info "systemd: mia-tts started"
     elif [ -f "$REPO/server/scripts/gepard_tts.py" ]; then
       info "starting TTS service (engine: $TTS_ENGINE_CFG)…"
+      TTS_ARGV=()
+      read_argv tts.http.args TTS_ARGV
       start_background "TTS service" "$REPO/server/logs/mia-tts.pid" "$REPO/server/logs/mia-tts.out" \
         "$PY" "$REPO/server/scripts/gepard_tts.py" --serve --engine "$TTS_ENGINE_CFG" \
-          --fallback-piper $TTS_ARGS
+          --fallback-piper "${TTS_ARGV[@]}"
     else
       warn "tts.provider is http but no TTS service could be started"
     fi
   fi
 else
-  say "1/3 Skipping start (--no-start)"
+  say "1/4 Skipping start (--no-start)"
 fi
 
 # ------------------------------------------------------------------- 2. wait
-say "2/3 Waiting for the HUD (up to ${WAIT_S}s)"
+say "3/4 Waiting for the HUD (up to ${WAIT_S}s)"
 READY=0
 DEADLINE=$(( $(date +%s) + WAIT_S ))
 PIDFILE="$REPO/server/logs/mia.pid"
@@ -214,7 +331,7 @@ if [ "$TOKEN_IN_URL" = 1 ] && [ -n "$TOKEN" ]; then
   LOGIN_URL="$URL?token=$TOKEN"
 fi
 
-say "3/3 Opening the HUD"
+say "4/4 Opening the HUD"
 cat <<INFO
 
     HUD:    $URL

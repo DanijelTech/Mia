@@ -27,3 +27,6 @@ server/voices/
 
 # packaging output
 /dist/
+
+# config backups
+server/config/server.yaml.bak*

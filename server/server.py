@@ -607,6 +607,7 @@ class VoicePipelineServer:
                     if not spoken:
                         await ws.send_json({"type": "agent_status", "state": "speaking"})
                         spoken = True
+                        conn.is_speaking = True
                     conn.spoken_sentences.append(clean)
                     await self._send_tts_sentence(ws, clean, timing)
             tail = self._clean_for_tts(pending.strip())
@@ -619,6 +620,7 @@ class VoicePipelineServer:
                 notice = ((self.cfg.get("hermes") or {}).get("unreachable_text")
                           or "Hermesov gateway ni dosegljiv. Zaženi hermes gateway in poskusi znova.")
                 await ws.send_json({"type": "agent_status", "state": "speaking"})
+                conn.is_speaking = True
                 try:
                     await self._send_tts_sentence(ws, notice, timing)
                 except Exception as tts_exc:
@@ -1253,6 +1255,9 @@ class ConnState:
     segmenter: object | None = None
     wake: WakeGate | None = None
     last_reply_at: float | None = None
+    is_speaking: bool = False          # TTS audio is streaming right now
+    audio_bytes_total: int = 0         # continuous-mode flow diagnostics
+    audio_stats_at: float = 0.0
 
 
 async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnState,
@@ -1262,6 +1267,9 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
     audio = b"".join(conn.audio_chunks)
     conn.audio_chunks = []
     try:
+        # acknowledge immediately: on CPU the STT alone can take tens of
+        # seconds, and silence here reads as "she is not reacting"
+        await ws.send_json({"type": "agent_status", "state": "thinking"})
         transcript = await pipeline.transcribe(audio, timing)
         timing.transcript = transcript
         await ws.send_json({"type": "transcript", "text": transcript})
@@ -1269,9 +1277,11 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             accept, transcript = wake.check(transcript, conn.last_reply_at, time.time())
             if not accept:
                 timing.errors.append("ignored: no wake word")
+                print(f"WAKE rejected: {transcript[:100]!r}", flush=True)
                 await ws.send_json({"type": "ignored", "reason": "wake", "text": transcript})
                 return
             timing.transcript = transcript
+            print(f"WAKE accepted: {transcript[:100]!r}", flush=True)
         if not transcript:
             await ws.send_json({"type": "error", "message": "No transcript detected."})
         else:
@@ -1301,6 +1311,7 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
         pipeline.log_turn(timing)
         conn.timing = None
         conn.current_run_id = None
+        conn.is_speaking = False
 
 
 async def _continuous_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnState) -> None:
@@ -1330,6 +1341,14 @@ async def _feed_continuous(ws: WebSocket, pipeline: VoicePipelineServer, conn: C
                            chunk: bytes) -> None:
     """Feed the always-on stream through the VAD and start turns automatically."""
     barge = bool(((CFG.get("stt") or {}).get("continuous") or {}).get("barge_in", True))
+    conn.audio_bytes_total += len(chunk)
+    now = time.time()
+    if now - conn.audio_stats_at >= 10:
+        conn.audio_stats_at = now
+        seg = conn.segmenter
+        print(f"continuous audio flowing: {conn.audio_bytes_total / 32000:.0f}s total, "
+              f"vad_prob={getattr(seg, 'prob', 0):.2f}, state={getattr(seg, 'state', '?')}",
+              flush=True)
     prev_state = getattr(conn.segmenter, "state", "silence")
     events = conn.segmenter.feed(chunk)
     new_state = getattr(conn.segmenter, "state", "silence")
@@ -1345,6 +1364,10 @@ async def _feed_continuous(ws: WebSocket, pipeline: VoicePipelineServer, conn: C
             if busy:
                 if not barge:
                     continue        # half-duplex: ignore the speaker's own echo
+                if not conn.is_speaking:
+                    # mid-thinking: a click or noise burst must not kill the turn;
+                    # deliberate speech still barges via its completed "utterance"
+                    continue
                 await _cancel_active_turn(ws, pipeline, conn)   # barge-in
                 await ws.send_json({"type": "agent_status", "state": "stopped"})
             await ws.send_json({"type": "agent_status", "state": "listening"})
@@ -1502,6 +1525,15 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                     conn.audio_chunks.append(message["bytes"])
                     _maybe_schedule_partial(ws, pipeline, conn)
     except (WebSocketDisconnect, WebSocketDisconnected):
+        conn.continuous = False
+        if conn.turn_task and not conn.turn_task.done():
+            conn.turn_task.cancel()
+        print("Client disconnected", flush=True)
+    except RuntimeError as exc:
+        # newer starlette raises this instead of WebSocketDisconnect when the
+        # client vanishes mid-receive — same cleanup, no traceback
+        if "disconnect" not in str(exc).lower():
+            raise
         conn.continuous = False
         if conn.turn_task and not conn.turn_task.done():
             conn.turn_task.cancel()

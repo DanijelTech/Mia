@@ -22,11 +22,16 @@ ustavljanje:
 
 ```bash
 ./start-mia.sh              # zaženi (če je treba), počakaj, odpri HUD
-./stop-mia.sh               # ustavi strežnik in TTS storitev (nič ne briše)
+./stop-mia.sh               # ustavi strežnik, TTS storitev in (če je nastavljen `stack:`) Hermes + llama-server
 ./stop-mia.sh --status      # kaj teče in katera vrata so zasedena
 ./stop-mia.sh --restart     # ustavi + zaženi + odpri
 ./stop-mia.sh --free-ports  # zadnja možnost: ubij proces, ki drži vrata
 ```
+
+> Če imaš v `server.yaml` sekcijo `stack:`, `start-mia.sh` pred Mio zažene še
+> lokalni model (llama-server) in Hermes gateway — vsak korak se preskoči, če
+> storitev že odgovarja. `stop-mia.sh` jih ustavi v obratnem vrstnem redu in
+> s tem sprosti RAM/VRAM.
 
 > Skripti sta se prej imenovali `./start.sh` in `./stop.sh`; zdaj sta
 > **`./start-mia.sh`** in **`./stop-mia.sh`** (da se ne zaletita z drugimi
@@ -583,11 +588,22 @@ Hermes vtičnik, da »pokaži video o X na zaslonu« materializira holografske
 medijske panele na vseh odprtih HUD-ih:
 
 ```bash
+# POZOR: vtičnik gre v AKTIVNI HERMES_HOME (če gateway teče s svojim
+# HERMES_HOME, npr. v systemd enoti, uporabi tisto pot namesto ~/.hermes)
 cp -R hermes-plugin/hud_display ~/.hermes/plugins/hud_display
 # uredi ~/.hermes/plugins/hud_display/schemas.py: zamenjaj YOUR_HOST
 hermes plugins enable hud_display     # ponovi z -p <profil>, če uporabljaš profile
+# če ukaz javi "No plugin named ...", dodaj v $HERMES_HOME/config.yaml:
+#   plugins:
+#     enabled: [hud_display]
 # znova zaženi hermes gateway
 ```
+
+Opombi: vtičniki so v Hermesu opt-in (`plugins.enabled`); spremembe orodij
+veljajo šele za **nove** seje — obstoječo glasovno sejo ponastavi z brisanjem
+`server/logs/hermes_sessions.json` (stara seja v Hermesu ostane arhivirana).
+Za predvajanje YouTube glasbe namesti še `yt-dlp` (npr. `pipx install yt-dlp`)
+in nastavi `hud.allow_external_media: true`.
 
 Vtičnik potrebuje `MIA_HUD_TOKEN` v `~/.hermes/.env` (isti žeton kot HUD). Ime
 mape mora ostati veljavno ime Python modula — vezaji tiho zlomijo odkrivanje

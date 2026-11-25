@@ -96,6 +96,7 @@ class SegmenterConfig:
     end_threshold: float = 0.25     # to keep it open (hysteresis)
     max_utterance_ms: int = 20000   # never swallow speech: force-close here
     energy_override: bool = True    # loud audio counts as speech even if VAD says no
+    speech_start_ms: int = 96       # consecutive speech before "speech_start" fires (click/noise debounce)
 
 
 class UtteranceSegmenter:
@@ -108,6 +109,7 @@ class UtteranceSegmenter:
         self._max_frames = max(1, self.cfg.max_utterance_ms // FRAME_MS)
         self._min_speech_frames = max(1, self.cfg.min_speech_ms // FRAME_MS)
         self._pre_roll_frames = max(1, self.cfg.pre_roll_ms // FRAME_MS)
+        self._start_frames = max(1, self.cfg.speech_start_ms // FRAME_MS)
         self._pending = b""
         self.reset()
 
@@ -118,8 +120,7 @@ class UtteranceSegmenter:
         self._silence_run = 0
         self._speech_frames = 0
         self._announced = False
-        self.state = "silence"
-        self.prob = 0.0
+        self._onset_run = 0
         self.state = "silence"
         self.prob = 0.0
 
@@ -148,13 +149,17 @@ class UtteranceSegmenter:
                 if len(self._pre) > self._pre_roll_frames:
                     self._pre.pop(0)
                 if is_speech:
-                    self._speaking = True
-                    self._silence_run = 0
-                    self._speech_frames = 1
-                    self._buf = bytearray(b"".join(self._pre))
-                    if not self._announced:
-                        self._announced = True
-                        events.append(("speech_start", b""))
+                    self._onset_run += 1
+                    if self._onset_run >= self._start_frames:
+                        self._speaking = True
+                        self._silence_run = 0
+                        self._speech_frames = self._onset_run
+                        self._buf = bytearray(b"".join(self._pre))
+                        if not self._announced:
+                            self._announced = True
+                            events.append(("speech_start", b""))
+                else:
+                    self._onset_run = 0
                 continue
 
             self._buf.extend(data[off:off + frame_bytes])
@@ -171,6 +176,7 @@ class UtteranceSegmenter:
                     self._buf = bytearray()
                     self._pre = []
                     self._silence_run = 0
+                    self._onset_run = 0
                     if self._speech_frames >= self._min_speech_frames:
                         events.append(("utterance", payload))
                     self._speech_frames = 0
@@ -229,5 +235,6 @@ def build_segmenter(cfg: dict | None, detector: SpeechDetector | None = None) ->
             end_threshold=float(c.get("end_threshold", 0.25)),
             max_utterance_ms=int(c.get("max_utterance_ms", 20000)),
             energy_override=bool(c.get("energy_override", True)),
+            speech_start_ms=int(c.get("speech_start_ms", 96)),
         ),
     )

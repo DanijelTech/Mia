@@ -83,8 +83,10 @@ tts:
     name: gepard
     engine: gepard           # gepard | maya1 — what start-mia.sh launches
     # Extra arguments for the TTS service (passed to gepard_tts.py).
-    # Female, gentle Slovenian voice with Maya1:
-    #   args: ["--maya-voice", "zenski-nezni"]
+    # Female, gentle Slovenian voice with Maya1 (the adapter was trained on a
+    # male speaker, so --pitch-semitones shifts pitch+formants into the female
+    # range — needs ffmpeg):
+    #   args: ["--maya-voice", "zenski-nezni", "--pitch-semitones", "4"]
     # or a free-form description:
     #   args: ["--maya-description", "A soft, gentle Slovenian female voice."]
     args: []
@@ -99,6 +101,25 @@ tts:
     output_format: pcm_16000
 
 machines: []                # optional extra machines for the HUD "Stroji" panel.
+
+# Lokalni "možganski" sklad, ki ga start-mia.sh / stop-mia.sh zaženetā in
+# ustavita skupaj z Mio (vsak korak se preskoči, če health URL že odgovarja).
+# Brez te sekcije skripta predpostavi, da Hermes teče drugje.
+# stack:
+#   llama:                  # llama-server z lokalnim modelom za Hermesa
+#     health: http://127.0.0.1:18081/health
+#     start_timeout: 420    # velik GGUF se nalaga minute
+#     pidfile: logs/llama-server.pid
+#     log: logs/llama-server.out
+#     supervisor: ""        # opcijski restart-on-crash ovoj; "" = brez
+#     argv: [/pot/do/llama-server, -m, /pot/do/model.gguf, --port, "18081"]
+#   hermes:                 # Hermes gateway (API strežnik, na katerega se Mia veže)
+#     health: http://127.0.0.1:8642/health
+#     start_timeout: 90
+#     unit: ""              # ime systemd --user enote, če obstaja (npr. hermes-gateway-XXXX)
+#     pidfile: logs/hermes-gateway.pid
+#     log: logs/hermes-gateway.out
+#     argv: ["hermes", "gateway", "run"]
 # Add entries only for boxes that actually run worker/worker_stats.py, otherwise
 # the panel shows them as "brez povezave":
 #   - name: "GPU WORKER"
