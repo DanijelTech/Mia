@@ -433,6 +433,16 @@ class MayaEngine(Engine):
 
     def _load_model(self, AutoModelForCausalLM, PeftModel):
         dtype = self.torch.bfloat16 if self.device == "cuda" else self.torch.float32
+        if self.device != "cuda":
+            # peft loads adapter weights on infer_device() -> "cuda" as soon as a GPU
+            # is visible, which OOMs when the LLM already owns the card. CPU mode
+            # means no CUDA at all, so make that explicit for every library.
+            os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+            try:
+                self.torch.cuda.is_available = lambda: False  # type: ignore[assignment]
+            except Exception:
+                pass
+            print("[maya1] CPU mode: CUDA disabled for this process", file=sys.stderr, flush=True)
         model = None
         if self.device == "cuda" and self.offload == "auto":
             free = gpu_free_gb() or 0.0
@@ -658,6 +668,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--repetition-window", type=int, default=32)
     ap.add_argument("--max-frames", type=int, default=800)
     args = ap.parse_args(argv)
+
+    if (args.device or "").lower() == "cpu":
+        # before torch is imported anywhere: keep the GPU untouched
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
     if args.piper_model.endswith("sl_PLACEHOLDER.onnx"):  # keep the default path usable
         args.piper_model = os.path.join(
