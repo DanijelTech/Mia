@@ -177,8 +177,9 @@ VOICE LINK panel:
 
 1. click `STALNO` (the mic opens and stays open),
 2. say **"Mia, …"** — she answers immediately, nothing to send,
-3. after the reply you can keep talking **without the wake word** for
-   `followup_seconds` (20 s by default); afterwards say "Mia" again,
+3. after the reply you can keep talking **without the wake word** only if
+   `followup_seconds` > 0 (default **0** = every utterance must start with "Mia");
+   otherwise say "Mia" again for each request,
 4. you may speak while she is answering — that **interrupts** her (`barge_in`),
 5. **Space** (or clicking the ring) while listening **submits** the current
    utterance immediately — use it when the end of speech is not detected,
@@ -193,16 +194,32 @@ active (`silero`/`rms`).
 stt:
   continuous:
     wake_words: ["mia", "hej mia", "ej mia"]
-    followup_seconds: 20
+    followup_seconds: 0       # 0 = every utterance must start with "Mia"
     silence_ms: 700
-    min_speech_ms: 300
-    threshold: 0.4           # start of an utterance
+    min_speech_ms: 450
+    threshold: 0.5           # start of an utterance
     end_threshold: 0.25      # end (hysteresis: lower = fewer cuts)
     max_utterance_ms: 20000  # speech is never swallowed (force-close)
     energy_override: true    # loud audio counts as speech even if the VAD says no
-    min_rms: 320
+    min_rms: 700             # energy fallback (320 picked up TV/fans)
     barge_in: true           # false = half duplex (Mia cannot hear herself)
 ```
+
+**Noise, TV and other voices.** If `SPEAKER rejected` shows up on the console or
+in `server/logs/latency.jsonl` (the `errors` field), Mia is hearing the room
+instead of you. Fixes, in order:
+
+1. `speaker_gate.probe_on_reject_seconds: 0` (default) means a rejected voice is
+   **never sent to the transcriber**, so a TV cannot occupy STT. If you still see
+   `thinking`/transcripts for a foreign voice, check that this is 0 and that the
+   profile actually loaded (`Speaker gate: on (enrolled, …)` at startup).
+2. Raise `min_rms` (e.g. 900–1200) and `threshold` (0.6) until `SLIŠIM …` no
+   longer flickers in silence; keep `min_speech_ms` at 400 or more.
+3. Keep the wake word **out of** `initial_prompt` — Whisper tends to repeat
+   prompt words on noise, turning every hiss into a "Mia, …" turn.
+4. With constant background noise (TV, music) the VAD alone cannot separate it
+   from speech; calibrate in silence and raise the thresholds. A rejected voice
+   shows as `GLAS NI PREPOZNAN` in the HUD.
 
 While listening the HUD shows **`SLIŠIM …`** when the server detects speech and
 **`POSLUŠAM`** in silence, so you can see whether you are being heard at all. Every
@@ -542,6 +559,23 @@ HUD). Directory name must stay a valid Python module name — hyphens silently
 break plugin discovery. The agent then has `hud_display` / `hud_dismiss`
 tools; YouTube links play as embedded video, `position` left/right lets it
 fly in multiple panels from different vectors.
+
+**Voice calibration** (Mia obeys only your voice): enrol a permanent speaker
+print (ECAPA-TDNN, local on CPU; verified *before* transcription, ~0.1 s):
+
+```bash
+pip install speechbrain          # once (the existing torch is enough)
+python3 server/scripts/enroll_voice.py   # 3 × 6 s of speech from the mic
+```
+
+The profile is stored in `server/voices/speaker_profile.npz` (gitignored) and
+picked up without a restart. The gate switches itself **on as soon as that file
+exists** (`enabled: false` is the only way to turn it off). A rejected voice is
+not transcribed at all (`probe_on_reject_seconds: 0`), so a TV or a conversation
+in the room never occupies the transcriber. While no profile exists the gate is
+open (fail-open). The threshold is `stt.continuous.speaker_gate.threshold` (0.30
+is a good starting point; the enrolment script suggests a value). Re-running the
+script recalibrates.
 
 ## 6. Verify everything
 

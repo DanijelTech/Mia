@@ -524,7 +524,7 @@ function connect(){
     }
     else if(e.type==="ignored"){ // hrup brez budnice: diskretno, brez poplavljanja klepeta
       if(continuous&&state==="listening"){
-        if(e.reason==="speaker")setState("listening","POSLUŠAM","GLAS NI PREPOZNAN — RECI »MIA …«");
+        if(e.reason==="speaker")setState("listening","POSLUŠAM","GLAS NI PREPOZNAN — MIA UBOGA LE TVOJEMU GLASU");
         else setState("listening","POSLUŠAM","RECI »MIA …« · ODGOVOR PRIPRAVIM SAMA");
       }
     }

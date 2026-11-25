@@ -63,14 +63,21 @@ class SpeakerGate:
         return float(np.dot(self.embed(pcm_int16), profile))
 
     def verify(self, pcm_int16: np.ndarray) -> tuple[bool, float]:
-        """(accept, score). Fail-open: no profile or too-short audio passes —
-        short commands stay usable, the wake word still applies."""
+        """(accept, score). Without a profile everything passes (fail-open).
+
+        With a profile, short clips are judged instead of waved through: the
+        old fail-open for anything under `min_seconds` let every cough, door
+        slam and TV burst reach the transcriber. ECAPA is usable from ~0.5 s,
+        so below `min_seconds` a slightly stricter threshold applies; clips
+        under 0.4 s carry too little signal and are rejected outright.
+        """
         if not self.enrolled:
             return True, 1.0
-        if pcm_int16.size < int(self.min_seconds * 16000):
-            return True, -1.0
+        if pcm_int16.size < int(0.4 * 16000):
+            return False, -1.0
         s = self.score(pcm_int16)
-        return s >= self.threshold, s
+        short = pcm_int16.size < int(self.min_seconds * 16000)
+        return s >= self.threshold + (0.05 if short else 0.0), s
 
     def enroll(self, samples: list[np.ndarray], append: bool = False) -> Path:
         """Build the profile from enrolment samples (16 kHz mono int16).

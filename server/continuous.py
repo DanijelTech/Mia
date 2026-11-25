@@ -209,30 +209,31 @@ class WakeGate:
     def _strip_wake(self, text: str) -> str:
         flat = _ascii(text)
         for word in sorted(self.words, key=len, reverse=True):
-            m = re.match(rf"^[\s,.;:!?-]*{re.escape(word)}[\s,.;:!?-]*(.*)$", flat, re.S)
+            # the lookahead keeps the wake word on a word boundary: "miara"
+            # must not become "ra", and a bare "Mia" must become ""
+            m = re.match(rf"^[\s,.;:!?-]*{re.escape(word)}(?=[\s,.;:!?-]|$)(.*)$", flat, re.S)
             if m:
                 # map the ASCII prefix length back onto the original text
                 cut = len(text) - len(m.group(1)) if m.group(1) else len(text)
-                rest = text[cut:].lstrip(" ,.;:!?-")
-                return rest or text
+                return text[cut:].lstrip(" ,.;:!?-")
         return text
 
     def starts_with_wake(self, text: str) -> bool:
         """Strict check: the utterance STARTS with a wake word (no followup
         window) — used for the speaker-gate override while music plays."""
         flat = _ascii(text).strip()
-        return any(flat.startswith(w) for w in self.words)
+        return any(re.match(rf"{re.escape(w)}(?=[\s,.;:!?-]|$)", flat) for w in self.words)
 
     def check(self, transcript: str, last_reply_at: float | None, now: float) -> tuple[bool, str]:
         if not self.words:
             return True, transcript
-        flat = _ascii(transcript).strip()
-        said_wake = any(flat.startswith(w) for w in self.words) or any(
-            re.search(rf"(^|\s){re.escape(w)}(\s|$)", flat) for w in self.words
-        )
-        if said_wake:
+        # The wake word must be the FIRST word: a sentence that merely mentions
+        # "Mia" later on ("danes je mia lepa", TV dialogue) must not start a
+        # turn. Set `followup_seconds: 0` to require it on every single turn.
+        if self.starts_with_wake(transcript):
             return True, self._strip_wake(transcript)
-        if last_reply_at is not None and (now - last_reply_at) <= self.followup:
+        if (self.followup > 0 and last_reply_at is not None
+                and (now - last_reply_at) <= self.followup):
             return True, transcript
         return False, transcript
 

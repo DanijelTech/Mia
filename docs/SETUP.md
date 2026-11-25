@@ -189,8 +189,9 @@ POVEZAVA:
 
 1. klikni `STALNO` (mikrofon se odpre in ostane odprt),
 2. reci **»Mia, …«** — Mia takoj odgovori, brez pošiljanja,
-3. po odgovoru lahko nadaljuješ **brez budnice** (`followup_seconds`, privzeto
-   20 s); po tem spet reci »Mia«,
+3. po odgovoru lahko nadaljuješ **brez budnice** samo, če nastaviš
+   `followup_seconds` > 0 (privzeto **0** = vsaka izjava mora začeti z »Mia«);
+   sicer po vsakem odgovoru znova reci »Mia«,
 4. govori lahko tudi med njenim odgovorom — to jo **prekine** (`barge_in`),
 5. **preslednica** (ali klik na obroč) med poslušanjem **takoj pošlje** trenutno
    izjavo — uporabi, če Mia ne zazna konca govora sama,
@@ -206,16 +207,32 @@ Nastavitve v `server.yaml`:
 stt:
   continuous:
     wake_words: ["mia", "hej mia", "ej mia"]
-    followup_seconds: 20
+    followup_seconds: 0       # 0 = vsaka izjava mora začeti z »Mia«
     silence_ms: 700          # daljša tišina = počasnejši odziv, manj rezov
-    min_speech_ms: 300       # krajše od tega se ignorira
-    threshold: 0.4           # prag za začetek izjave
+    min_speech_ms: 450       # krajše od tega se ignorira
+    threshold: 0.5           # prag za začetek izjave
     end_threshold: 0.25      # prag za konec (histereza: nižji = manj prerezov)
     max_utterance_ms: 20000  # izjava se nikoli ne izgubi (po 20 s se zaključi)
     energy_override: true    # glasen zvok šteje kot govor, tudi če VAD reče ne
-    min_rms: 320             # energijski fallback
+    min_rms: 700             # energijski fallback (320 je lovil TV/ventilator)
     barge_in: true           # false = Mia ne sliši sebe (pol-duplex)
 ```
+
+**Šum, TV in tuji glasovi.** Če se v logu (`server/logs/latency.jsonl`,
+polje `errors`) ali na konzoli pojavlja `SPEAKER rejected`, Mia sliši okolico,
+ne pa tebe. Ukrepi po vrsti:
+
+1. `speaker_gate.probe_on_reject_seconds: 0` (privzeto) pomeni, da se zavrnjen
+   glas **ne pošlje v prepis** — TV torej ne zasede STT. Če vidiš veliko
+   `thinking`/prepisov za tuj glas, preveri, da je ta vrednost 0 in da je
+   profil res naložen (`Speaker gate: on (enrolled, …)` v logu ob zagonu).
+2. Dvigni `min_rms` (npr. 900–1200) in `threshold` (0,6), dokler `SLIŠIM …`
+   ne utripa ob tišini; `min_speech_ms` naj bo vsaj 400.
+3. `initial_prompt` naj **ne** vsebuje budnice »Mia« — Whisper na šumu rad
+   ponovi besede iz poziva in vsak šum postane »Mia, …«.
+4. Če je v sobi stalni šum (TV, glasba), ga Mia ne more ločiti od govora samo
+   z VAD; pomaga le kalibracija v tišini in višji pragovi. Zavrnjen glas se
+   izpiše kot `GLAS NI PREPOZNAN` v HUD-u.
 
 Med poslušanjem HUD izpisuje **`SLIŠIM …`**, ko strežnik zazna govor, in
 **`POSLUŠAM`** v tišini — iz tega vidiš, ali te strežnik sploh sliši. Vsaka
@@ -658,9 +675,14 @@ python3 server/scripts/enroll_voice.py   # 3 × 6 s govora v mikrofon
 ```
 
 Profil se shrani v `server/voices/speaker_profile.npz` (gitignoriran) in se
-pobere brez restarta; do vpisa je vrata odprta (fail-open). Prag se nastavi
-s `stt.continuous.speaker_gate.threshold` (0,30 je dobra izhodiščna vrednost;
-skripta ob vpisu predlaga vrednost). Ponovni zagon skripte = rekalibracija.
+pobere brez restarta. Vrata se **sama vklopijo, ko ta datoteka obstaja**
+(izklopi jih le izrecni `enabled: false`) — zato kalibriran glas deluje tudi,
+če je bila konfiguracija narejena pred to funkcijo. Zavrnjen glas se **ne
+prepiše** (`probe_on_reject_seconds: 0`), torej TV ali pogovor v sobi nikoli ne
+zasede prepisovalnika. Dokler profila ni, so vrata odprta (fail-open). Prag se
+nastavi s `stt.continuous.speaker_gate.threshold` (0,30 je dobra izhodiščna
+vrednost; skripta ob vpisu predlaga vrednost). Ponovni zagon skripte =
+rekalibracija.
 
 ## 6. Preveri vse skupaj
 

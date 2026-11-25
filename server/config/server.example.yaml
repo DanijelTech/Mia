@@ -39,20 +39,25 @@ stt:
   compute_type: int8         # int8 on CPU, float16 on CUDA
   sample_rate: 16000
   language: sl               # sl | sr | en | "" ("" = auto-detect, less accurate)
-  initial_prompt: "Mia, odpri, zapri, pokliči, nastavi, preberi, pošlji, preveri."
+  # Whisper biases towards the prompt on noise/silence — never put the wake
+  # word here, or every hiss becomes a hallucinated "Mia, ..." turn.
+  initial_prompt: "odpri, zapri, pokliči, nastavi, preberi, pošlji, preveri."
   beam_size: 1
-  # Neprestano poslušanje (gumb STALNO v HUD-u): VAD razdeli tok v izjave,
+  # Neprestano poslušanje (gumb STALNO): VAD razdeli tok v izjave,
   # budnica »Mia« odpre pogovor, followup okno dovoli nadaljevanje brez nje.
   continuous:
     wake_words: ["mia", "mijo", "mija", "mio", "mja", "nia", "nja", "meja"]
-    followup_seconds: 20     # po odgovoru velja brez budnice
+    followup_seconds: 0      # 0 = vsaka izjava mora ZAČETI z »Mia« (strogo,
+                             # priporočeno v hrupni sobi); npr. 20 = po odgovoru
+                             # lahko nadaljuješ brez budnice
     silence_ms: 700          # toliko tišine zaključi izjavo
-    min_speech_ms: 300       # krajše (kašelj) se ignorira
-    threshold: 0.4           # prag za začetek izjave
+    min_speech_ms: 450       # krajše (kašelj, pok, šum) se ignorira
+    threshold: 0.5           # prag za začetek izjave (višji = manj šuma)
     end_threshold: 0.25      # prag za konec (histereza; nižji = manj rezov)
     max_utterance_ms: 20000  # izjava se nikoli ne "izgubi": po 20 s se zaključi
     energy_override: true    # glasen zvok šteje kot govor, tudi če VAD reče ne
-    min_rms: 320             # rezervni energijski prag
+    min_rms: 700             # rezervni energijski prag (320 je lovil piskanje
+                             # ventilatorja/TV; dvigni, če je v sobi stalni šum)
     barge_in: false          # false = pol-duplex (priporočeno: šum ne ubije turna;
                              # prekinitev z govorom med Mijinim govorjenjem)
     speaker_gate:            # glasovna kalibracija — Mia uboga samo vpisan glas
@@ -61,7 +66,11 @@ stt:
       threshold: 0.30        # kosinusna podobnost odtisa; dvig = strožje
       wake_override: true    # ob predvajanju medijev (mia-open okno živo) izrecna
                              # budnica prevzame turn — sicer glasbe ne moreš ustaviti
-      min_seconds: 1.0       # krajše izjave ne preverjamo (budnica še vedno velja)
+      probe_on_reject_seconds: 0   # 0 = zavrnjen glas se NE pošlje v STT (TV in
+                             # šum ne zasedeta prepisa). >0 = vseeno prepiši
+                             # zavrnjeno izjavo vsakih N s (npr. za vpis z
+                             # »Mia, prepoznaj glas« iz drugega konca sobe).
+      min_seconds: 1.0       # krajše izjave se ocenijo strožje (pod 0,4 s zavržene)
       profile: voices/speaker_profile.npz
   # Whisper na tišini/šumu "sliši" znane fraze (YouTube podnapisi ipd.) —
   # transkript, sestavljen samo iz njih, se zavrže:

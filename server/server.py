@@ -564,8 +564,14 @@ class VoicePipelineServer:
         stt = cfg["stt"]
         gate_cfg = ((stt.get("continuous") or {}).get("speaker_gate") or {})
         self.speaker_gate: SpeakerGate | None = None
-        if gate_cfg.get("enabled", False):
-            profile = ROOT / (gate_cfg.get("profile") or "voices/speaker_profile.npz")
+        profile = ROOT / (gate_cfg.get("profile") or "voices/speaker_profile.npz")
+        # A calibrated profile must protect Mia even when the config predates
+        # this block: "on" is the default whenever a profile exists, and only
+        # an explicit `enabled: false` turns it off.
+        enabled = gate_cfg.get("enabled")
+        if enabled is None:
+            enabled = profile.exists()
+        if enabled:
             self.speaker_gate = SpeakerGate(
                 profile,
                 threshold=float(gate_cfg.get("threshold", 0.30)),
@@ -574,6 +580,9 @@ class VoicePipelineServer:
             )
             state = "enrolled" if self.speaker_gate.enrolled else "waiting for enrollment"
             print(f"Speaker gate: on ({state}, threshold {self.speaker_gate.threshold})", flush=True)
+        else:
+            print(f"Speaker gate: off — no profile at {profile} "
+                  f"(run python3 server/scripts/enroll_voice.py)", flush=True)
         self.stt_language = (stt.get("language") or "en")
         self.stt_device = pick_stt_device(stt.get("device", "auto"),
                                           float(stt.get("min_free_vram_gb", 2.5) or 0))
@@ -1534,24 +1543,48 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
     try:
         # voice calibration: only the enrolled speaker gets through — checked
         # BEFORE the expensive STT so foreign voices cost ~100 ms, not seconds.
-        # A failed check still gets transcribed once: an explicit wake word can
-        # carry the turn (media override) or trigger voice enrollment.
+        # A rejected voice is NOT transcribed by default: transcribing every
+        # TV/noise burst kept the single STT lock busy and starved the real
+        # user. Two exceptions: media is playing (an explicit "Mia ..." must
+        # still be able to stop it) or an opt-in probe window is configured.
         gate = pipeline.speaker_gate
+        gate_cfg = (((pipeline.cfg.get("stt") or {}).get("continuous") or {})
+                    .get("speaker_gate") or {})
         speaker_ok, score = True, None
+        override_ok = False
         if wake is not None and gate is not None and gate.enrolled:
-            speaker_ok, score = await asyncio.to_thread(
-                gate.verify, np.frombuffer(audio, dtype=np.int16))
+            try:
+                speaker_ok, score = await asyncio.to_thread(
+                    gate.verify, np.frombuffer(audio, dtype=np.int16))
+            except Exception as exc:
+                # broken profile / missing speechbrain must not kill every turn
+                if not getattr(pipeline, "_gate_error_logged", False):
+                    pipeline._gate_error_logged = True
+                    print(f"SPEAKER gate unavailable ({type(exc).__name__}: {exc}) — "
+                          f"nadaljujem brez njega; popravi profil/speechbrain", flush=True)
+                speaker_ok, score = True, None
+            if speaker_ok and score is not None and score < gate.threshold + 0.10:
+                # visible for calibration: your own voice should sit well above
+                # the threshold; a stream of borderline accepts means the
+                # threshold is too low for this room.
+                print(f"SPEAKER borderline accept (score={score:.2f}, "
+                      f"{len(audio) / 32000:.1f}s)", flush=True)
             if not speaker_ok:
-                # noise must not burn STT: only longer utterances, debounced,
-                # get transcribed at all — and then only an EXACT "Mia" may
-                # trigger the override paths below
+                override_ok = (bool(gate_cfg.get("wake_override", True))
+                               and await asyncio.to_thread(_playback_active))
+                probe_s = float(gate_cfg.get("probe_on_reject_seconds", 0) or 0)
                 now_m = time.monotonic()
-                if len(audio) < 32000 * 1.2 or now_m - conn.last_rejected_stt_at < 3.0:
-                    timing.errors.append(f"ignored: speaker score {score}")
+                may_probe = (probe_s > 0 and len(audio) >= 32000 * 1.5
+                             and now_m - conn.last_rejected_stt_at >= probe_s)
+                if not (override_ok or may_probe):
+                    timing.errors.append(f"ignored: speaker score {score:.2f}")
+                    print(f"SPEAKER rejected (score={score:.2f}, "
+                          f"{len(audio) / 32000:.1f}s) — brez STT", flush=True)
                     await ws.send_json({"type": "ignored", "reason": "speaker"})
                     return
                 conn.last_rejected_stt_at = now_m
-                print(f"SPEAKER check failed (score={score:.2f}) — STT odloči (budnica/vpis)", flush=True)
+                print(f"SPEAKER check failed (score={score:.2f}) — STT samo za "
+                      f"{'predvajanje' if override_ok else 'vpis'}", flush=True)
         # acknowledge immediately: on CPU the STT alone can take tens of
         # seconds, and silence here reads as "she is not reacting"
         await ws.send_json({"type": "agent_status", "state": "thinking"})
@@ -1564,9 +1597,10 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             # only an EXACT "Mia" start may use any override path
             said_wake = bool(transcript) and starts_with_exact_wake(transcript)
 
-        # "Mia, prepoznaj glas!" — append THIS utterance to the voiceprint
-        # (works even when the gate just rejected the voice: that is the point,
-        # e.g. enrolling how the user sounds from the far side of the room)
+        # "Mia, prepoznaj glas!" — append THIS utterance to the voiceprint.
+        # Works for the enrolled voice, and for a rejected one only when
+        # `probe_on_reject_seconds` > 0 (otherwise a rejected voice never
+        # reaches STT, which is the point of the default).
         if said_wake and gate is not None and _is_enroll_command(transcript):
             await asyncio.to_thread(
                 gate.enroll, [np.frombuffer(audio, dtype=np.int16)], gate.enrolled)
@@ -1652,16 +1686,12 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             return
 
         if not speaker_ok:
-            gate_cfg = ((pipeline.cfg["stt"].get("continuous") or {}).get("speaker_gate") or {})
-            override = (said_wake and bool(gate_cfg.get("wake_override", True))
-                        and await asyncio.to_thread(_playback_active))
-            if override:
+            if said_wake and override_ok:
                 print(f"SPEAKER override accepted via wake word: {transcript[:80]!r}", flush=True)
             else:
-                timing.errors.append(f"ignored: speaker score {score}")
+                timing.errors.append(f"ignored: speaker score {score:.2f}")
                 await ws.send_json({"type": "ignored", "reason": "speaker"})
                 return
-        await ws.send_json({"type": "transcript", "text": transcript})
         if transcript and wake is not None:
             accept, transcript = wake.check(transcript, conn.last_reply_at, time.time())
             if not accept:
@@ -1676,6 +1706,9 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
                 return  # continuous mode: empty/noise utterances are normal, stay quiet
             await ws.send_json({"type": "error", "message": "No transcript detected."})
         else:
+            # only an accepted turn reaches the feed, so noise never shows up
+            # as if the user had said it
+            await ws.send_json({"type": "transcript", "text": transcript})
             if conn.interrupt_note:
                 transcript_sent = (
                     f"[note: your previous spoken reply was cut off by the user after you said: "
