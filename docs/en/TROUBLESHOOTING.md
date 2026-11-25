@@ -6,7 +6,29 @@
 
 
 **HUD shows `HTTPConnectionPool(... port=8642): Connection refused` / Mia says
-"Hermes gateway unreachable"** — the Hermes gateway is not running (often because
+"Hermes gateway unreachable"** — either the gateway is not running or its
+environment lacks `API_SERVER_ENABLED`/`API_SERVER_KEY`. **Editing `.env` does not
+affect an already running process** — always `hermes gateway restart` afterwards.
+Check:
+
+```bash
+grep -nE '^API_SERVER' ~/.hermes/.env          # are the lines really there
+hermes gateway restart
+curl -s -m 2 http://127.0.0.1:8642/health      # {"status":"ok",...}
+grep -i "api server" ~/.hermes/logs/gateway.log | tail -3
+```
+
+If nothing listens after the restart either, start the gateway with an explicit
+environment (bypasses any `.env` loading):
+
+```bash
+hermes gateway stop
+API_SERVER_ENABLED=true API_SERVER_PORT=8642 \
+API_SERVER_KEY=$(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2) \
+hermes gateway
+```
+
+The old entry follows: the Hermes gateway is not running (often because
 it was started in a terminal that got closed). Run it persistently:
 
 ```bash

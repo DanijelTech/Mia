@@ -114,7 +114,29 @@ vrstic `server/logs/mia.out`. Najpogosteje manjkajoče odvisnosti
 aktivirata.
 
 **V HUD-u se pojavi `HTTPConnectionPool(... port=8642): Connection refused` / Mia
-reče »Hermesov gateway ni dosegljiv«** — Hermesov gateway ne teče (pogosto zato,
+reče »Hermesov gateway ni dosegljiv«** — Hermesov gateway ne teče ali pa v
+njegovem okolju ni `API_SERVER_ENABLED`/`API_SERVER_KEY`. **Sprememba `.env` ne
+velja za že tekoči proces** — po vsakem urejanju je treba `hermes gateway restart`.
+Preveri:
+
+```bash
+grep -nE '^API_SERVER' ~/.hermes/.env          # ali so vrstice res v datoteki
+hermes gateway restart
+curl -s -m 2 http://127.0.0.1:8642/health      # {"status":"ok",...}
+grep -i "api server" ~/.hermes/logs/gateway.log | tail -3
+```
+
+Če tudi po restartu nič ne posluša, zaženi gateway z eksplicitnim okoljem (obide
+vsako nalaganje `.env`):
+
+```bash
+hermes gateway stop
+API_SERVER_ENABLED=true API_SERVER_PORT=8642 \
+API_SERVER_KEY=$(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2) \
+hermes gateway
+```
+
+V nadaljevanju stari opis: (pogosto zato,
 ker je bil zagnan v terminalu, ki si ga zaprl). Zaženi ga trajno:
 
 ```bash
