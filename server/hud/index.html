@@ -507,7 +507,9 @@ function connect(){
       else if(e.state==="listening")setState("listening","POSLUŠAM",continuous?"RECI »MIA …« ALI KAR GOVORI":"KLIKNI ZNOVA ZA POŠILJANJE");
       else if(e.state==="stopped"){setState("standby","PRIPRAVLJEN");showStop(false);stopPlayback();addMsg("sys","izvajanje ustavljeno")}
     }
-    else if(e.type==="ignored"){ addMsg("sys","preskočeno (reci »Mia«)"); }
+    else if(e.type==="ignored"){ // hrup brez budnice: diskretno, brez poplavljanja klepeta
+      if(continuous&&state==="listening")setState("listening","POSLUŠAM","RECI »MIA …« · ODGOVOR PRIPRAVIM SAMA");
+    }
     else if(e.type==="vad"){
       if(continuous && state==="listening")
         setState("listening", e.state==="speech" ? "SLIŠIM …" : "POSLUŠAM",
