@@ -32,6 +32,14 @@ def _ascii(text: str) -> str:
     return text.lower()
 
 
+def starts_with_exact_wake(text: str, word: str = "mia") -> bool:
+    """EXACT wake word at the start (no fuzzy variants) — the bar for turns
+    whose speaker verification FAILED: Whisper mishearings of noise ('nja',
+    'mja') must not trigger overrides."""
+    flat = _ascii(text).strip()
+    return bool(re.match(rf"{re.escape(word)}(?=[\s,.!?]|$)", flat))
+
+
 class SpeechDetector:
     """Speech probability for 32 ms frames.
 

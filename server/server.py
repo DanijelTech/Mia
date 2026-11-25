@@ -49,7 +49,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from RealtimeSTT import AudioToTextRecorder
 
-from continuous import WakeGate, build_segmenter
+from continuous import WakeGate, build_segmenter, starts_with_exact_wake
 from speaker_gate import SpeakerGate
 from tts import build_backend
 
@@ -1511,6 +1511,7 @@ class ConnState:
     audio_bytes_total: int = 0         # continuous-mode flow diagnostics
     audio_stats_at: float = 0.0
     pending_utterance: bytes | None = None  # said while a turn was busy — runs next
+    last_rejected_stt_at: float = 0.0       # debounce for override STT on foreign voices
 
 
 async def _speak_and_finish(ws: WebSocket, pipeline: VoicePipelineServer,
@@ -1541,6 +1542,15 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             speaker_ok, score = await asyncio.to_thread(
                 gate.verify, np.frombuffer(audio, dtype=np.int16))
             if not speaker_ok:
+                # noise must not burn STT: only longer utterances, debounced,
+                # get transcribed at all — and then only an EXACT "Mia" may
+                # trigger the override paths below
+                now_m = time.monotonic()
+                if len(audio) < 32000 * 1.2 or now_m - conn.last_rejected_stt_at < 3.0:
+                    timing.errors.append(f"ignored: speaker score {score}")
+                    await ws.send_json({"type": "ignored", "reason": "speaker"})
+                    return
+                conn.last_rejected_stt_at = now_m
                 print(f"SPEAKER check failed (score={score:.2f}) — STT odloči (budnica/vpis)", flush=True)
         # acknowledge immediately: on CPU the STT alone can take tens of
         # seconds, and silence here reads as "she is not reacting"
@@ -1549,6 +1559,10 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
         transcript = pipeline.filter_hallucinations(transcript)
         timing.transcript = transcript
         said_wake = bool(transcript) and wake is not None and wake.starts_with_wake(transcript)
+        if not speaker_ok:
+            # foreign/failed voice: fuzzy wake variants are off the table —
+            # only an EXACT "Mia" start may use any override path
+            said_wake = bool(transcript) and starts_with_exact_wake(transcript)
 
         # "Mia, prepoznaj glas!" — append THIS utterance to the voiceprint
         # (works even when the gate just rejected the voice: that is the point,
