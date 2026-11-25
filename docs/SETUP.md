@@ -301,7 +301,9 @@ Opomba: LoRA je Apache-2.0; preveri licenco osnovnega modela
 
 Panel `STROJI` prikazuje **lokalni stroj** (`MAC MINI · HERMES`) s CPU/pomnilnikom in —
 če je na voljo `nvidia-smi` — tudi **GPU obremenitev, VRAM in temperaturo**
-(`GPU 37% · VRAM 11.1/24G · 61°`). Če vrstice GPU ni, ukaz `nvidia-smi` ni v `PATH`.
+(`GPU 37% · VRAM 11.1/24G · 61°`). Pri več karticah se VRAM **sešteje**, obremenitev in
+temperatura pa sta najvišji (`GPU×2 55% · VRAM 20.4/31.8G · 61°`). Če vrstice GPU ni,
+ukaz `nvidia-smi` ni v `PATH`.
 
 Preverjanje, da model res teče na grafični:
 

@@ -1039,7 +1039,11 @@ async def hud_config() -> JSONResponse:
 
 
 def _local_gpu() -> dict:
-    """Read-only local GPU stats via nvidia-smi; empty dict when unavailable."""
+    """Read-only local GPU stats via nvidia-smi; empty dict when unavailable.
+
+    Aggregates all cards: VRAM is summed, utilisation and temperature are the max,
+    so a 2-GPU tensor split shows as one row (vram_total = both cards).
+    """
     smi = shutil.which("nvidia-smi")
     if not smi:
         return {}
@@ -1051,14 +1055,33 @@ def _local_gpu() -> dict:
         )
         if out.returncode != 0 or not out.stdout.strip():
             return {}
-        util, used, total, temp = [x.strip() for x in out.stdout.splitlines()[0].split(",")[:4]]
+        utils, temps = [], []
+        used = total = 0.0
+        for line in out.stdout.splitlines():
+            parts = [x.strip() for x in line.split(",")]
+            if len(parts) < 3:
+                continue
+            try:
+                utils.append(float(parts[0]))
+                used += float(parts[1])
+                total += float(parts[2])
+            except ValueError:
+                continue
+            if len(parts) > 3 and parts[3] not in ("[N/A]", "N/A", ""):
+                try:
+                    temps.append(float(parts[3]))
+                except ValueError:
+                    pass
+        if not utils:
+            return {}
         stats = {
-            "gpu_util": float(util),
-            "vram_used": round(float(used) / 1024, 1),
-            "vram_total": round(float(total) / 1024, 1),
+            "gpu_count": len(utils),
+            "gpu_util": round(max(utils)),
+            "vram_used": round(used / 1024, 1),
+            "vram_total": round(total / 1024, 1),
         }
-        if temp not in ("[N/A]", "N/A", ""):
-            stats["gpu_temp"] = float(temp)
+        if temps:
+            stats["gpu_temp"] = round(max(temps))
         return stats
     except Exception:
         return {}

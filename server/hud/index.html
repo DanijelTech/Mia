@@ -705,7 +705,7 @@ async function refreshMachines(){
       const bits=[];
       if(m.cpu!=null)bits.push(`CPU ${Math.round(m.cpu)}%`);
       if(m.mem!=null)bits.push(`MEM ${Math.round(m.mem)}%`);
-      if(m.gpu_util!=null)bits.push(`GPU ${Math.round(m.gpu_util)}%`);
+      if(m.gpu_util!=null)bits.push(m.gpu_count>1?`GPU×${m.gpu_count} ${Math.round(m.gpu_util)}%`:`GPU ${Math.round(m.gpu_util)}%`);
       if(m.vram_used!=null&&m.vram_total!=null)bits.push(`VRAM ${m.vram_used}/${m.vram_total}G`);
       if(m.gpu_temp!=null)bits.push(`${m.gpu_temp}°`);
       if(!bits.length&&m.note)bits.push(m.note);

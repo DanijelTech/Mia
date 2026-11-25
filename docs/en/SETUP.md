@@ -261,7 +261,9 @@ Note: the LoRA card is Apache-2.0; check the base model
 
 The `STROJI` panel shows the **local host** (`MAC MINI · HERMES`) with CPU/memory and —
 when `nvidia-smi` is available — **GPU utilisation, VRAM and temperature**
-(`GPU 37% · VRAM 11.1/24G · 61°`). No GPU row means `nvidia-smi` is not in `PATH`.
+(`GPU 37% · VRAM 11.1/24G · 61°`). With multiple cards VRAM is **summed** and
+utilisation/temperature are the max (`GPU×2 55% · VRAM 20.4/31.8G · 61°`). No GPU row
+means `nvidia-smi` is not in `PATH`.
 
 To confirm the model really runs on the card:
 
