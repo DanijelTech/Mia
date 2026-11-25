@@ -511,7 +511,7 @@ function connect(){
     else if(e.type==="vad"){
       if(continuous && state==="listening")
         setState("listening", e.state==="speech" ? "SLIŠIM …" : "POSLUŠAM",
-                 "PRESLEDNICA = POŠLJI TAKOJ");
+                 "GOVORI NARAVNO · ODGOVOR PRIPRAVIM SAMA");
     }
     else if(e.type==="error"){ clearLive(); addMsg("sys","napaka: "+e.message); setState("standby","PRIPRAVLJEN"); showStop(false); }
     else if(e.type==="done"){
@@ -651,7 +651,7 @@ async function startContinuous(auto){
   capturing=true; continuous=true;
   $("contBtn").textContent="■ STALNO";
   $("talkBtn").textContent="VKLOPI GLAS"; $("micState").textContent="V ŽIVO";
-  setState("listening","POSLUŠAM","RECI »MIA …« · PRESLEDNICA POŠLJE TAKOJ");
+  setState("listening","POSLUŠAM","RECI »MIA …« · ODGOVOR PRIPRAVIM SAMA");
   addMsg("sys",(auto?"samodejno poslušanje vklopljeno":"neprestano poslušanje vklopljeno")+" — reci »Mia …«");
   if(audioCtx&&audioCtx.state==="suspended"){
     // browsers gate AudioContext behind a user gesture; capture waits for one click
@@ -682,6 +682,10 @@ async function toggleContinuous(){
 
 async function toggleTalk(){
   if(continuous){
+    if(state==="thinking"||state==="speaking"||state==="tool"){
+      addMsg("sys","Mia odgovarja — počakaj, ali pritisni STOP za prekinitev");
+      return;
+    }
     try{ws.send(JSON.stringify({type:"flush"}));}catch{}
     addMsg("sys","poslano — Mia obdeluje");
     return;

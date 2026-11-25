@@ -625,16 +625,13 @@ class VoicePipelineServer:
                         continue
                     if timing.first_sentence_monotonic is None:
                         timing.first_sentence_monotonic = time.perf_counter()
-                    if not spoken:
-                        await ws.send_json({"type": "agent_status", "state": "speaking"})
-                        spoken = True
-                        conn.is_speaking = True
+                    spoken = True
                     conn.spoken_sentences.append(clean)
-                    await self._send_tts_sentence(ws, clean, timing)
+                    await self._send_tts_sentence(ws, clean, timing, conn)
             tail = self._clean_for_tts(pending.strip())
             if tail:
                 conn.spoken_sentences.append(tail)
-                await self._send_tts_sentence(ws, tail, timing)
+                await self._send_tts_sentence(ws, tail, timing, conn)
         except BackendUnavailable:
             # nothing was said yet: tell the user out loud instead of staying mute
             if not spoken and not conn.spoken_sentences:
@@ -676,7 +673,8 @@ class VoicePipelineServer:
             yield item
         await worker_task
 
-    async def _send_tts_sentence(self, ws: WebSocket, sentence: str, timing: TurnTiming) -> None:
+    async def _send_tts_sentence(self, ws: WebSocket, sentence: str, timing: TurnTiming,
+                                 conn: "ConnState | None" = None) -> None:
         if not sentence:
             return
         q: asyncio.Queue = asyncio.Queue()
@@ -697,6 +695,12 @@ class VoicePipelineServer:
                 break
             if isinstance(item, Exception):
                 raise item
+            if conn is not None and not conn.is_speaking:
+                # announce "speaking" only when audio really exists — on a slow
+                # CPU TTS the synthesis takes minutes and a premature GOVORIM
+                # state reads as "she is mute"
+                await ws.send_json({"type": "agent_status", "state": "speaking"})
+                conn.is_speaking = True
             await ws.send_bytes(item)
         await worker_task
 
@@ -1305,6 +1309,8 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             timing.transcript = transcript
             print(f"WAKE accepted: {transcript[:100]!r}", flush=True)
         if not transcript:
+            if wake is not None:
+                return  # continuous mode: empty/noise utterances are normal, stay quiet
             await ws.send_json({"type": "error", "message": "No transcript detected."})
         else:
             if conn.interrupt_note:
@@ -1515,11 +1521,14 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                     if not conn.continuous or conn.segmenter is None:
                         await ws.send_json({"type": "error", "message": "flush only in continuous mode"})
                         continue
+                    barge = bool(((CFG.get("stt") or {}).get("continuous") or {}).get("barge_in", True))
                     started = False
                     for kind, payload in conn.segmenter.flush():
                         if kind != "utterance":
                             continue
                         if conn.turn_task is not None and not conn.turn_task.done():
+                            if not barge:
+                                continue    # half-duplex: never kill a running turn
                             await _cancel_active_turn(ws, pipeline, conn)
                         _start_continuous_turn(ws, pipeline, conn, payload)
                         started = True
