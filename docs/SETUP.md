@@ -613,11 +613,17 @@ različnih strani.
 
 **Skill `mia-companion`** (priporočeno): nauči agenta Mijin način govora
 (kratka slovenska povedi, ženske oblike), dolžnost trajnega spomina (navade in
-dogovori uporabnika), predvajanje glasbe v namiznem Chrome oknu in brskanje:
+dogovori uporabnika), odpiranje IN zapiranje namiznih oken, predvajanje
+glasbe in brskanje:
 
 ```bash
 # tudi tu velja AKTIVNI HERMES_HOME (ne nujno ~/.hermes)
 cp -R skills/mia-companion "$HERMES_HOME/skills/mia-companion"
+# pomožni ukazni za okna (odpirajo app-okna in si zapisujejo ID oken prek
+# xdotool — gol `google-chrome --new-window` se kasneje NE DA zapreti):
+cp skills/mia-companion/bin/mia-open skills/mia-companion/bin/mia-close ~/.local/bin/
+# v SOUL.md dodaj pravilo, da se uporabljata IZKLJUČNO mia-open/mia-close
+# (primer v skills/mia-companion/SKILL.md, razdelek "Opening and closing")
 # skill velja za nove seje — po namestitvi ponastavi glasovno sejo
 rm -f server/logs/hermes_sessions.json   # + preimenuj staro sejo v Hermesu
 ```

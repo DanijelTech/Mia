@@ -1,0 +1,29 @@
+#!/bin/sh
+# mia-open <url> — open a URL in a Chrome app-window and remember its window id
+# so `mia-close` can close exactly this window later (works even though Chrome
+# forwards --app windows into the running instance without keeping the argv).
+REG="$HOME/.cache/mia-windows"
+[ -n "$1" ] || { echo "usage: mia-open <url>" >&2; exit 2; }
+mkdir -p "$(dirname "$REG")"; touch "$REG"
+
+before=$(xdotool search --onlyvisible --class chrome 2>/dev/null)
+google-chrome --new-window --app="$1" >/dev/null 2>&1 &
+sleep 3
+after=$(xdotool search --onlyvisible --class chrome 2>/dev/null)
+
+wid=""
+for w in $after; do
+    case " $before " in *" $w "*) ;; *) wid="$w" ;; esac
+done
+if [ -n "$wid" ]; then
+    # prune entries whose windows no longer exist, then register the new one
+    tmp="$REG.tmp"; : > "$tmp"
+    while IFS='	' read -r w u; do
+        [ -n "$w" ] && xdotool getwindowname "$w" >/dev/null 2>&1 && printf '%s\t%s\n' "$w" "$u" >> "$tmp"
+    done < "$REG"
+    printf '%s\t%s\n' "$wid" "$1" >> "$tmp"
+    mv "$tmp" "$REG"
+    echo "opened: $1 (okno $wid)"
+else
+    echo "opened: $1 (id ni bilo mogoče zaznati — zaprtje morda ne bo delovalo)" >&2
+fi

@@ -1,0 +1,28 @@
+#!/bin/sh
+# mia-close [url-part|domain|all] — close window(s) Mia opened with mia-open,
+# by their recorded window ids (graceful close, like clicking the X).
+# The pattern matches anywhere in the URL, so a bare domain works.
+REG="$HOME/.cache/mia-windows"
+pat="$1"
+[ -z "$pat" ] && { echo "usage: mia-close <url-prefix|all>" >&2; exit 2; }
+[ "$pat" = "all" ] && pat=""
+[ -f "$REG" ] || { echo "nothing to close (registry empty)"; exit 0; }
+
+closed=0; tmp="$REG.tmp"; : > "$tmp"
+while IFS='	' read -r w u; do
+    [ -z "$w" ] && continue
+    case "$u" in
+        *"$pat"*)
+            if xdotool windowclose "$w" 2>/dev/null; then
+                echo "closed: $u"
+                closed=$((closed + 1))
+            fi
+            ;;
+        *)
+            xdotool getwindowname "$w" >/dev/null 2>&1 && printf '%s\t%s\n' "$w" "$u" >> "$tmp"
+            ;;
+    esac
+done < "$REG"
+mv "$tmp" "$REG"
+[ "$closed" -eq 0 ] && echo "nothing to close for: ${pat:-all}"
+exit 0

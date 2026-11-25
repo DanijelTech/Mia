@@ -52,36 +52,72 @@ in the browser. Do NOT retry hud_display — go straight to new_tab.
 
 ## Playing YouTube music
 
-When the user asks for music ("pusti mi …", "zaigraj …"):
+When the user asks for music ("pusti mi …", "zaigraj …"): 
 
-1. Find a video id with the terminal:
+0. Close any prior music window first: `mia-close https://www.youtube.com`.
+1. Find a video id with yt-dlp:
    `yt-dlp "ytsearch1:<what the user asked for>" --get-id --get-title --no-playlist`
-   (first line = title, second = id). Use `ytsearch3:` and pick the best match
-   if the request is vague.
-2. Open it in a desktop browser app-window (autoplays with sound; DISPLAY is
-   configured for your terminal):
-   `google-chrome --new-window --app="https://www.youtube.com/watch?v=<id>" >/dev/null 2>&1 &`
+   (first line = title, second = id). If none match or result is off-
+   topic (e.g. "goma" returns jewellery unboxing), try variants:
+   `ytsearch:`, `ytsearch1:"exact phrase"`, or alternate artist names.
+2. Open it in a desktop app-window (autoplays with sound):
+   `mia-open "https://www.youtube.com/watch?v=<id>"`
 3. Confirm aloud in one short sentence what is playing.
 
-Stopping the music: run EXACTLY this as its own terminal command (the bracket
-in the pattern keeps pkill from matching its own shell — never combine it
-with the open command in one line):
-`pkill -f 'chr[o]me.*--app=https://www.youtube.com'`
+Notes on tricky search terms:
+- "di gona" → user may mean "da gona", a Serbian/Croatian term; try
+  `ytsearch1:digona` or just the core word.
+- Baja Malik / Baja Mali Knindza — both spellings appear in YouTube titles;
+  search with either.
+
+Stopping the music: `mia-close https://www.youtube.com`
 
 If the user asks to show the video "na zaslonu / na HUD-u" instead, use
 `hud_display(media="video", src=<youtube url>)` and `hud_dismiss` to close.
+
+## Opening and closing desktop windows (IMPORTANT)
+
+Use the helper commands — they open closable app-windows and remember each
+window id, so closing ALWAYS works (plain `google-chrome --new-window` and
+`pkill --app` patterns do NOT work once Chrome is already running):
+
+- Open ANY window: `mia-open "<URL>"`
+  (Google searches, pages, YouTube — everything goes through mia-open)
+- Close a specific window: `mia-close "<URL or prefix>"`
+  e.g. `mia-close https://www.google.com` · `mia-close https://www.youtube.com`
+- Close ALL windows Mia opened (never touches the user's own Chrome):
+  `mia-close all`
+
+"Zapri ga / zapri okno / zapri google / zapri stran" → `mia-close <domain>`.
+Confirm aloud in one short sentence. Both commands are in ~/.local/bin (on
+PATH).
 
 ## Browsing and information
 
 - Quick facts, news, lookups: use `web_search` / `web_extract`, then answer
   aloud in one or two sentences. Offer to show the page on screen.
-- "Pokaži mi na Googlu" / "odpri Google za …": open a desktop Chrome window:
-  `google-chrome --new-window "https://www.google.com/search?q=<poizvedba>" >/dev/null 2>&1 &`
+- "Pokaži mi na Googlu" / "odpri Google za …": `mia-open "https://www.google.com/search?q=<poizvedba>"`
 - Interactive browsing (login-free clicking, forms): the `browser` toolset —
   still invisible; show results via `hud_display` when the user should see
   them.
-- Only when the user explicitly wants their own desktop browser opened, use
-  the terminal: `xdg-open <url>` (or the Chrome command above).
+- If a window "did not open", retry `mia-open` once, then fall back to
+  `xdg-open <url>` (not closable by mia-close).
+- Open YouTube channels/pages via Hermes `browser` tool. Always handle the
+  consent dialog: click "Sprejmi vse" with JS before proceeding.
+  See `references/youtube-channels.md` for known handles and patterns.
+
+## Learning how the user works (workflow memory)
+
+The user asked Mia to remember not only preferences but also **how** tasks
+were solved best:
+
+- BEFORE a recurring kind of task (opening something, searching, a routine
+  on this machine), check memory for a saved working recipe and use it —
+  do not rediscover it.
+- AFTER a task succeeds — especially if the first attempt failed and a retry
+  worked — save a short recipe with the `memory` tool: what was requested,
+  the exact command/steps that worked, and any pitfall to avoid.
+- When the user corrects a method ("ne tako, raje …"), update the recipe.
 
 ## Voice-turn practicalities
 
