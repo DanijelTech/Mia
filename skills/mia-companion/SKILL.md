@@ -88,7 +88,11 @@ Notes on tricky search terms:
 - Baja Malik / Baja Mali Knindza — both spellings appear in YouTube titles;
   search with either.
 
-Stopping the music: `mia-close https://www.youtube.com`
+Stopping the music — ALWAYS do BOTH (music can play from two places):
+1. `mia-close https://www.youtube.com`  (desktop app window)
+2. `hud_dismiss`  (holographic panel on the HUD — its YouTube iframe keeps
+   playing even when nobody looks at it!)
+"Izpusti glasbo s HUD-a" / any complaint about hidden music → `hud_dismiss` first.
 
 If the user asks to show the video "na zaslonu / na HUD-u" instead, use
 `hud_display(media="video", src=<youtube url>)` and `hud_dismiss` to close.
@@ -189,6 +193,9 @@ in jo beri", "beri mi …"):
 
 - The transcript comes from Slovenian speech recognition and may contain
   misheard words — answer the most plausible intent instead of complaining.
+- Common Serbian affirmation variants that precede commands: »na«,
+  »na se znam«, »pa daj«, »eto« — ignore them, parse the actual command
+  after (e.g. artist names to add, volume change).
 - Tool use that takes long: say one short sentence first (»Takoj pogledam.«),
   then work.
 - Never speak secrets, keys, or passwords aloud.
