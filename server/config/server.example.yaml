@@ -59,7 +59,7 @@ tts:
     voices:
       sl: voices/sl_SI-artur-medium.onnx
       sr: voices/sr_RS-serbski_institut-medium.onnx
-    length_scale: 1.0        # >1 slower, <1 faster
+    length_scale: 1.0        # >1 slower, <1 faster (1.1–1.15 sounds calmer/gentler)
   # Local TTS *service*: model loads once, may run on another machine.
   # Start it with: scripts/gepard_tts.py --serve --port 8770 --engine gepard --fallback-piper
   #           or: scripts/gepard_tts.py --serve --port 8770 --engine maya1  --fallback-piper
@@ -69,6 +69,12 @@ tts:
     timeout: 120
     name: gepard
     engine: gepard           # gepard | maya1 — what start.sh launches
+    # Extra arguments for the TTS service (passed to gepard_tts.py).
+    # Female, gentle Slovenian voice with Maya1:
+    #   args: ["--maya-voice", "zenski-nezni"]
+    # or a free-form description:
+    #   args: ["--maya-description", "A soft, gentle Slovenian female voice."]
+    args: []
   # Any other local TTS, loaded per sentence: text on stdin, WAV/PCM on stdout.
   command:
     argv: ["python3", "scripts/gepard_tts.py", "--stdio", "--engine", "gepard"]

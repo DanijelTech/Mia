@@ -90,6 +90,7 @@ TLS_PORT="$(cfglist server.tls_ports 443)"
 TTS_PROVIDER="$(cfg tts.provider piper)"
 TTS_URL="$(cfg tts.http.url '')"
 TTS_ENGINE_CFG="$(cfg tts.http.engine gepard)"
+TTS_ARGS="$(cfglist tts.http.args '')"
 
 # ------------------------------------------------------------------ 1. start
 port_open() { curl -s -m 1 -o /dev/null "$1" 2>/dev/null; }
@@ -147,7 +148,8 @@ if [ "$DO_START" = 1 ]; then
     elif [ -f "$REPO/server/scripts/gepard_tts.py" ]; then
       info "starting TTS service (engine: $TTS_ENGINE_CFG)…"
       start_background "TTS service" "$REPO/server/logs/mia-tts.pid" "$REPO/server/logs/mia-tts.out" \
-        "$PY" "$REPO/server/scripts/gepard_tts.py" --serve --engine "$TTS_ENGINE_CFG" --fallback-piper
+        "$PY" "$REPO/server/scripts/gepard_tts.py" --serve --engine "$TTS_ENGINE_CFG" \
+          --fallback-piper $TTS_ARGS
     else
       warn "tts.provider is http but no TTS service could be started"
     fi

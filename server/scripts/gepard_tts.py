@@ -300,6 +300,17 @@ class MayaEngine(Engine):
     DEFAULT_BASE = "maya-research/maya1"
     DEFAULT_SNAC = "hubertsiuzdak/snac_24khz"
     DEFAULT_SPEAKER = "Artur-B-G0911"
+    # English voice descriptions the base model understands. The Slovenian
+    # adapter was trained on ARTUR speaker IDs, so gender/age control is a nudge,
+    # not a guarantee — try a few and keep what sounds best.
+    VOICES = {
+        "nevtralno": "A neutral Slovenian voice.",
+        "zenski": "A clear Slovenian female voice.",
+        "zenski-nezni": "A soft, gentle, warm Slovenian female voice, calm and quiet delivery.",
+        "zenski-veseli": "A cheerful, bright Slovenian female voice.",
+        "moski": "A calm Slovenian male voice.",
+        "starejsi": "An older, warm Slovenian voice.",
+    }
     EMOTIONS = {
         "nevtralno": "A neutral Slovenian voice.",
         "veselo": "An amused, cheerful, laughing Slovenian voice.",
@@ -309,7 +320,8 @@ class MayaEngine(Engine):
     }
 
     def __init__(self, device: str, reason: str, adapter: str = "", base: str = "",
-                 speaker: str = "", emotion: str = "", temperature: float | None = None,
+                 speaker: str = "", emotion: str = "", voice: str = "",
+                 description: str = "", temperature: float | None = None,
                  max_new_tokens: int = 1800, repetition_penalty: float = 1.1,
                  offload: str = "auto", min_free_gb: float = 3.0):
         self.device, self.reason = device, reason
@@ -317,6 +329,8 @@ class MayaEngine(Engine):
         self.base = base or self.DEFAULT_BASE
         self.speaker = speaker or self.DEFAULT_SPEAKER
         self.emotion = (emotion or "").strip().lower()
+        self.voice = (voice or "").strip().lower()
+        self.custom_description = (description or "").strip()
         self.temperature = 0.75 if temperature is None else float(temperature)
         self.max_new_tokens = int(max_new_tokens)
         self.repetition_penalty = float(repetition_penalty)
@@ -332,6 +346,11 @@ class MayaEngine(Engine):
     # -- description the model understands (English), tuned per emotion preset
     @property
     def description(self) -> str:
+        # explicit description wins, then a voice preset, then an emotion preset
+        if self.custom_description:
+            return self.custom_description
+        if self.voice and self.voice in self.VOICES:
+            return self.VOICES[self.voice]
         if self.emotion and self.emotion in self.EMOTIONS:
             return self.EMOTIONS[self.emotion]
         return f"A Slovenian voice, speaker {self.speaker}."
@@ -339,7 +358,9 @@ class MayaEngine(Engine):
     def describe(self) -> dict:
         info = super().describe()
         info.update(adapter=self.adapter, speaker=self.speaker,
-                    emotion=self.emotion or "nevtralno")
+                    voice=self.voice or "nevtralno",
+                    emotion=self.emotion or "nevtralno",
+                    description=self.description)
         return info
 
     def _imports(self):
@@ -488,6 +509,7 @@ def build_engine(args) -> Engine:
         try:
             return MayaEngine(device, reason, adapter=args.maya_adapter, base=args.maya_base,
                               speaker=args.maya_speaker, emotion=args.maya_emotion,
+                              voice=args.maya_voice, description=args.maya_description,
                               temperature=args.temperature,
                               max_new_tokens=args.maya_max_new_tokens,
                               offload=args.offload, min_free_gb=args.min_free_vram_gb)
@@ -598,7 +620,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--maya-speaker", default="", help="speaker description (default: Artur-B-G0911)")
     ap.add_argument("--maya-emotion", default="",
                     choices=("", "nevtralno", "veselo", "jezno", "gnus", "zaspano"),
-                    help="voice description preset (neutral read-speech adapter)")
+                    help="emotion preset (neutral read-speech adapter)")
+    ap.add_argument("--maya-voice", default="",
+                    choices=("", "nevtralno", "zenski", "zenski-nezni", "zenski-veseli",
+                             "moski", "starejsi"),
+                    help="voice-character preset, e.g. zenski-nezni (female, gentle)")
+    ap.add_argument("--maya-description", default="",
+                    help="free-form English voice description (overrides presets), "
+                         "e.g. 'A soft, gentle Slovenian female voice.'")
     ap.add_argument("--maya-max-new-tokens", type=int, default=1800)
     ap.add_argument("--cfg-scale", type=float, default=4.5)
     ap.add_argument("--cfg-frames", type=int, default=25)

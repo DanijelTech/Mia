@@ -172,6 +172,63 @@ voljo za oblak: ustvari ključ na elevenlabs.io, izberi `voice_id`, dodaj
 **User → Read**, če želiš vrstico kvote v HUD-u. Flash v2.5 **ne** pokriva
 slovenščine ali srbščine — tam uporabi `eleven_v3_conversational`.
 
+### Ženski / nežni glas — kje se nastavi
+
+Glas je v celoti v `server/config/server.yaml` (razdelek `tts:`) in, pri
+storitvenih pogonih, v argumentih storitve. Pregled možnosti:
+
+| Pogon | Ženski glas za slovenščino? | Kje nastaviš |
+|---|---|---|
+| **Piper** (privzeto, CPU) | **ne** — edini slovenski glas `artur` je moški | `tts.piper.length_scale: 1.1` (počasneje = mirneje), `tts.piper.speaker` (samo pri večgovornih modelih) |
+| **Maya1** (lokalno, GPU) | **poskusno** — opis glasu v angleščini | `tts.http.args: ["--maya-voice", "zenski-nezni"]` ali `["--maya-description", "…"]` |
+| **ElevenLabs** (oblak) | **da** — izbereš ženski glas iz knjižnice | `tts.provider: elevenlabs`, `tts.elevenlabs.voice_id: …`, `model: eleven_v3_conversational` |
+
+**Maya1 (priporočeno, če hočeš brez oblaka).** V `server.yaml`:
+
+```yaml
+tts:
+  provider: http
+  http:
+    url: http://127.0.0.1:8770/tts
+    engine: maya1
+    args: ["--maya-voice", "zenski-nezni"]     # ali --maya-description "…"
+```
+
+Na voljo so preseti `zenski`, `zenski-nezni`, `zenski-veseli`, `moski`,
+`starejsi`, `nevtralno`. Pošteno opozorilo: adapter je bil učen na ID-jih
+govorcev iz korpusa ARTUR, zato je nadzor spola **namig, ne garancija** — poskusi
+2–3 opise in obdrži tistega, ki se sliši najbolje. `curl -s localhost:8770/health`
+pokaže, kateri opis je v uporabi (`description`).
+
+Po spremembi:
+
+```bash
+./install.sh --yes            # prepiše systemd enoto z novimi argumenti
+systemctl --user restart mia-tts mia-voice
+```
+
+**ElevenLabs (najbolj zanesljiv ženski glas).** Potrebuješ ključ in je oblak:
+
+```bash
+# ~/.hermes/.env
+ELEVENLABS_API_KEY=...
+```
+
+```yaml
+tts:
+  provider: elevenlabs
+  elevenlabs:
+    model: eleven_v3_conversational   # podpira slovenščino
+    voice_id: YOUR_FEMALE_VOICE_ID    # izberi v knjižnici ElevenLabs
+    output_format: pcm_16000
+```
+
+`eleven_flash_v2_5` **ne** podpira slovenščine, zato ne uporabljaj njega.
+
+**Piper.** Slovenskega ženskega glasu ni; edini je moški `artur`. Za nežnejši
+vtis nastavi `tts.piper.length_scale: 1.1` (in po želji `volume: 0.9`), kar
+poda počasnejši, mirnejši govor — spola pa ne spremeni.
+
 ### Naravnejši glas: Gepard (opcijsko, GPU z RAM offloadom)
 
 Piper je razločen, a raven. [texdata/Gepard-Slovenian-TTS](https://huggingface.co/texdata/Gepard-Slovenian-TTS)

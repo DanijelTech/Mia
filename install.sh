@@ -539,7 +539,14 @@ UNIT
     mkdir -p "$SERVICE_DIR"
     unit voice "server.py" ""
     if [ "$TTS_ENGINE" != "none" ] && [ "$TTS_ENGINE" != "piper" ]; then
-      unit tts "scripts/gepard_tts.py" "--serve --port $PORT_TTS --engine $TTS_ENGINE --fallback-piper"
+      TTS_EXTRA="$($PYTHON - "$CFG" <<'PY' 2>/dev/null
+import sys, yaml
+cfg = yaml.safe_load(open(sys.argv[1])) or {}
+extra = ((cfg.get("tts") or {}).get("http") or {}).get("args") or []
+print(" ".join(str(a) for a in extra))
+PY
+)"
+      unit tts "scripts/gepard_tts.py" "--serve --port $PORT_TTS --engine $TTS_ENGINE --fallback-piper $TTS_EXTRA"
     fi
     if [ ! -d /run/systemd/system ]; then
       warn "systemd is not running here — unit written to $SERVICE_DIR, not activated"

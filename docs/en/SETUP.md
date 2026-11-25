@@ -161,6 +161,33 @@ create a key at elevenlabs.io, pick a `voice_id`, add `ELEVENLABS_API_KEY` to
 quota bar. Note Flash v2.5 does not cover Slovenian or Serbian; use
 `eleven_v3_conversational` there.
 
+### Female / gentle voice — where to set it
+
+Everything lives in `server/config/server.yaml` (the `tts:` block) plus, for the
+service engines, the arguments the service is started with:
+
+| Engine | Female Slovenian voice? | Where |
+|---|---|---|
+| **Piper** (default, CPU) | **no** — the only Slovenian voice (`artur`) is male | `tts.piper.length_scale: 1.1` (slower = calmer); `tts.piper.speaker` only for multi-speaker models |
+| **Maya1** (local, GPU) | **experimental** — English voice description | `tts.http.args: ["--maya-voice", "zenski-nezni"]` or `["--maya-description", "…"]` |
+| **ElevenLabs** (cloud) | **yes** — pick a female voice | `tts.provider: elevenlabs`, `tts.elevenlabs.voice_id`, `model: eleven_v3_conversational` |
+
+Maya1 presets: `zenski`, `zenski-nezni`, `zenski-veseli`, `moski`, `starejsi`,
+`nevtralno`. Honest caveat: the adapter was trained on ARTUR speaker IDs, so
+gender control is a nudge rather than a guarantee — try two or three
+descriptions. `curl localhost:8770/health` shows the active `description`.
+
+After changing:
+
+```bash
+./install.sh --yes            # rewrites the systemd unit with the new args
+systemctl --user restart mia-tts mia-voice
+```
+
+ElevenLabs needs `ELEVENLABS_API_KEY` and works with `eleven_v3_conversational`
+(`eleven_flash_v2_5` does **not** cover Slovenian). Piper has no female Slovenian
+voice; `length_scale: 1.1` only slows it down.
+
 ### Better voice: Gepard (optional, GPU with RAM offload)
 
 Piper is clear but flat. [texdata/Gepard-Slovenian-TTS](https://huggingface.co/texdata/Gepard-Slovenian-TTS)
