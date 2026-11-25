@@ -868,6 +868,19 @@ def _tts_is_elevenlabs() -> bool:
     return _tts_provider() == "elevenlabs"
 
 
+def _tts_detail() -> str:
+    tts_cfg = CFG.get("tts") or {}
+    provider = _tts_provider()
+    if provider == "piper":
+        return (tts_cfg.get("piper") or {}).get("language") or "piper"
+    if provider == "http":
+        http = tts_cfg.get("http") or {}
+        return http.get("name") or http.get("engine") or "http"
+    if provider == "elevenlabs":
+        return (CFG.get("voice") or {}).get("model") or "elevenlabs"
+    return provider
+
+
 @app.get("/api/usage")
 async def usage() -> JSONResponse:
     """LLM token usage (local tally) + ElevenLabs subscription quota."""
@@ -966,10 +979,18 @@ _WORKER_CACHE: dict = {"ts": 0.0, "data": [], "refreshing": False}
 async def hud_config() -> JSONResponse:
     """HUD behaviour switches: external media, UI language, TTS provider."""
     hud_cfg = CFG.get("hud") or {}
+    stt = CFG.get("stt") or {}
+    hermes = CFG.get("hermes") or {}
     return JSONResponse({
         "allow_external_media": bool(hud_cfg.get("allow_external_media", False)),
-        "language": (CFG.get("stt") or {}).get("language") or "en",
+        "language": stt.get("language") or "en",
         "tts_provider": _tts_provider(),
+        "tts_detail": _tts_detail(),
+        "stt_model": stt.get("model") or "",
+        "stt_device": stt.get("device") or "",
+        "fallback_provider": hermes.get("fallback_provider") or "",
+        "hermes_url": hermes.get("base_url") or "",
+        "conversation": hermes.get("conversation") or "",
     })
 
 

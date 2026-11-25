@@ -102,6 +102,22 @@ vrstic `server/logs/mia.out`. Najpogosteje manjkajoče odvisnosti
 (`server/logs/mia.pid`). V takem okolju systemd enote samo napišeta, ne
 aktivirata.
 
+**HUD kaže »Hermes API offline«, VEŠČINE »?«, AVTOMATIZACIJE »—«, CPU/pomnilnik »—«** —
+vse to pride iz Hermesa **prek Miinega proxyja** (`/api/hermes/...`), zato
+potrebuje dvoje: (1) `API_SERVER_KEY` v okoljski datoteki uporabnika, ki poganja
+Mio, in (2) `hermes gateway` na `127.0.0.1:8642`. Preveri:
+
+```bash
+KEY=$(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)
+curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:8642/health
+TOK=$(grep '^MIA_HUD_TOKEN=' ~/.hermes/.env | cut -d= -f2)
+curl -s -H "X-Mia-Token: $TOK" http://127.0.0.1:8765/api/hermes/health/detailed | head -c 200
+```
+
+Prva vrstica mora vrniti `{"status":"ok",...>`, druga pa JSON prek Miinega
+proxyja. Če prva vrne 401/nič: ključ manjka ali gateway ne teče. Panel
+DIAGNOSTIKA zdaj zato piše `offline — ključ?` ali `offline — gateway?`.
+
 **Moj LLM se ne zažene: »GPU že uporablja drug proces, pid … /usr/bin/python3«** —
 to je **Miin glasovni strežnik**, ki je Whisper naložil na GPU in drži ~2,4 GB.
 Če LLM teče na isti kartici, daj Whisper na CPU:

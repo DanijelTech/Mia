@@ -5,6 +5,21 @@
 > Renamed from `jarvis_ai`: the server still accepts the old `JARVIS_HUD_TOKEN` env var, the `jarvis_token` cookie and `X-Jarvis-Token` header, so an upgrade cannot silently disable auth.
 
 
+**HUD shows "Hermes API offline", SKILLS "?", AUTOMATIONS "—", CPU/memory "—"** —
+all of that comes from Hermes **through Mia's proxy** (`/api/hermes/...`), so it
+needs (1) `API_SERVER_KEY` in the env file of the user running Mia and (2)
+`hermes gateway` on `127.0.0.1:8642`. Check both:
+
+```bash
+KEY=$(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)
+curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:8642/health
+TOK=$(grep '^MIA_HUD_TOKEN=' ~/.hermes/.env | cut -d= -f2)
+curl -s -H "X-Mia-Token: $TOK" http://127.0.0.1:8765/api/hermes/health/detailed | head -c 200
+```
+
+The DIAGNOSTICS panel now says `offline — ključ?` (key) or `offline — gateway?`
+so you can tell the two apart.
+
 **My LLM launcher refuses to start: "GPU already used by another process, pid …
 /usr/bin/python3"** — that is **Mia's voice server** holding Whisper on the GPU
 (~2.4 GB). Keep Whisper on CPU when the LLM shares the card:

@@ -306,10 +306,10 @@ footer{
   <!-- RIGHT COLUMN -->
   <div class="col">
     <div class="panel"><h2><span>MODELI</span><span class="num">06</span></h2>
-      <div class="kv"><span>Možgani</span><b>hermes-agent</b></div>
-      <div class="kv"><span>STT</span><b>whisper large-v3-turbo</b></div>
-      <div class="kv"><span>TTS</span><b>ElevenLabs Flash v2.5</b></div>
-      <div class="kv"><span>Rezerva</span><b>claude-haiku-4-5</b></div>
+      <div class="kv"><span>Možgani</span><b id="mBrainName">hermes-agent</b></div>
+      <div class="kv"><span>STT</span><b id="mStt">—</b></div>
+      <div class="kv"><span>TTS</span><b id="mTts">—</b></div>
+      <div class="kv" id="mFallbackRow"><span>Rezerva</span><b id="mFallback">—</b></div>
       <div style="border-top:1px solid var(--line); margin:6px 0 4px"></div>
       <div class="kv"><span>Žetoni danes</span><b id="uTok">—</b></div>
       <div class="kv" id="uCostRow" style="display:none"><span>Ocena stroškov danes</span><b id="uCost">—</b></div>
@@ -669,7 +669,12 @@ async function refreshHealth(){
     $("hCpu").textContent=rs.cpu_percent!=null?rs.cpu_percent+"%":"—";
     $("hMem").textContent=rs.memory_percent!=null?rs.memory_percent+"%":(rs.rss||"—");
     $("hWhen").textContent=new Date().toTimeString().slice(0,8);
-  }catch{ $("apiDot").className="dot off"; $("apiState").textContent="offline"; }
+  }catch(err){
+    $("apiDot").className="dot off";
+    $("apiState").textContent=String(err.message||"").includes("401")
+      ? "offline — ključ?" : "offline — gateway?";
+    $("hCpu").textContent="—"; $("hMem").textContent="—"; $("hWhen").textContent="—";
+  }
 }
 async function refreshSkills(){
   try{
@@ -760,7 +765,16 @@ function embedURL(src){
   return src;
 }
 let ALLOW_EXTERNAL=false;
-fetch("/api/hud-config").then(r=>r.json()).then(c=>{ALLOW_EXTERNAL=!!c.allow_external_media}).catch(()=>{});
+fetch("/api/hud-config").then(r=>r.json()).then(c=>{
+  ALLOW_EXTERNAL=!!c.allow_external_media;
+  // show what is really configured instead of hardcoded model names
+  if($("mStt")) $("mStt").textContent=(c.stt_model||"—")+(c.stt_device?` · ${c.stt_device}`:"");
+  if($("mTts")) $("mTts").textContent=(c.tts_provider||"—")+(c.tts_detail?` · ${c.tts_detail}`:"");
+  if($("mFallback")){
+    if(c.fallback_provider){ $("mFallback").textContent=c.fallback_provider; }
+    else if($("mFallbackRow")){ $("mFallbackRow").style.display="none"; }
+  }
+}).catch(()=>{});
 function isExternal(src){
   if(!src) return false;
   if(src.startsWith("/")||src.startsWith("data:")||src.startsWith("blob:")) return false;
