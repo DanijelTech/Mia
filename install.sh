@@ -603,6 +603,7 @@ $([ "$DRY_RUN" = 1 ] && printf '\033[1;33mDry run complete — nothing was chang
   voices      $(ls "$SERVER_DIR/voices" 2>/dev/null | grep -c '\.onnx$') model(s)
   service     ${SERVICE_KIND:-none}${SERVICE_DIR:+ ($SERVICE_DIR)}${SERVICE_OK:+ [running: $SERVICE_OK]}
   tts engine  $TTS_ENGINE
+  stt device  $(grep -m1 -E '^  device:' "$CFG" 2>/dev/null | awk '{print $2}')$( [ "$(grep -m1 -E '^  device:' "$CFG" 2>/dev/null | awk '{print $2}')" = "cpu" ] && echo " (GPU free for the LLM)" || echo " — if your LLM launcher says 'GPU busy', run: ./install.sh --stt-device cpu" )
   HUD URL     $(hud_url)
 
 
