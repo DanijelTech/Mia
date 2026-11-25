@@ -642,6 +642,20 @@ Vrednosti prilagodi svojemu seji (`systemctl --user show-environment`).
 Glasba se odpre z `google-chrome --new-window --app=<youtube-url>` in zapre
 s `pkill -f 'chr[o]me.*--app=https://www.youtube.com'` (skill to že zna).
 
+**Glasovna kalibracija** (Mia uboga samo tvoj glas): vpis trajnega
+govorniškega odtisa (ECAPA-TDNN, lokalno na CPU; preverjanje pred
+transkripcijo, ~0,1 s):
+
+```bash
+pip install speechbrain          # enkratno (obstoječi torch zadostuje)
+python3 server/scripts/enroll_voice.py   # 3 × 6 s govora v mikrofon
+```
+
+Profil se shrani v `server/voices/speaker_profile.npz` (gitignoriran) in se
+pobere brez restarta; do vpisa je vrata odprta (fail-open). Prag se nastavi
+s `stt.continuous.speaker_gate.threshold` (0,30 je dobra izhodiščna vrednost;
+skripta ob vpisu predlaga vrednost). Ponovni zagon skripte = rekalibracija.
+
 ## 6. Preveri vse skupaj
 
 **Posodobitev na novo izdajo:**

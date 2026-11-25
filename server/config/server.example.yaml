@@ -55,6 +55,12 @@ stt:
     min_rms: 320             # rezervni energijski prag
     barge_in: false          # false = pol-duplex (priporočeno: šum ne ubije turna;
                              # prekinitev z govorom med Mijinim govorjenjem)
+    speaker_gate:            # glasovna kalibracija — Mia uboga samo vpisan glas
+      enabled: true          # aktiven šele, ko obstaja profil:
+                             # python3 server/scripts/enroll_voice.py
+      threshold: 0.30        # kosinusna podobnost odtisa; dvig = strožje
+      min_seconds: 1.0       # krajše izjave ne preverjamo (budnica še vedno velja)
+      profile: voices/speaker_profile.npz
   # Whisper na tišini/šumu "sliši" znane fraze (YouTube podnapisi ipd.) —
   # transkript, sestavljen samo iz njih, se zavrže:
   hallucination_filter:

@@ -49,6 +49,7 @@ from fastapi.staticfiles import StaticFiles
 from RealtimeSTT import AudioToTextRecorder
 
 from continuous import WakeGate, build_segmenter
+from speaker_gate import SpeakerGate
 from tts import build_backend
 
 try:
@@ -377,6 +378,18 @@ class VoicePipelineServer:
         self.hermes = HermesAPI(cfg)
         self.stt_lock = asyncio.Lock()
         stt = cfg["stt"]
+        gate_cfg = ((stt.get("continuous") or {}).get("speaker_gate") or {})
+        self.speaker_gate: SpeakerGate | None = None
+        if gate_cfg.get("enabled", False):
+            profile = ROOT / (gate_cfg.get("profile") or "voices/speaker_profile.npz")
+            self.speaker_gate = SpeakerGate(
+                profile,
+                threshold=float(gate_cfg.get("threshold", 0.30)),
+                min_seconds=float(gate_cfg.get("min_seconds", 1.0)),
+                model=gate_cfg.get("model") or "speechbrain/spkrec-ecapa-voxceleb",
+            )
+            state = "enrolled" if self.speaker_gate.enrolled else "waiting for enrollment"
+            print(f"Speaker gate: on ({state}, threshold {self.speaker_gate.threshold})", flush=True)
         self.stt_language = (stt.get("language") or "en")
         self.stt_device = pick_stt_device(stt.get("device", "auto"),
                                           float(stt.get("min_free_vram_gb", 2.5) or 0))
@@ -1292,6 +1305,17 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
     audio = b"".join(conn.audio_chunks)
     conn.audio_chunks = []
     try:
+        # voice calibration: only the enrolled speaker gets through — checked
+        # BEFORE the expensive STT so foreign voices cost ~100 ms, not seconds
+        gate = pipeline.speaker_gate
+        if wake is not None and gate is not None and gate.enrolled:
+            accept, score = await asyncio.to_thread(
+                gate.verify, np.frombuffer(audio, dtype=np.int16))
+            if not accept:
+                timing.errors.append(f"ignored: speaker score {score:.2f}")
+                print(f"SPEAKER rejected: score={score:.2f} < {gate.threshold}", flush=True)
+                await ws.send_json({"type": "ignored", "reason": "speaker"})
+                return
         # acknowledge immediately: on CPU the STT alone can take tens of
         # seconds, and silence here reads as "she is not reacting"
         await ws.send_json({"type": "agent_status", "state": "thinking"})
