@@ -86,6 +86,25 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# No explicit choice? Follow what the config already uses (keeps a Maya1/Gepard
+# setup intact across re-runs instead of silently reporting "none").
+if [ -z "${TTS_ENGINE:-}" ] && [ -f "$SERVER_DIR/config/server.yaml" ]; then
+  TTS_ENGINE="$($PYTHON - "$SERVER_DIR/config/server.yaml" <<'PY' 2>/dev/null
+import sys, yaml
+cfg = yaml.safe_load(open(sys.argv[1])) or {}
+tts = cfg.get("tts") or {}
+provider = (tts.get("provider") or "").lower()
+if provider == "http":
+    http = tts.get("http") or {}
+    print(http.get("engine") or "gepard")
+elif provider == "piper":
+    print("piper")
+else:
+    print("none")
+PY
+)"
+fi
+
 case "${TTS_ENGINE:-}" in
   ""|none) TTS_ENGINE="none" ;;
   gepard|maya1|piper) ;;
