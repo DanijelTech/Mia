@@ -170,6 +170,21 @@ cd ~/Mia && git pull && systemctl --user restart mia-voice
 Če se pojavi 4401 tudi potem: žeton se ne ujema — odpri
 `https://<lan-ip>:8766/hud/?token=$(grep '^MIA_HUD_TOKEN=' ~/.hermes/.env | cut -d= -f2)`.
 
+**V dnevniku gatewaya je `GET /v1/skills failed … TypeError: find_all_skills() got
+an unexpected keyword argument 'include_editorial'`** — to ni Mia: njen proxy samo
+posreduje klic. Hermes teče iz **izvorne kode** (`…/hermes-agent-src`), uvožena
+knjižnica `agent`/`skills` pa je iz nameščenega paketa druge različice. Reši tako,
+da oba dela prideta iz istega drevesa:
+
+```bash
+cd /mnt/models/hermes-home/hermes-agent-src   # tvoj checkout
+git pull
+pip install -e .          # ali: hermes update, če tvoja različica to ponuja
+hermes gateway restart
+```
+
+Dokler to ni urejeno, HUD v panelu VEŠČINE kaže `—` in »ni dosegljivo (Hermes)«.
+
 **HUD kaže »Hermes API offline«, VEŠČINE »?«, AVTOMATIZACIJE »—«, CPU/pomnilnik »—«** —
 vse to pride iz Hermesa **prek Miinega proxyja** (`/api/hermes/...`), zato
 potrebuje dvoje: (1) `API_SERVER_KEY` v okoljski datoteki uporabnika, ki poganja

@@ -62,6 +62,21 @@ cd ~/Mia && git pull && systemctl --user restart mia-voice
 If 4401 persists, the token does not match — open
 `https://<lan-ip>:8766/hud/?token=$(grep '^MIA_HUD_TOKEN=' ~/.hermes/.env | cut -d= -f2)`.
 
+**Gateway log shows `GET /v1/skills failed … TypeError: find_all_skills() got an
+unexpected keyword argument 'include_editorial'`** — this is not Mia: its proxy
+just forwards the call. Hermes runs from a **source checkout**
+(`…/hermes-agent-src`) while the imported `agent`/`skills` library comes from a
+different installed version. Make both come from the same tree:
+
+```bash
+cd /mnt/models/hermes-home/hermes-agent-src
+git pull
+pip install -e .          # or: hermes update, if your build offers it
+hermes gateway restart
+```
+
+Until then the HUD shows `—` and "ni dosegljivo (Hermes)" in SKILLS.
+
 **HUD shows "Hermes API offline", SKILLS "?", AUTOMATIONS "—", CPU/memory "—"** —
 all of that comes from Hermes **through Mia's proxy** (`/api/hermes/...`), so it
 needs (1) `API_SERVER_KEY` in the env file of the user running Mia and (2)

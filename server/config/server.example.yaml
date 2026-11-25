@@ -79,11 +79,13 @@ tts:
     voice_id: YOUR_ELEVENLABS_VOICE_ID
     output_format: pcm_16000
 
-machines:                   # polled by /api/machines for the HUD panel (optional)
-  - name: "GPU WORKER"
-    host: 192.168.1.50
-    stats_url: http://192.168.1.50:8767/stats   # run worker/worker_stats.py there
-    ping_port: 445
+machines: []                # optional extra machines for the HUD "Stroji" panel.
+# Add entries only for boxes that actually run worker/worker_stats.py, otherwise
+# the panel shows them as "brez povezave":
+#   - name: "GPU WORKER"
+#     host: 192.168.1.50
+#     stats_url: http://192.168.1.50:8767/stats
+#     ping_port: 445
 
 usage:
   # Your LLM provider's pricing ($ per 1M tokens) for HUD cost estimates. 0 = token counts only.

@@ -683,7 +683,7 @@ async function refreshSkills(){
     const s=await jget("/v1/skills"); const list=Array.isArray(s)?s:(s.data||s.skills||[]);
     $("skillCount").textContent=list.length;
     $("skillsList").innerHTML=list.slice(0,14).map(x=>`<div>▸ ${x.name||x}</div>`).join("");
-  }catch{ $("skillCount").textContent="?"; }
+  }catch{ $("skillCount").textContent="—"; $("skillsList").innerHTML="<div>ni dosegljivo (Hermes)</div>"; }
 }
 async function refreshJobs(){
   try{
