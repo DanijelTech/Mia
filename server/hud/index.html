@@ -347,7 +347,7 @@ footer{
       <div class="kv"><span>Osveženo</span><b id="hWhen">—</b></div>
     </div>
     <div class="panel"><h2><span>AVTOMATIZACIJE</span><span class="num">10</span></h2>
-      <div id="jobsList"><div>—</div></div>
+      <div id="jobsList"><div>— ni nalog —</div></div>
     </div>
   </div>
 
@@ -812,8 +812,8 @@ async function refreshJobs(){
     const j=await jget("/api/jobs"); const list=Array.isArray(j)?j:(j.jobs||j.data||[]);
     $("jobsList").innerHTML=list.length?list.slice(0,8).map(x=>
       `<div>▸ ${x.name||x.prompt?.slice(0,38)||x.id} <span class="${x.paused?"warn":"ok"}">${x.paused?"paused":"on"}</span></div>`).join("")
-      :"<div>— none —</div>";
-  }catch{ $("jobsList").innerHTML="<div>—</div>"; }
+      :"<div>— ni nalog —</div>";
+  }catch{ $("jobsList").innerHTML="<div>— ni nalog —</div>"; }
 }
 async function refreshMachines(){
   try{
