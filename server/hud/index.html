@@ -287,6 +287,21 @@ footer{
       <div class="kv"><span>Aktivne seje</span><b id="hSessions">—</b></div>
       <div class="kv"><span>Tekoči agenti</span><b id="hAgents">—</b></div>
     </div>
+    <div class="panel"><h2><span>GLAS</span><span class="num">06</span></h2>
+      <div style="padding:8px 2px 2px">
+        <input type="range" id="pitchSlider" min="70" max="240" step="2" value="88"
+               style="width:100%;accent-color:var(--amber);cursor:pointer">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;
+                    font-family:'Rajdhani';font-size:12px;color:var(--txt-dim);margin-top:4px">
+          <span>70 Hz</span>
+          <b id="pitchVal" style="color:var(--amber);font-size:14px;letter-spacing:1px">88 Hz · izvirni</b>
+          <span>240 Hz</span>
+        </div>
+        <div style="font-family:'Rajdhani';font-size:11px;color:var(--txt-dim);margin-top:2px">
+          velja od naslednjega stavka naprej
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- CENTER -->
@@ -874,8 +889,29 @@ function embedURL(src){
   return src;
 }
 let ALLOW_EXTERNAL=false;
+/* ---- voice pitch slider: Hz <-> semitones vs the base voice (~88 Hz) ---- */
+const PITCH_BASE_HZ=88;
+function pitchLabel(hz){
+  $("pitchVal").textContent=hz+" Hz"+(hz===PITCH_BASE_HZ?" · izvirni":"");
+}
+let pitchTimer=null;
+if($("pitchSlider")){
+  $("pitchSlider").addEventListener("input",e=>{
+    const hz=+e.target.value; pitchLabel(hz);
+    clearTimeout(pitchTimer);
+    pitchTimer=setTimeout(()=>{
+      const semis=12*Math.log2(hz/PITCH_BASE_HZ);
+      fetch("/api/voice-pitch",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({semitones:semis})}).catch(()=>{});
+    },250);
+  });
+}
 fetch("/api/hud-config").then(r=>r.json()).then(c=>{
   ALLOW_EXTERNAL=!!c.allow_external_media;
+  if($("pitchSlider")&&c.pitch_semitones!=null){
+    const hz=Math.round(PITCH_BASE_HZ*Math.pow(2,c.pitch_semitones/12));
+    $("pitchSlider").value=Math.max(70,Math.min(240,hz)); pitchLabel(+$("pitchSlider").value);
+  }
   // show what is really configured instead of hardcoded model names
   if($("mStt")) $("mStt").textContent=(c.stt_model||"—")+(c.stt_device?` · ${c.stt_device}`:"");
   if($("mTts")) $("mTts").textContent=(c.tts_provider||"—")+(c.tts_detail?` · ${c.tts_detail}`:"");

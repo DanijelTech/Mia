@@ -251,7 +251,11 @@ class HTTPBackend(TTSBackend):
         headers = {"Content-Type": "application/json"}
         if self.token:
             headers["X-Mia-Token"] = self.token
-        response = requests.post(self.url, json={"text": text}, headers=headers,
+        payload: dict = {"text": text}
+        getter = getattr(self, "pitch_getter", None)   # live HUD pitch slider
+        if getter is not None:
+            payload["pitch_semitones"] = float(getter())
+        response = requests.post(self.url, json=payload, headers=headers,
                                  timeout=self.timeout)
         if response.status_code >= 400:
             raise RuntimeError(f"TTS service HTTP {response.status_code}: {response.text[:300]}")

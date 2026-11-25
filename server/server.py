@@ -755,6 +755,13 @@ CFG = load_config()
 HERMES = HermesAPI(CFG)   # lightweight API client - independent of the STT pipeline
 PIPELINE: VoicePipelineServer | None = None
 
+# live voice settings (HUD pitch slider) — persisted across restarts
+VOICE_SETTINGS_PATH = ROOT / "logs" / "voice_settings.json"
+try:
+    VOICE_SETTINGS: dict = json.loads(VOICE_SETTINGS_PATH.read_text(encoding="utf-8"))
+except Exception:
+    VOICE_SETTINGS = {"pitch_semitones": 0.0}
+
 
 _PIPELINE_LOCK = threading.Lock()
 
@@ -768,6 +775,8 @@ def get_pipeline() -> VoicePipelineServer:
         with _PIPELINE_LOCK:
             if PIPELINE is None:
                 PIPELINE = VoicePipelineServer(CFG)
+                # the HUD pitch slider reaches the TTS service per request
+                PIPELINE.tts.pitch_getter = lambda: VOICE_SETTINGS.get("pitch_semitones", 0.0)
     return PIPELINE
 
 
@@ -1060,6 +1069,18 @@ async def summon(request: Request) -> JSONResponse:
 _WORKER_CACHE: dict = {"ts": 0.0, "data": [], "refreshing": False}
 
 
+@app.post("/api/voice-pitch")
+async def set_voice_pitch(request: Request) -> JSONResponse:
+    """HUD slider: live pitch for the TTS voice, in semitones vs the base voice."""
+    body = await request.json()
+    semis = max(-12.0, min(12.0, float((body or {}).get("semitones", 0.0))))
+    VOICE_SETTINGS["pitch_semitones"] = round(semis, 2)
+    VOICE_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    VOICE_SETTINGS_PATH.write_text(json.dumps(VOICE_SETTINGS), encoding="utf-8")
+    print(f"voice pitch set to {semis:+.2f} semitones", flush=True)
+    return JSONResponse({"pitch_semitones": VOICE_SETTINGS["pitch_semitones"]})
+
+
 @app.get("/api/hud-config")
 async def hud_config() -> JSONResponse:
     """HUD behaviour switches: external media, UI language, TTS provider."""
@@ -1076,6 +1097,7 @@ async def hud_config() -> JSONResponse:
         "fallback_provider": hermes.get("fallback_provider") or "",
         "hermes_url": hermes.get("base_url") or "",
         "conversation": hermes.get("conversation") or "",
+        "pitch_semitones": VOICE_SETTINGS.get("pitch_semitones", 0.0),
     })
 
 

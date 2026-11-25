@@ -651,7 +651,10 @@ def run_server(engine: Engine, host: str, port: int, token: str, pitch: float = 
         text = clean_text(str((payload or {}).get("text") or ""))
         if not text:
             raise HTTPException(status_code=400, detail="empty text")
-        result = apply_pitch(engine.synth(text), pitch)
+        # per-request pitch (HUD slider) overrides the startup default
+        req_pitch = (payload or {}).get("pitch_semitones")
+        eff_pitch = pitch if req_pitch is None else max(-12.0, min(12.0, float(req_pitch)))
+        result = apply_pitch(engine.synth(text), eff_pitch)
         return Response(content=wav_bytes(result), media_type="audio/wav",
                         headers={"X-TTS-Engine": result.engine, "X-TTS-Device": result.device,
                                  "X-TTS-Seconds": f"{result.seconds:.2f}",
