@@ -935,7 +935,7 @@ function summonPanel(opts){
   lastSummon={key, t:Date.now()};
   const position=["left","right","center"].includes(o.position)?o.position:"center";
   const p=document.createElement("div");
-  p.className="holo pos-"+position; p.dataset.fx="hologram";
+  p.className="holo pos-"+position; p.dataset.fx="hologram"; p.dataset.src=src;
   let inner="";
   const esrc=encodeURI(src);
   if(isExternal(src)&&!ALLOW_EXTERNAL)
@@ -975,6 +975,7 @@ function summonPanel(opts){
 }
 function dismissPanel(p){
   if(!p||p.classList.contains("dismiss"))return;
+  try{if(ws&&wsReady)ws.send(JSON.stringify({type:"panel_closed",src:p.dataset.src||""}))}catch{}
   p.classList.remove("idle");
   holoWhoosh(false);
   p.classList.add("dismiss");

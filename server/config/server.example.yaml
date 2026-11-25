@@ -44,7 +44,7 @@ stt:
   # Neprestano poslušanje (gumb STALNO v HUD-u): VAD razdeli tok v izjave,
   # budnica »Mia« odpre pogovor, followup okno dovoli nadaljevanje brez nje.
   continuous:
-    wake_words: ["mia", "hej mia", "ej mia"]
+    wake_words: ["mia", "mijo", "mija", "mio", "mja", "nia", "nja", "meja"]
     followup_seconds: 20     # po odgovoru velja brez budnice
     silence_ms: 700          # toliko tišine zaključi izjavo
     min_speech_ms: 300       # krajše (kašelj) se ignorira

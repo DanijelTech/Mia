@@ -195,19 +195,49 @@ ENROLL_PHRASES = (
     "shrani moj glas", "vpiši moj glas", "vpisi moj glas",
 )
 
+MEDIA_STOP_PHRASES = (
+    "ustavi glasbo", "zaustavi glasbo", "ugasni glasbo", "dovolj glasbe",
+    "ustavi muziko", "zaustavi muziko", "ugasni muziko",
+    "ustavi pesem", "ustavi predvajanje", "zaustavi predvajanje",
+    "ustavi video", "ustavi film", "počisti zaslon", "pocisti zaslon",
+    "umakni z zaslona", "ugasni panel",
+)
+
+
+def _flat(text: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-zčšžćđ ]+", " ", (text or "").lower())).strip()
+
 
 def _is_enroll_command(text: str) -> bool:
     """'Mia, prepoznaj glas!' — voice-triggered enrollment of the utterance."""
-    flat = re.sub(r"\s+", " ", re.sub(r"[^a-zčšžćđ ]+", " ", (text or "").lower()))
+    flat = _flat(text)
     return any(p in flat for p in ENROLL_PHRASES)
 
 
+def _is_media_stop(text: str) -> bool:
+    """'Mia, ustavi predvajanje (v ozadju)!' — deterministic media stop."""
+    flat = _flat(text)
+    return any(p in flat for p in MEDIA_STOP_PHRASES)
+
+
+def _is_media_open_browser(text: str) -> bool:
+    """'Mia, predvajanje iz ozadja odpri v brskalniku!' — move the current
+    panel media into a visible desktop window."""
+    flat = _flat(text)
+    if "brskalnik" in flat and any(k in flat for k in
+            ("predvajanje", "glasbo", "glasba", "muziko", "film", "video", "ozadja", "ozadju", "panel")):
+        return True
+    return "iz ozadja" in flat and ("odpri" in flat or "pokaži" in flat or "pokazi" in flat)
+
+
 def _playback_active() -> bool:
-    """Is Mia-opened media (music/film window from the mia-open registry)
-    still alive? Loud playback drowns the voiceprint, so then an explicit
-    wake word may carry the turn. Deliberately NOT based on PipeWire stream
-    state: the HUD's own AudioContext keeps a Chrome stream non-corked even
-    in silence, which would make the override permanent."""
+    """Is media likely playing? Either a Mia-opened desktop window (registry)
+    is still alive, or a holographic panel is up on the HUD. Loud playback
+    drowns the voiceprint, so then an explicit wake word may carry the turn.
+    Deliberately NOT based on PipeWire stream state: the HUD's own
+    AudioContext keeps a Chrome stream non-corked even in silence."""
+    if ACTIVE_PANELS:
+        return True
     reg = Path.home() / ".cache" / "mia-windows"
     try:
         lines = reg.read_text(encoding="utf-8").splitlines()
@@ -1078,6 +1108,8 @@ async def usage() -> JSONResponse:
 
 
 WS_CLIENTS: set = set()
+ACTIVE_PANELS: set = set()   # src of every holographic panel currently up
+LAST_SUMMON: dict = {}       # last media shown — for "odpri predvajanje v brskalniku"
 
 
 @app.post("/api/summon")
@@ -1090,8 +1122,14 @@ async def summon(request: Request) -> JSONResponse:
     """
     body = await request.json()
     if body.get("action") == "dismiss":
+        ACTIVE_PANELS.clear()
         payload = {"type": "dismiss_panels"}
     else:
+        src = body.get("src", "")
+        if src:
+            ACTIVE_PANELS.add(src)
+            LAST_SUMMON.update(media=body.get("media") or body.get("type") or "iframe",
+                               src=src, title=body.get("title", ""))
         payload = {"type": "summon_panel",
                    "media": body.get("media") or body.get("type") or "iframe",
                    "src": body.get("src", ""),
@@ -1409,6 +1447,38 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             await _speak_and_finish(ws, pipeline, conn, timing, confirm)
             return
 
+        # deterministic media control — works in any session, and (because it
+        # only needs the wake word) even while loud playback drowns the voiceprint
+        if said_wake and _is_media_stop(transcript):
+            for client in list(WS_CLIENTS):
+                try:
+                    await client.send_json({"type": "dismiss_panels"})
+                except Exception:
+                    WS_CLIENTS.discard(client)
+            ACTIVE_PANELS.clear()
+            await asyncio.to_thread(subprocess.run, ["mia-close", "youtube"],
+                                    capture_output=True, timeout=15)
+            print(f"MEDIA stopped via voice: {transcript[:60]!r}", flush=True)
+            await _speak_and_finish(ws, pipeline, conn, timing, "Ustavljeno, šefe.")
+            return
+        if said_wake and _is_media_open_browser(transcript):
+            src = LAST_SUMMON.get("src") or ""
+            for client in list(WS_CLIENTS):
+                try:
+                    await client.send_json({"type": "dismiss_panels"})
+                except Exception:
+                    WS_CLIENTS.discard(client)
+            ACTIVE_PANELS.clear()
+            if src:
+                await asyncio.to_thread(subprocess.run, ["mia-open", src],
+                                        capture_output=True, timeout=20)
+                confirm = "Odprla sem ga v brskalniku, šefe."
+            else:
+                confirm = "Ni aktivnega predvajanja, šefe."
+            print(f"MEDIA open-in-browser via voice: {src or 'nič'}", flush=True)
+            await _speak_and_finish(ws, pipeline, conn, timing, confirm)
+            return
+
         if not speaker_ok:
             gate_cfg = ((pipeline.cfg["stt"].get("continuous") or {}).get("speaker_gate") or {})
             override = (said_wake and bool(gate_cfg.get("wake_override", True))
@@ -1655,6 +1725,8 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                         started = True
                     await ws.send_json({"type": "status",
                                         "message": "utterance submitted" if started else "nothing to submit"})
+                elif etype == "panel_closed":
+                    ACTIVE_PANELS.discard(str(event.get("src") or ""))
                 elif etype == "stop_run":
                     await _cancel_active_turn(ws, pipeline, conn)
                     await ws.send_json({"type": "agent_status", "state": "stopped"})
