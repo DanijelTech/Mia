@@ -189,6 +189,19 @@ def load_config() -> dict:
     return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
 
 
+ENROLL_PHRASES = (
+    "prepoznaj glas", "prepoznaj moj glas", "zapomni si moj glas",
+    "zapomni moj glas", "nauči se moj glas", "nauci se moj glas",
+    "shrani moj glas", "vpiši moj glas", "vpisi moj glas",
+)
+
+
+def _is_enroll_command(text: str) -> bool:
+    """'Mia, prepoznaj glas!' — voice-triggered enrollment of the utterance."""
+    flat = re.sub(r"\s+", " ", re.sub(r"[^a-zčšžćđ ]+", " ", (text or "").lower()))
+    return any(p in flat for p in ENROLL_PHRASES)
+
+
 def _playback_active() -> bool:
     """Is Mia-opened media (music/film window from the mia-open registry)
     still alive? Loud playback drowns the voiceprint, so then an explicit
@@ -1348,6 +1361,17 @@ class ConnState:
     audio_stats_at: float = 0.0
 
 
+async def _speak_and_finish(ws: WebSocket, pipeline: VoicePipelineServer,
+                            conn: "ConnState", timing: "TurnTiming", text: str) -> None:
+    """Speak a fixed confirmation and close the turn — no Hermes involved."""
+    conn.spoken_sentences = [text]
+    await pipeline._send_tts_sentence(ws, text, timing, conn)
+    timing.response_text = text
+    timing.total_done_monotonic = time.perf_counter()
+    await ws.send_json({"type": "done", "turn_id": timing.turn_id, "timing": timing.summary()})
+    conn.last_reply_at = time.time()
+
+
 async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnState,
                     wake: "WakeGate | None" = None) -> None:
     timing = conn.timing
@@ -1356,34 +1380,43 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
     conn.audio_chunks = []
     try:
         # voice calibration: only the enrolled speaker gets through — checked
-        # BEFORE the expensive STT so foreign voices cost ~100 ms, not seconds
+        # BEFORE the expensive STT so foreign voices cost ~100 ms, not seconds.
+        # A failed check still gets transcribed once: an explicit wake word can
+        # carry the turn (media override) or trigger voice enrollment.
         gate = pipeline.speaker_gate
-        speaker_ok = True
+        speaker_ok, score = True, None
         if wake is not None and gate is not None and gate.enrolled:
             speaker_ok, score = await asyncio.to_thread(
                 gate.verify, np.frombuffer(audio, dtype=np.int16))
             if not speaker_ok:
-                gate_cfg = ((pipeline.cfg["stt"].get("continuous") or {}).get("speaker_gate") or {})
-                override = bool(gate_cfg.get("wake_override", True)) and await asyncio.to_thread(_playback_active)
-                if not override:
-                    timing.errors.append(f"ignored: speaker score {score:.2f}")
-                    print(f"SPEAKER rejected: score={score:.2f} < {gate.threshold}", flush=True)
-                    await ws.send_json({"type": "ignored", "reason": "speaker"})
-                    return
-                # loud playback drowns the voiceprint: continue, but only an
-                # explicit wake word at the start may carry this turn
-                print(f"SPEAKER override candidate (score={score:.2f}, playback active)", flush=True)
+                print(f"SPEAKER check failed (score={score:.2f}) — STT odloči (budnica/vpis)", flush=True)
         # acknowledge immediately: on CPU the STT alone can take tens of
         # seconds, and silence here reads as "she is not reacting"
         await ws.send_json({"type": "agent_status", "state": "thinking"})
         transcript = await pipeline.transcribe(audio, timing)
         transcript = pipeline.filter_hallucinations(transcript)
         timing.transcript = transcript
+        said_wake = bool(transcript) and wake is not None and wake.starts_with_wake(transcript)
+
+        # "Mia, prepoznaj glas!" — append THIS utterance to the voiceprint
+        # (works even when the gate just rejected the voice: that is the point,
+        # e.g. enrolling how the user sounds from the far side of the room)
+        if said_wake and gate is not None and _is_enroll_command(transcript):
+            await asyncio.to_thread(
+                gate.enroll, [np.frombuffer(audio, dtype=np.int16)], gate.enrolled)
+            confirm = "Zapomnjeno, šefe — ta glas zdaj poznam."
+            print(f"SPEAKER enrolled from voice command (score was {score})", flush=True)
+            await _speak_and_finish(ws, pipeline, conn, timing, confirm)
+            return
+
         if not speaker_ok:
-            if transcript and wake is not None and wake.starts_with_wake(transcript):
+            gate_cfg = ((pipeline.cfg["stt"].get("continuous") or {}).get("speaker_gate") or {})
+            override = (said_wake and bool(gate_cfg.get("wake_override", True))
+                        and await asyncio.to_thread(_playback_active))
+            if override:
                 print(f"SPEAKER override accepted via wake word: {transcript[:80]!r}", flush=True)
             else:
-                timing.errors.append("ignored: speaker (no wake override)")
+                timing.errors.append(f"ignored: speaker score {score}")
                 await ws.send_json({"type": "ignored", "reason": "speaker"})
                 return
         await ws.send_json({"type": "transcript", "text": transcript})
