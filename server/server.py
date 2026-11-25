@@ -231,6 +231,45 @@ def _is_media_open_browser(text: str) -> bool:
     return "iz ozadja" in flat and ("odpri" in flat or "pokaži" in flat or "pokazi" in flat)
 
 
+def _volume_request(text: str) -> list[str] | None:
+    """'Mia, pojačaj (za 20)!' / 'glasnost na 50' / 'zmanjšaj' -> mia-volume args."""
+    flat = re.sub(r"\s+", " ", re.sub(r"[^a-zčšžćđ0-9 ]+", " ", (text or "").lower())).strip()
+    m = re.search(r"glasnost(?:i)?(?:\s+na)?\s+(\d+)", flat)
+    if m:
+        return ["set", m.group(1)]
+    if "koliko je glasnosti" in flat or "kakšna je glasnost" in flat:
+        return ["status"]
+    m = re.search(r"poja[cč]aj(?:\s+za)?\s*(\d+)?", flat)
+    if m or "glasneje" in flat:
+        pct = (m.group(1) if m else None)
+        return ["up"] + ([pct] if pct else [])
+    m = re.search(r"(?:zmanj[sš]aj|zni[zž]aj|uti[sš]aj)(?:\s+za)?\s*(\d+)?", flat)
+    if m or " ti[sš]e" in flat or flat.endswith("ti[sš]e"):
+        pct = (m.group(1) if m else None)
+        return ["down"] + ([pct] if pct else [])
+    if "ugasni zvok" in flat or "brez zvoka" in flat:
+        return ["mute"]
+    return None
+
+
+def _fav_artist_match(query: str) -> str | None:
+    """Fuzzy-match a spoken name against the favorites list ('snupi dog' ->
+    'Snoop Dogg'). Used when a play request has no explicit music keyword."""
+    import difflib
+    try:
+        artists = [a.strip() for a in
+                   (Path.home() / ".config" / "mia" / "favorite-artists.txt")
+                   .read_text(encoding="utf-8").splitlines() if a.strip()]
+    except OSError:
+        return None
+    best, score = None, 0.0
+    for a in artists:
+        r = difflib.SequenceMatcher(None, query, a.lower()).ratio()
+        if r > score:
+            best, score = a, r
+    return best if score >= 0.7 else None
+
+
 def _music_play_request(text: str) -> str | None:
     """'Mia, pusti mi glazbo (v ozadju)!' / 'Mia, poišči X in ga predvajaj!'
 
@@ -238,6 +277,11 @@ def _music_play_request(text: str) -> str | None:
     or None when this is not a music-play request."""
     flat = _flat(text)
     if not any(w in flat for w in ("glazb", "muzik", "glasb", "pesem", "pesm", "predvajaj")):
+        # no music keyword: only "pusti (mi) <ime>" with a fuzzy favorite match
+        m = re.match(r"^pusti(?:te)?(?:\s+mi)?\s+(.+)$", flat)
+        if m:
+            q = re.sub(r"\s+", " ", m.group(1)).strip()
+            return _fav_artist_match(q)
         return None
     m = (re.match(r"^(?:poi[sš][cč]i|najdi|na[đd]i|prona[đd]i)\s+(.+)$", flat)
          or re.match(r"^pusti(?:te)?(?:\s+mi)?\s+(.+)$", flat)
@@ -1450,6 +1494,7 @@ class ConnState:
     is_speaking: bool = False          # TTS audio is streaming right now
     audio_bytes_total: int = 0         # continuous-mode flow diagnostics
     audio_stats_at: float = 0.0
+    pending_utterance: bytes | None = None  # said while a turn was busy — runs next
 
 
 async def _speak_and_finish(ws: WebSocket, pipeline: VoicePipelineServer,
@@ -1536,6 +1581,20 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             _, stripped = wake.check(transcript, None, time.time())
         else:
             stripped = transcript
+        vol_args = _volume_request(stripped) if said_wake else None
+        if vol_args is not None:
+            r = await asyncio.to_thread(subprocess.run, ["mia-volume", *vol_args],
+                                        capture_output=True, text=True, timeout=10)
+            lines = (r.stdout or "").strip().splitlines()
+            last = lines[-1] if lines else ""
+            if "glasnost:" in last:
+                confirm = f"Glasnost {last.split(':', 1)[1].strip()}, šefe."
+            else:
+                confirm = "Zvok preklopljen, šefe."
+            print(f"VOLUME via voice: {' '.join(vol_args)} -> {last}", flush=True)
+            await _speak_and_finish(ws, pipeline, conn, timing, confirm)
+            return
+
         music_query = _music_play_request(stripped) if said_wake else None
         if music_query is not None:
             query = music_query or _pick_favorite_artist()
@@ -1636,6 +1695,10 @@ async def _continuous_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: C
         await _run_turn(ws, pipeline, conn, wake=conn.wake)
     finally:
         if conn.continuous:
+            pending, conn.pending_utterance = conn.pending_utterance, None
+            if pending:
+                _start_continuous_turn(ws, pipeline, conn, pending)
+                return
             try:
                 await ws.send_json({"type": "status", "message": "continuous listening"})
             except Exception:
@@ -1690,6 +1753,10 @@ async def _feed_continuous(ws: WebSocket, pipeline: VoicePipelineServer, conn: C
         if kind == "utterance":
             if busy:
                 if not barge:
+                    # half-duplex: don't kill the turn — queue the utterance
+                    # (newest wins) and run it as soon as the turn finishes
+                    conn.pending_utterance = payload
+                    print("utterance queued (turn busy)", flush=True)
                     continue
                 await _cancel_active_turn(ws, pipeline, conn)
             _start_continuous_turn(ws, pipeline, conn, payload)
