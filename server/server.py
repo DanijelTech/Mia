@@ -25,6 +25,8 @@ import asyncio
 import inspect
 import json
 import os
+import shutil
+import subprocess
 import re
 import threading
 import time
@@ -1036,6 +1038,32 @@ async def hud_config() -> JSONResponse:
     })
 
 
+def _local_gpu() -> dict:
+    """Read-only local GPU stats via nvidia-smi; empty dict when unavailable."""
+    smi = shutil.which("nvidia-smi")
+    if not smi:
+        return {}
+    try:
+        out = subprocess.run(
+            [smi, "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=3,
+        )
+        if out.returncode != 0 or not out.stdout.strip():
+            return {}
+        util, used, total, temp = [x.strip() for x in out.stdout.splitlines()[0].split(",")[:4]]
+        stats = {
+            "gpu_util": float(util),
+            "vram_used": round(float(used) / 1024, 1),
+            "vram_total": round(float(total) / 1024, 1),
+        }
+        if temp not in ("[N/A]", "N/A", ""):
+            stats["gpu_temp"] = float(temp)
+        return stats
+    except Exception:
+        return {}
+
+
 @app.get("/api/machines")
 async def machines() -> JSONResponse:
     """Local (Mac) stats + configured remote workers.
@@ -1051,6 +1079,7 @@ async def machines() -> JSONResponse:
             "mem": psutil.virtual_memory().percent,
             "disk": psutil.disk_usage(str(ROOT)).percent,
         })
+    mac.update(_local_gpu())
     result.append(mac)
 
     def poll_worker(w: dict) -> dict:

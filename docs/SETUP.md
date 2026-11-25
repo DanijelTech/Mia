@@ -291,6 +291,27 @@ Za trajni zagon uporabi systemd (`systemd --user`, `ExecStart=.../gepard_tts.py
 Opomba: LoRA je Apache-2.0; preveri licenco osnovnega modela
 (`nineninesix/gepard-1.0`) in NeMo codec-a, preden karkoli distribuiraš.
 
+### Kaj uporablja GPU (in kaj ne)
+
+| Komponenta | Naprava | Zakaj |
+|---|---|---|
+| **LLM** (Qwen3 prek Hermesa, tvoj `hermes.sh`) | **GPU** | edini del, ki res potrebuje VRAM |
+| STT (Whisper) | CPU (`stt.device: cpu`) | da GPU ostane prost za model |
+| TTS (Piper / Gepard / Maya1) | CPU oz. GPU po izbiri | Piper teče na CPU; Gepard/Maya1 uporabita GPU, če je prost |
+
+Panel `STROJI` prikazuje **lokalni stroj** (`MAC MINI · HERMES`) s CPU/pomnilnikom in —
+če je na voljo `nvidia-smi` — tudi **GPU obremenitev, VRAM in temperaturo**
+(`GPU 37% · VRAM 11.1/24G · 61°`). Če vrstice GPU ni, ukaz `nvidia-smi` ni v `PATH`.
+
+Preverjanje, da model res teče na grafični:
+
+```bash
+nvidia-smi
+nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv
+KEY=$(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)
+curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:8642/health/detailed | head -c 400
+```
+
 ### Souporaba GPU z LLM (pomembno)
 
 Whisper lahko teče na GPU ali na CPU. **Če LLM teče na isti grafični kartici,
