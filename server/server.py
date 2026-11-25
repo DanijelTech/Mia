@@ -189,6 +189,34 @@ def load_config() -> dict:
     return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
 
 
+def _playback_active() -> bool:
+    """Is Mia-opened media (music/film window from the mia-open registry)
+    still alive? Loud playback drowns the voiceprint, so then an explicit
+    wake word may carry the turn. Deliberately NOT based on PipeWire stream
+    state: the HUD's own AudioContext keeps a Chrome stream non-corked even
+    in silence, which would make the override permanent."""
+    reg = Path.home() / ".cache" / "mia-windows"
+    try:
+        lines = reg.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+    env = dict(os.environ)
+    env.setdefault("DISPLAY", ":1")
+    env.setdefault("XAUTHORITY", f"/run/user/{os.getuid()}/gdm/Xauthority")
+    for line in lines:
+        wid = line.split("\t", 1)[0].strip()
+        if not wid:
+            continue
+        try:
+            r = subprocess.run(["xdotool", "getwindowname", wid],
+                               capture_output=True, timeout=2, env=env)
+            if r.returncode == 0:
+                return True
+        except Exception:
+            continue
+    return False
+
+
 @dataclass
 class TurnTiming:
     turn_id: int
@@ -1330,20 +1358,34 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
         # voice calibration: only the enrolled speaker gets through — checked
         # BEFORE the expensive STT so foreign voices cost ~100 ms, not seconds
         gate = pipeline.speaker_gate
+        speaker_ok = True
         if wake is not None and gate is not None and gate.enrolled:
-            accept, score = await asyncio.to_thread(
+            speaker_ok, score = await asyncio.to_thread(
                 gate.verify, np.frombuffer(audio, dtype=np.int16))
-            if not accept:
-                timing.errors.append(f"ignored: speaker score {score:.2f}")
-                print(f"SPEAKER rejected: score={score:.2f} < {gate.threshold}", flush=True)
-                await ws.send_json({"type": "ignored", "reason": "speaker"})
-                return
+            if not speaker_ok:
+                gate_cfg = ((pipeline.cfg["stt"].get("continuous") or {}).get("speaker_gate") or {})
+                override = bool(gate_cfg.get("wake_override", True)) and await asyncio.to_thread(_playback_active)
+                if not override:
+                    timing.errors.append(f"ignored: speaker score {score:.2f}")
+                    print(f"SPEAKER rejected: score={score:.2f} < {gate.threshold}", flush=True)
+                    await ws.send_json({"type": "ignored", "reason": "speaker"})
+                    return
+                # loud playback drowns the voiceprint: continue, but only an
+                # explicit wake word at the start may carry this turn
+                print(f"SPEAKER override candidate (score={score:.2f}, playback active)", flush=True)
         # acknowledge immediately: on CPU the STT alone can take tens of
         # seconds, and silence here reads as "she is not reacting"
         await ws.send_json({"type": "agent_status", "state": "thinking"})
         transcript = await pipeline.transcribe(audio, timing)
         transcript = pipeline.filter_hallucinations(transcript)
         timing.transcript = transcript
+        if not speaker_ok:
+            if transcript and wake is not None and wake.starts_with_wake(transcript):
+                print(f"SPEAKER override accepted via wake word: {transcript[:80]!r}", flush=True)
+            else:
+                timing.errors.append("ignored: speaker (no wake override)")
+                await ws.send_json({"type": "ignored", "reason": "speaker"})
+                return
         await ws.send_json({"type": "transcript", "text": transcript})
         if transcript and wake is not None:
             accept, transcript = wake.check(transcript, conn.last_reply_at, time.time())

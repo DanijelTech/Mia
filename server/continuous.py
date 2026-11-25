@@ -209,6 +209,12 @@ class WakeGate:
                 return rest or text
         return text
 
+    def starts_with_wake(self, text: str) -> bool:
+        """Strict check: the utterance STARTS with a wake word (no followup
+        window) — used for the speaker-gate override while music plays."""
+        flat = _ascii(text).strip()
+        return any(flat.startswith(w) for w in self.words)
+
     def check(self, transcript: str, last_reply_at: float | None, now: float) -> tuple[bool, str]:
         if not self.words:
             return True, transcript

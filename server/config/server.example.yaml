@@ -59,6 +59,8 @@ stt:
       enabled: true          # aktiven šele, ko obstaja profil:
                              # python3 server/scripts/enroll_voice.py
       threshold: 0.30        # kosinusna podobnost odtisa; dvig = strožje
+      wake_override: true    # ob predvajanju medijev (mia-open okno živo) izrecna
+                             # budnica prevzame turn — sicer glasbe ne moreš ustaviti
       min_seconds: 1.0       # krajše izjave ne preverjamo (budnica še vedno velja)
       profile: voices/speaker_profile.npz
   # Whisper na tišini/šumu "sliši" znane fraze (YouTube podnapisi ipd.) —
