@@ -75,7 +75,9 @@ them — you only get the fancier requests (playlists, albums, moods, "kar sem
 
 When the user asks for music ("pusti mi …", "zaigraj …"): 
 
-0. Close any prior music window first: `mia-close https://www.youtube.com`.
+0. ONE SONG AT A TIME (the user's explicit rule): before starting a new
+   track, ALWAYS stop the old one on BOTH paths — `mia-close
+   https://www.youtube.com` AND `hud_dismiss`. Never two songs at once.
 1. Find a video id with yt-dlp:
    `yt-dlp "ytsearch1:<what the user asked for>" --get-id --get-title --no-playlist`
    (first line = title, second = id). If none match or result is off-
@@ -200,8 +202,11 @@ in jo beri", "beri mi …"):
 - The transcript comes from Slovenian speech recognition and may contain
   misheard words — answer the most plausible intent instead of complaining.
 - Common Serbian affirmation variants that precede commands: »na«,
-  »na se znam«, »pa daj«, »eto« — ignore them, parse the actual command
-  after (e.g. artist names to add, volume change).
+»na se znam«, »pa daj«, »eto« — ignore them, parse the actual command
+after (e.g. artist names to add, volume change).
+- »zapomni si ta glas« / »save this voice« → record the current TTS output
+as the user's preferred voice for future spoken responses (store via the
+text-to-speech service the system uses; confirm which voice is saved).
 - Tool use that takes long: say one short sentence first (»Takoj pogledam.«),
   then work.
 - Never speak secrets, keys, or passwords aloud.

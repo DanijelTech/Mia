@@ -310,6 +310,22 @@ def _pick_favorite_artist() -> str:
     return random.choice(artists) if artists else "slovenska glasba"
 
 
+async def _stop_all_media() -> None:
+    """Stop every playback path: HUD panels + desktop media windows.
+    Called before starting a new track — never two songs at once."""
+    for client in list(WS_CLIENTS):
+        try:
+            await client.send_json({"type": "dismiss_panels"})
+        except Exception:
+            WS_CLIENTS.discard(client)
+    ACTIVE_PANELS.clear()
+    try:
+        await asyncio.to_thread(subprocess.run, ["mia-close", "youtube"],
+                                capture_output=True, timeout=15)
+    except Exception:
+        pass
+
+
 async def _summon_media(src: str, title: str, media: str = "video",
                         position: str = "center") -> int:
     """Show media on every connected HUD (tracked for voice control)."""
@@ -1548,25 +1564,13 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
         # deterministic media control — works in any session, and (because it
         # only needs the wake word) even while loud playback drowns the voiceprint
         if said_wake and _is_media_stop(transcript):
-            for client in list(WS_CLIENTS):
-                try:
-                    await client.send_json({"type": "dismiss_panels"})
-                except Exception:
-                    WS_CLIENTS.discard(client)
-            ACTIVE_PANELS.clear()
-            await asyncio.to_thread(subprocess.run, ["mia-close", "youtube"],
-                                    capture_output=True, timeout=15)
+            await _stop_all_media()
             print(f"MEDIA stopped via voice: {transcript[:60]!r}", flush=True)
             await _speak_and_finish(ws, pipeline, conn, timing, "Ustavljeno, šefe.")
             return
         if said_wake and _is_media_open_browser(transcript):
             src = LAST_SUMMON.get("src") or ""
-            for client in list(WS_CLIENTS):
-                try:
-                    await client.send_json({"type": "dismiss_panels"})
-                except Exception:
-                    WS_CLIENTS.discard(client)
-            ACTIVE_PANELS.clear()
+            await _stop_all_media()
             if src:
                 await asyncio.to_thread(subprocess.run, ["mia-open", src],
                                         capture_output=True, timeout=20)
@@ -1598,6 +1602,8 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
         music_query = _music_play_request(stripped) if said_wake else None
         if music_query is not None:
             query = music_query or _pick_favorite_artist()
+            # one song at a time: the new order immediately stops the old one
+            await _stop_all_media()
 
             def _find_on_youtube() -> tuple[str, str] | None:
                 try:
