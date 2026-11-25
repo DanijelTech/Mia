@@ -67,6 +67,12 @@ in the browser. Do NOT retry hud_display — go straight to new_tab.
   without the log.
 - Only fall back to a fresh yt-dlp search when history has nothing suitable.
 
+NOTE: basic play/stop/open phrases ("pusti mi glazbo (v ozadju)", "poišči X
+in ga predvajaj", "ustavi glasbo/predvajanje", "predvajanje odpri v
+brskalniku") are handled DETERMINISTICALLY by the voice server before you see
+them — you only get the fancier requests (playlists, albums, moods, "kar sem
+že poslušal" with history reasoning).
+
 When the user asks for music ("pusti mi …", "zaigraj …"): 
 
 0. Close any prior music window first: `mia-close https://www.youtube.com`.

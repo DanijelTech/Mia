@@ -25,6 +25,7 @@ import asyncio
 import inspect
 import json
 import os
+import random
 import shutil
 import subprocess
 import re
@@ -228,6 +229,58 @@ def _is_media_open_browser(text: str) -> bool:
             ("predvajanje", "glasbo", "glasba", "muziko", "film", "video", "ozadja", "ozadju", "panel")):
         return True
     return "iz ozadja" in flat and ("odpri" in flat or "pokaži" in flat or "pokazi" in flat)
+
+
+def _music_play_request(text: str) -> str | None:
+    """'Mia, pusti mi glazbo (v ozadju)!' / 'Mia, poišči X in ga predvajaj!'
+
+    Returns the search query, '' when a favorite artist should be picked,
+    or None when this is not a music-play request."""
+    flat = _flat(text)
+    if not any(w in flat for w in ("glazb", "muzik", "glasb", "pesem", "pesm", "predvajaj")):
+        return None
+    m = (re.match(r"^(?:poi[sš][cč]i|najdi|na[đd]i|prona[đd]i)\s+(.+)$", flat)
+         or re.match(r"^pusti(?:te)?(?:\s+mi)?\s+(.+)$", flat)
+         or re.match(r"^zaigraj(?:\s+mi)?\s+(.+)$", flat))
+    if not m:
+        return None
+    q = m.group(1)
+    for junk in ("v ozadju", "iz ozadja", "enega od izvajalcev", "od izvajalca",
+                 "izvajalcev", "izvajalca", "in ga predvajaj", "ter ga predvajaj",
+                 "in jo predvajaj", "ter jo predvajaj", "predvajaj", "glazbo",
+                 "glasbo", "muziko", "glasba", "glazba", "muzika", "pesem",
+                 "pesmo", "nekaj", "neko", "eno", "malce", "prosim", "spet",
+                 "ponovno", "kakšno", "kaksno"):
+        q = q.replace(junk, " ")
+    q = re.sub(r"^od\s+", "", q.strip())   # "od Cece" -> "cece"
+    return re.sub(r"\s+", " ", q).strip()
+
+
+def _pick_favorite_artist() -> str:
+    try:
+        artists = [a.strip() for a in
+                   (Path.home() / ".config" / "mia" / "favorite-artists.txt")
+                   .read_text(encoding="utf-8").splitlines() if a.strip()]
+    except OSError:
+        artists = []
+    return random.choice(artists) if artists else "slovenska glasba"
+
+
+async def _summon_media(src: str, title: str, media: str = "video",
+                        position: str = "center") -> int:
+    """Show media on every connected HUD (tracked for voice control)."""
+    ACTIVE_PANELS.add(src)
+    LAST_SUMMON.update(media=media, src=src, title=title)
+    payload = {"type": "summon_panel", "media": media, "src": src,
+               "title": title[:48], "position": position}
+    sent = 0
+    for client in list(WS_CLIENTS):
+        try:
+            await client.send_json(payload)
+            sent += 1
+        except Exception:
+            WS_CLIENTS.discard(client)
+    return sent
 
 
 def _playback_active() -> bool:
@@ -1477,6 +1530,46 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
                 confirm = "Ni aktivnega predvajanja, šefe."
             print(f"MEDIA open-in-browser via voice: {src or 'nič'}", flush=True)
             await _speak_and_finish(ws, pipeline, conn, timing, confirm)
+            return
+
+        if said_wake:
+            _, stripped = wake.check(transcript, None, time.time())
+        else:
+            stripped = transcript
+        music_query = _music_play_request(stripped) if said_wake else None
+        if music_query is not None:
+            query = music_query or _pick_favorite_artist()
+
+            def _find_on_youtube() -> tuple[str, str] | None:
+                try:
+                    r = subprocess.run(
+                        ["yt-dlp", f"ytsearch1:{query}", "--get-title", "--get-id",
+                         "--no-playlist"],
+                        capture_output=True, text=True, timeout=30)
+                except Exception:
+                    return None
+                lines = [l.strip() for l in r.stdout.splitlines() if l.strip()]
+                return (lines[0], lines[1]) if len(lines) >= 2 else None
+
+            found = await asyncio.to_thread(_find_on_youtube)
+            if not found:
+                print(f"MUSIC search failed for {query!r}", flush=True)
+                await _speak_and_finish(ws, pipeline, conn, timing,
+                                        "Nisem našla ničesar, šefe.")
+                return
+            title, vid = found
+            src = f"https://www.youtube.com/watch?v={vid}"
+            try:
+                with (Path.home() / ".cache" / "mia-history.log").open("a", encoding="utf-8") as f:
+                    f.write(f"{time.strftime('%Y-%m-%d %H:%M')}\t{src}\n")
+            except OSError:
+                pass
+            sent = await _summon_media(src, title)
+            if sent == 0:  # no HUD connected: play in a desktop window instead
+                await asyncio.to_thread(subprocess.run, ["mia-open", src],
+                                        capture_output=True, timeout=20)
+            print(f"MUSIC playing ({query!r}): {title[:60]} [{vid}]", flush=True)
+            await _speak_and_finish(ws, pipeline, conn, timing, "Evo šefe.")
             return
 
         if not speaker_ok:
