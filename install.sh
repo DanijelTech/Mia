@@ -618,6 +618,12 @@ if [ "$DRY_RUN" = 0 ] && [ "$DO_SERVICE" = 1 ] && [ "$DO_START" = 1 ]; then
   fi
 fi
 
+TTS_DEPS="-"
+if [ "$TTS_ENGINE" = "maya1" ]; then
+  if command -v espeak-ng >/dev/null 2>&1; then TTS_DEPS="espeak-ng OK"
+  else TTS_DEPS="espeak-ng MISSING — sudo apt-get install espeak-ng"; fi
+fi
+
 cat <<DONE
 
 $([ "$DRY_RUN" = 1 ] && printf '\033[1;33mDry run complete — nothing was changed.\033[0m'    || { [ "$SERVICE_OK" = "no" ] && printf '\033[1;33mInstalled, but the service is NOT running (see above).\033[0m'         || printf '\033[1;32mInstalled.\033[0m'; })
@@ -629,6 +635,7 @@ $([ "$DRY_RUN" = 1 ] && printf '\033[1;33mDry run complete — nothing was chang
   voices      $(ls "$SERVER_DIR/voices" 2>/dev/null | grep -c '\.onnx$') model(s)
   service     ${SERVICE_KIND:-none}${SERVICE_DIR:+ ($SERVICE_DIR)}${SERVICE_OK:+ [running: $SERVICE_OK]}
   tts engine  $TTS_ENGINE
+  tts deps    $TTS_DEPS
   stt device  $(grep -m1 -E '^  device:' "$CFG" 2>/dev/null | awk '{print $2}')$( [ "$(grep -m1 -E '^  device:' "$CFG" 2>/dev/null | awk '{print $2}')" = "cpu" ] && echo " (GPU free for the LLM)" || echo " — if your LLM launcher says 'GPU busy', run: ./install.sh --stt-device cpu" )
   HUD URL     $(hud_url)
 
