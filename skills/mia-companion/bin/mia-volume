@@ -1,0 +1,26 @@
+#!/bin/sh
+# mia-volume — control the default audio output (music, films, system sounds).
+#   mia-volume up [pct]     louder (default +10 %)
+#   mia-volume down [pct]   quieter (default -10 %)
+#   mia-volume set <pct>    absolute level, clamped to 0–150 %
+#   mia-volume mute         toggle mute
+#   mia-volume status       print the current level
+SINK=@DEFAULT_SINK@
+cur=$(pactl get-sink-volume "$SINK" | grep -oE '[0-9]+%' | head -1 | tr -d '%')
+[ -z "$cur" ] && cur=100
+
+case "$1" in
+    up)   new=$((cur + ${2:-10}));;
+    down) new=$((cur - ${2:-10}));;
+    set)  new=${2:-100};;
+    mute) pactl set-sink-mute "$SINK" toggle
+          pactl get-sink-mute "$SINK"; exit 0;;
+    status|"") new=$cur;;
+    *) echo "usage: mia-volume up|down [pct] | set <pct> | mute | status" >&2; exit 2;;
+esac
+
+[ "$new" -gt 150 ] && new=150
+[ "$new" -lt 0 ] && new=0
+pactl set-sink-volume "$SINK" "${new}%"
+pactl set-sink-mute "$SINK" 0 2>/dev/null
+echo "glasnost: ${new} %"
