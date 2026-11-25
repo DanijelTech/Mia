@@ -85,38 +85,40 @@ its personality.
 
 ### Keep the Hermes gateway running
 
-Mia talks to Hermes at `127.0.0.1:8642`. If you start the gateway in a terminal
-(`hermes gateway`), it dies with that terminal — the HUD then shows "Hermes API
-offline" and Mia says "Hermes gateway unreachable" out loud. Run it as a user
-service instead:
+Mia talks to Hermes at `127.0.0.1:8642` — **Mia calls Hermes**, not the other way
+round (Hermes only connects to Mia if you install the optional `hud_display`
+plugin). A gateway started in a terminal dies with it: the HUD then shows
+"Hermes API offline" and Mia says "Hermes gateway unreachable" out loud.
 
-```ini
-# ~/.config/systemd/user/hermes-gateway.service
-[Unit]
-Description=Hermes Agent gateway (API for Mia)
-After=default.target
-
-[Service]
-Type=simple
-EnvironmentFile=%h/.hermes/.env
-ExecStart=%h/.local/bin/hermes gateway
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-```
+Hermes ships its own service manager — use that instead of hand-written units:
 
 ```bash
-systemctl --user daemon-reload
-systemctl --user enable --now hermes-gateway
-systemctl --user status hermes-gateway
-loginctl enable-linger "$USER"
+hermes gateway install --start-now --start-on-login   # systemd/launchd service
+hermes gateway status --deep                          # is it running, which platforms
+hermes gateway list                                   # profiles and their gateways
 ```
 
-Adjust `ExecStart` to the path from `command -v hermes` if needed. Quick
-alternative: `nohup hermes gateway >> ~/.hermes/gateway.log 2>&1 &` or
-`tmux new -d -s hermes 'hermes gateway'`.
+Boot-time without login (Linux, root):
+
+```bash
+sudo hermes gateway install --system --run-as-user "$USER" --start-now
+```
+
+**Important:** the `api_server` platform (OpenAI-compatible API on 8642) is only
+enabled when the gateway sees `API_SERVER_ENABLED=true` **or** `API_SERVER_KEY`
+in its environment. `API_SERVER_PORT` / `API_SERVER_HOST` change the bind. With
+profiles, each profile has its own `.env` — check `hermes gateway list`.
+
+Verify the port really listens:
+
+```bash
+curl -s -m 2 http://127.0.0.1:8642/health && echo OK || echo "nothing on 8642"
+KEY=$(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)
+curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:8642/health
+```
+
+A hand-written systemd unit is only a fallback if `hermes gateway install` does
+not work on your platform. Quick and dirty: `nohup hermes gateway >> ~/.hermes/gateway.log 2>&1 &`.
 
 ## 2. The voice: local Piper (offline) or ElevenLabs (cloud)
 

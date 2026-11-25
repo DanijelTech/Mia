@@ -95,45 +95,41 @@ akcije in počakaj na odobritev). Osebnost naj ima agent — ne glasovni strežn
 
 ### Naj Hermesov gateway teče stalno
 
-Mia se pogovarja s Hermesom prek `127.0.0.1:8642`. Če gateway zaženeš samo v
-terminalu (`hermes gateway`), ugasne, ko terminal zapreš — HUD takrat javi
-»Hermes API offline«, Mia pa ob govoru reče »Hermesov gateway ni dosegljiv«.
-Za trajno delovanje (uporabniška systemd enota):
+Mia se pogovarja s Hermesom prek `127.0.0.1:8642` — **Mia kliče Hermesa**, ne
+obratno (Hermes se na Mio poveže le, če uporabiš opcijski vtičnik `hud_display`).
+Če gateway zaženeš samo v terminalu (`hermes gateway`) in ga zapreš, HUD javi
+`Hermes API offline`, Mia pa ob govoru reče »Hermesov gateway ni dosegljiv«.
 
-```ini
-# ~/.config/systemd/user/hermes-gateway.service
-[Unit]
-Description=Hermes Agent gateway (API for Mia)
-After=default.target
-
-[Service]
-Type=simple
-EnvironmentFile=%h/.hermes/.env
-ExecStart=%h/.local/bin/hermes gateway
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-```
+Hermes ima svoj upravitelj storitev — uporabi njega, ne ročnih enot:
 
 ```bash
-systemctl --user daemon-reload
-systemctl --user enable --now hermes-gateway
-systemctl --user status hermes-gateway        # active (running)
-loginctl enable-linger "$USER"                # preživi odjavo in reboot
+hermes gateway install --start-now --start-on-login   # systemd/launchd storitev
+hermes gateway status --deep                          # ali teče in katere platforme
+hermes gateway list                                   # profili in njihovi gatewayi
 ```
 
-Če `hermes` ni v `~/.local/bin`, popravi `ExecStart` na pot iz `command -v hermes`.
-Hitra alternativa brez systemda: `nohup hermes gateway >> ~/.hermes/gateway.log 2>&1 &`
-ali `tmux new -d -s hermes 'hermes gateway'`.
-
-Preveri z:
+Za zagon ob bootu brez prijave (Linux, kot root):
 
 ```bash
+sudo hermes gateway install --system --run-as-user "$USER" --start-now
+```
+
+**Pomembno:** platforma `api_server` (OpenAI-kompatibilni API na 8642) se vklopi
+samo, če gateway v svojem okolju vidi `API_SERVER_ENABLED=true` **ali**
+`API_SERVER_KEY`. Vrata in naslov lahko določiš z `API_SERVER_PORT` /
+`API_SERVER_HOST`. Če uporabljaš profile, ima vsak svoj `.env` — preveri z
+`hermes gateway list`.
+
+Preveri, da vrata res poslušajo:
+
+```bash
+curl -s -m 2 http://127.0.0.1:8642/health && echo OK || echo "8642 ne posluša"
 KEY=$(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)
 curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:8642/health
 ```
+
+Ročna systemd enota je le rezerva, če `hermes gateway install` ne deluje v tvojem
+okolju. Hitra začasna rešitev: `nohup hermes gateway >> ~/.hermes/gateway.log 2>&1 &`.
 
 ## 2. Glas: lokalni Piper (offline) ali ElevenLabs (oblak)
 

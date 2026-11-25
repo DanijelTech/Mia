@@ -118,10 +118,14 @@ reče »Hermesov gateway ni dosegljiv«** — Hermesov gateway ne teče (pogosto
 ker je bil zagnan v terminalu, ki si ga zaprl). Zaženi ga trajno:
 
 ```bash
-systemctl --user enable --now hermes-gateway     # če imaš enoto (glej SETUP §1)
-# ali začasno:
-nohup hermes gateway >> ~/.hermes/gateway.log 2>&1 &
+hermes gateway install --start-now --start-on-login   # Hermesov upravitelj storitev
+hermes gateway status --deep                          # ali teče + platforme
+hermes gateway list                                   # profili
 ```
+
+Če `status --deep` ne omenja `api_server`, gateway v svojem okolju ne vidi
+`API_SERVER_ENABLED`/`API_SERVER_KEY` (pri profilih ima vsak svoj `.env`).
+Začasno: `nohup hermes gateway >> ~/.hermes/gateway.log 2>&1 &`.
 
 Preveri: `curl -s -H "Authorization: Bearer $(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)" http://127.0.0.1:8642/health`
 

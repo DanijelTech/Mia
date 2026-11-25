@@ -10,10 +10,14 @@
 it was started in a terminal that got closed). Run it persistently:
 
 ```bash
-systemctl --user enable --now hermes-gateway     # if you created the unit (SETUP §1)
-# or temporarily:
-nohup hermes gateway >> ~/.hermes/gateway.log 2>&1 &
+hermes gateway install --start-now --start-on-login   # Hermes' own service manager
+hermes gateway status --deep                          # running? which platforms?
+hermes gateway list                                   # profiles
 ```
+
+If `status --deep` does not mention `api_server`, the gateway does not see
+`API_SERVER_ENABLED`/`API_SERVER_KEY` in its environment (profiles have their own
+`.env`). Temporarily: `nohup hermes gateway >> ~/.hermes/gateway.log 2>&1 &`.
 
 Verify: `curl -s -H "Authorization: Bearer $(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)" http://127.0.0.1:8642/health`
 
