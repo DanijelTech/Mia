@@ -77,8 +77,10 @@ When the user asks for music ("pusti mi …", "zaigraj …"):
    `ytsearch:`, `ytsearch1:"exact phrase"`, or alternate artist names.
 2. Open it in a desktop app-window (autoplays with sound):
    `mia-open "https://www.youtube.com/watch?v=<id>"`
-3. Confirm aloud in one short sentence what is playing, then save the track
-   to the music history (see above).
+3. Confirm with ONE short casual phrase and NOTHING more — the user
+   explicitly asked: no commentary about the music, artist or mood (he
+   ordered it, he knows what it is). Just e.g. "Evo šefe!" or "Nazdravlje,
+   šefe!". Then save the track to the music history (see above).
 
 Notes on tricky search terms:
 - "di gona" → user may mean "da gona", a Serbian/Croatian term; try
