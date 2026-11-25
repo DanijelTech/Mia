@@ -482,7 +482,9 @@ function wsUrl(){return (location.protocol==="https:"?"wss://":"ws://")+location
 function connect(){
   ws=new WebSocket(wsUrl()); ws.binaryType="arraybuffer";
   ws.onopen=()=>{wsReady=true;$("wsDot").className="dot on";$("wsState").textContent="povezan";$("connState").textContent="POVEZAVA VZPOSTAVLJENA";$("footMsg").textContent="GLASOVNI STREŽNIK POVEZAN"};
-  ws.onclose=()=>{wsReady=false;$("wsDot").className="dot off";$("wsState").textContent="brez povezave";$("connState").textContent="POVEZAVA PREKINJENA";setState("standby","PRIPRAVLJEN");setTimeout(connect,3000)};
+  ws.onclose=ev=>{wsReady=false;$("wsDot").className="dot off";$("wsState").textContent="brez povezave";$("connState").textContent="POVEZAVA PREKINJENA";setState("standby","PRIPRAVLJEN");
+    if(ev&&ev.code===4401){addMsg("sys","povezava zavrnjena (4401): osveži stran z veljavnim žetonom — "+location.origin+"/hud/?token=…");return}
+    setTimeout(connect,3000)};
   ws.onerror=()=>{};
   ws.onmessage=ev=>{
     if(ev.data instanceof ArrayBuffer){playChunk(ev.data);return}

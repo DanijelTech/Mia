@@ -232,7 +232,10 @@ class HermesAPI:
     def headers(self) -> dict:
         key = os.environ.get(self.cfg.get("api_key_env", "API_SERVER_KEY"), "")
         if not key:
-            raise RuntimeError("Hermes API key not found in environment")
+            raise RuntimeError(
+                "Hermes API key not found in environment: set API_SERVER_KEY in "
+                "~/.hermes/.env (of the user running Mia), then restart Mia — "
+                "`systemctl --user restart mia-voice`")
         h = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
         if self.cfg.get("session_key"):
             h["X-Hermes-Session-Key"] = self.cfg["session_key"]
@@ -760,8 +763,12 @@ def _ws_allowed(ws: WebSocket) -> bool:
     if not origin:
         return True  # non-browser client on the LAN (Python PTT, e2e tests)
     from urllib.parse import urlparse
-    host = (urlparse(origin).hostname or "").lower()
-    if host not in ALLOWED_ORIGIN_HOSTS:
+    origin_host = (urlparse(origin).hostname or "").lower()
+    request_host = (ws.headers.get("host") or "").rsplit(":", 1)[0].lower()
+    # Same-origin is always fine: opening https://192.168.1.10:8766/hud/ sends
+    # exactly that Origin, and the HUD must be able to talk to its own server.
+    same_origin = bool(origin_host) and origin_host == request_host
+    if not (same_origin or origin_host in ALLOWED_ORIGIN_HOSTS):
         return False
     token = hud_token()
     if not token:

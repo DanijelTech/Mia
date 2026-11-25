@@ -102,6 +102,21 @@ vrstic `server/logs/mia.out`. Najpogosteje manjkajoče odvisnosti
 (`server/logs/mia.pid`). V takem okolju systemd enote samo napišeta, ne
 aktivirata.
 
+**HUD javi »glasovni strežnik ni dosegljiv« / »povezava zavrnjena (4401)«** —
+brskalnik je spletni priključek (`/ws`) odprl z izvorom, ki ni bil na seznamu.
+Pri odpiranju po LAN IP (`https://192.168.1.10:8766/hud/`) je izvor
+`https://192.168.1.10:8766`; starejše izdaje so dovolile le `mia.local`,
+`localhost` in `127.0.0.1`. Aktualna koda **vedno dovoli isto izvor** (isti
+gostitelj kot HUD), tuja spletna mesta pa še vedno zavrne. Po posodobitvi:
+
+```bash
+cd ~/Mia && git pull && systemctl --user restart mia-voice
+# nato v brskalniku Ctrl+Shift+R
+```
+
+Če se pojavi 4401 tudi potem: žeton se ne ujema — odpri
+`https://<lan-ip>:8766/hud/?token=$(grep '^MIA_HUD_TOKEN=' ~/.hermes/.env | cut -d= -f2)`.
+
 **HUD kaže »Hermes API offline«, VEŠČINE »?«, AVTOMATIZACIJE »—«, CPU/pomnilnik »—«** —
 vse to pride iz Hermesa **prek Miinega proxyja** (`/api/hermes/...`), zato
 potrebuje dvoje: (1) `API_SERVER_KEY` v okoljski datoteki uporabnika, ki poganja

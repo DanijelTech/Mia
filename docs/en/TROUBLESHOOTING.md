@@ -5,6 +5,21 @@
 > Renamed from `jarvis_ai`: the server still accepts the old `JARVIS_HUD_TOKEN` env var, the `jarvis_token` cookie and `X-Jarvis-Token` header, so an upgrade cannot silently disable auth.
 
 
+**HUD says "voice server unreachable" / "connection refused (4401)"** — the
+browser opened the WebSocket with an Origin that was not allowlisted. Opening the
+HUD by LAN IP (`https://192.168.1.10:8766/hud/`) sends
+`Origin: https://192.168.1.10:8766`; older builds only allowed `mia.local`,
+`localhost` and `127.0.0.1`. Current code **always allows same-origin** (same
+host as the HUD) and still rejects foreign sites. After updating:
+
+```bash
+cd ~/Mia && git pull && systemctl --user restart mia-voice
+# then Ctrl+Shift+R in the browser
+```
+
+If 4401 persists, the token does not match — open
+`https://<lan-ip>:8766/hud/?token=$(grep '^MIA_HUD_TOKEN=' ~/.hermes/.env | cut -d= -f2)`.
+
 **HUD shows "Hermes API offline", SKILLS "?", AUTOMATIONS "—", CPU/memory "—"** —
 all of that comes from Hermes **through Mia's proxy** (`/api/hermes/...`), so it
 needs (1) `API_SERVER_KEY` in the env file of the user running Mia and (2)
