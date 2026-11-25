@@ -17,8 +17,15 @@ sudo ./install.sh --with-maya1       #    ...or Maya1 (best pronunciation)
 
 `--open` waits for the voice server, prints the LAN URL and the access token,
 and opens `https://<lan-ip>/hud/?token=…` in the default browser (the HUD turns
-that parameter into a cookie and removes it from the address bar). Later runs:
-`./start.sh` (or `./start.sh --no-open` to just start and print the URL).
+that parameter into a cookie and removes it from the address bar). Later:
+
+```bash
+./start.sh              # start (if needed), wait, open the HUD
+./stop.sh               # stop the server and the TTS service (removes nothing)
+./stop.sh --status      # what is running, which ports are held
+./stop.sh --restart     # stop, start again, open
+./stop.sh --free-ports  # last resort: kill whatever holds the port
+```
 
 It installs the Python packages (retrying with `--break-system-packages` when the
 distro marks Python as externally managed), downloads the Slovenian voice,

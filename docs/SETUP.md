@@ -17,8 +17,16 @@ git clone https://github.com/DanijelTech/Mia.git && cd Mia
 
 `--open` počaka na glasovni strežnik, izpiše LAN naslov in dostopni žeton ter
 odpre `https://<lan-ip>/hud/?token=…` v privzetem brskalniku (HUD ta parameter
-pretvori v piškotek in ga odstrani iz naslovne vrstice). Poznejši zagoni:
-`./start.sh` (ali `./start.sh --no-open`, da samo zaženeš in izpišeš URL).
+pretvori v piškotek in ga odstrani iz naslovne vrstice). Poznejši zagoni in
+ustavljanje:
+
+```bash
+./start.sh              # zaženi (če je treba), počakaj, odpri HUD
+./stop.sh               # ustavi strežnik in TTS storitev (nič ne briše)
+./stop.sh --status      # kaj teče in katera vrata so zasedena
+./stop.sh --restart     # ustavi + zaženi + odpri
+./stop.sh --free-ports  # zadnja možnost: ubij proces, ki drži vrata
+```
 
 Namestitvenik:
 - namesti pakete (ob „externally managed“ Pythonu sam ponovi z

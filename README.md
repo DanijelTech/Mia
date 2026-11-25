@@ -97,6 +97,10 @@ Pozneje kadar koli zaženi/odpri znova:
 ```bash
 ./start.sh                # zaženi (če je treba), počakaj, odpri HUD
 ./start.sh --no-open      # samo zaženi in izpiši URL + žeton
+./stop.sh                 # ustavi glasovni strežnik (in TTS storitev)
+./stop.sh --status        # kaj teče, katera vrata so zasedena
+./stop.sh --restart       # ustavi in znova zaženi + odpri
+./stop.sh --free-ports    # če vrata ostanejo zasedena, ubij lastnika
 ```
 
 Certifikat je self-signed, zato brskalnik enkrat vpraša — sprejmi.
@@ -193,6 +197,7 @@ docs/            slovenska dokumentacija: SETUP, ARCHITECTURE, TROUBLESHOOTING
 docs/en/         ista dokumentacija v angleščini
 install.sh       namestitev (brez venv, root ali uporabnik) + manifest
 start.sh         zagon, čakanje na strežnik in odpiranje HUD-a v brskalniku
+stop.sh          ustavljanje (systemd/launchd/ozadje), status, --restart, --free-ports
 uninstall.sh     natančna odstranitev vsega, kar je namestil install.sh
 build-package.sh arhiv za namestitev na stroju brez interneta
 ```

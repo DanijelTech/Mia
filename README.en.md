@@ -98,6 +98,10 @@ Afterwards, start/open again at any time with:
 ```bash
 ./start.sh                # start (if needed), wait, open the HUD
 ./start.sh --no-open      # just start and print URL + token
+./stop.sh                 # stop the voice server (and the TTS service)
+./stop.sh --status        # what is running, which ports are held
+./stop.sh --restart       # stop, start again and open
+./stop.sh --free-ports    # if a port stays held, kill its owner
 ```
 
 The certificate is self-signed, so the browser asks once — accept it.
