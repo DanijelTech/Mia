@@ -48,6 +48,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from RealtimeSTT import AudioToTextRecorder
 
+from continuous import WakeGate, build_segmenter
 from tts import build_backend
 
 try:
@@ -1248,9 +1249,14 @@ class ConnState:
     interrupt_note: str | None = None
     partial_task: asyncio.Task | None = None
     last_partial_bytes: int = 0
+    continuous: bool = False
+    segmenter: object | None = None
+    wake: WakeGate | None = None
+    last_reply_at: float | None = None
 
 
-async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnState) -> None:
+async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnState,
+                    wake: "WakeGate | None" = None) -> None:
     timing = conn.timing
     assert timing is not None
     audio = b"".join(conn.audio_chunks)
@@ -1259,6 +1265,13 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
         transcript = await pipeline.transcribe(audio, timing)
         timing.transcript = transcript
         await ws.send_json({"type": "transcript", "text": transcript})
+        if transcript and wake is not None:
+            accept, transcript = wake.check(transcript, conn.last_reply_at, time.time())
+            if not accept:
+                timing.errors.append("ignored: no wake word")
+                await ws.send_json({"type": "ignored", "reason": "wake", "text": transcript})
+                return
+            timing.transcript = transcript
         if not transcript:
             await ws.send_json({"type": "error", "message": "No transcript detected."})
         else:
@@ -1288,6 +1301,51 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
         pipeline.log_turn(timing)
         conn.timing = None
         conn.current_run_id = None
+
+
+async def _continuous_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnState) -> None:
+    """One utterance from the always-on stream: same turn logic, wake-gated."""
+    try:
+        await _run_turn(ws, pipeline, conn, wake=conn.wake)
+    finally:
+        conn.last_reply_at = time.time()
+        if conn.continuous:
+            try:
+                await ws.send_json({"type": "status", "message": "continuous listening"})
+            except Exception:
+                pass
+
+
+def _start_continuous_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnState,
+                           pcm: bytes) -> None:
+    conn.audio_chunks = [pcm]
+    conn.recording = False
+    conn.timing = TurnTiming(turn_id=pipeline.next_turn_id())
+    conn.timing.audio_start_monotonic = time.perf_counter()
+    conn.timing.stt_model = CFG["stt"]["model"]
+    conn.turn_task = asyncio.create_task(_continuous_turn(ws, pipeline, conn))
+
+
+async def _feed_continuous(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnState,
+                           chunk: bytes) -> None:
+    """Feed the always-on stream through the VAD and start turns automatically."""
+    barge = bool(((CFG.get("stt") or {}).get("continuous") or {}).get("barge_in", True))
+    for kind, payload in conn.segmenter.feed(chunk):
+        busy = conn.turn_task is not None and not conn.turn_task.done()
+        if kind == "speech_start":
+            if busy:
+                if not barge:
+                    continue        # half-duplex: ignore the speaker's own echo
+                await _cancel_active_turn(ws, pipeline, conn)   # barge-in
+                await ws.send_json({"type": "agent_status", "state": "stopped"})
+            await ws.send_json({"type": "agent_status", "state": "listening"})
+            continue
+        if kind == "utterance":
+            if busy:
+                if not barge:
+                    continue
+                await _cancel_active_turn(ws, pipeline, conn)
+            _start_continuous_turn(ws, pipeline, conn, payload)
 
 
 async def _cancel_active_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnState,
@@ -1360,11 +1418,36 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                     conn.audio_chunks = []
                     conn.last_partial_bytes = 0
                     conn.recording = True
+                    cont_cfg = dict(((CFG.get("stt") or {}).get("continuous") or {}))
+                    if str(event.get("mode") or "").lower() == "continuous":
+                        conn.continuous = True
+                        conn.segmenter = build_segmenter(cont_cfg)
+                        conn.wake = WakeGate(cont_cfg.get("wake_words"),
+                                             float(cont_cfg.get("followup_seconds", 20)))
+                        await ws.send_json({
+                            "type": "status",
+                            "message": "continuous listening",
+                            "vad": getattr(conn.segmenter.detector, "kind", "?"),
+                            "wake_words": conn.wake.words,
+                        })
+                        continue
+                    conn.continuous = False
+                    conn.segmenter = None
                     conn.timing = TurnTiming(turn_id=pipeline.next_turn_id())
                     conn.timing.audio_start_monotonic = time.perf_counter()
                     conn.timing.stt_model = CFG["stt"]["model"]
                     await ws.send_json({"type": "status", "message": f"Turn {conn.timing.turn_id} recording started."})
                 elif etype == "stop":
+                    if conn.continuous:
+                        conn.continuous = False
+                        conn.recording = False
+                        pending = conn.segmenter.flush() if conn.segmenter else []
+                        conn.segmenter = None
+                        await ws.send_json({"type": "status", "message": "continuous listening stopped"})
+                        for kind, payload in pending:
+                            if kind == "utterance":
+                                _start_continuous_turn(ws, pipeline, conn, payload)
+                        continue
                     if conn.timing is None:
                         await ws.send_json({"type": "error", "message": "Received stop before start."})
                         continue
@@ -1390,10 +1473,13 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                 else:
                     await ws.send_json({"type": "error", "message": f"Unknown event type: {etype}"})
             elif "bytes" in message and message["bytes"] is not None:
-                if conn.recording:
+                if conn.continuous and conn.segmenter is not None:
+                    await _feed_continuous(ws, pipeline, conn, message["bytes"])
+                elif conn.recording:
                     conn.audio_chunks.append(message["bytes"])
                     _maybe_schedule_partial(ws, pipeline, conn)
     except (WebSocketDisconnect, WebSocketDisconnected):
+        conn.continuous = False
         if conn.turn_task and not conn.turn_task.done():
             conn.turn_task.cancel()
         print("Client disconnected", flush=True)

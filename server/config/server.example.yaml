@@ -41,6 +41,16 @@ stt:
   language: sl               # sl | sr | en | "" ("" = auto-detect, less accurate)
   initial_prompt: "Mia, odpri, zapri, pokliči, nastavi, preberi, pošlji, preveri."
   beam_size: 1
+  # Neprestano poslušanje (gumb STALNO v HUD-u): VAD razdeli tok v izjave,
+  # budnica »Mia« odpre pogovor, followup okno dovoli nadaljevanje brez nje.
+  continuous:
+    wake_words: ["mia", "hej mia", "ej mia"]
+    followup_seconds: 20     # po odgovoru velja brez budnice
+    silence_ms: 700          # toliko tišine zaključi izjavo
+    min_speech_ms: 300       # krajše (kašelj) se ignorira
+    threshold: 0.5           # Silero VAD prag
+    min_rms: 320             # rezerva, če Silero ni na voljo
+    barge_in: true           # prekini Mio z govorom; false = pol-duplex (brez odmeva)
   partials: true             # live transcript while speaking
   partial_interval: 1.2      # seconds of new audio between partial passes
   # Optional GPU worker (worker/stt_server.py on any NVIDIA machine):

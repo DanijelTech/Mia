@@ -263,6 +263,7 @@ footer{
       <div class="bar"><i id="levelBar"></i></div>
       <div style="margin-top:8px; display:flex; gap:6px">
         <button class="btn" id="talkBtn" style="flex:1">VKLOPI GLAS</button>
+        <button class="btn" id="contBtn" title="neprestano poslušanje z budnico »Mia«">STALNO</button>
         <button class="btn danger" id="stopBtn">■ USTAVI</button>
       </div>
     </div>
@@ -361,7 +362,7 @@ footer{
 "use strict";
 /* ============================== state ============================== */
 const CONV = "mia-main";
-let ws=null, wsReady=false, capturing=false, state="standby";
+let ws=null, wsReady=false, capturing=false, continuous=false, state="standby";
 let audioCtx=null, workletNode=null, mediaStream=null, srcNode=null;
 let playhead=0, activeSources=[], leftoverByte=null, audioArrived=false;
 let level=0, turns=0;
@@ -482,7 +483,9 @@ function wsUrl(){return (location.protocol==="https:"?"wss://":"ws://")+location
 function connect(){
   ws=new WebSocket(wsUrl()); ws.binaryType="arraybuffer";
   ws.onopen=()=>{wsReady=true;$("wsDot").className="dot on";$("wsState").textContent="povezan";$("connState").textContent="POVEZAVA VZPOSTAVLJENA";$("footMsg").textContent="GLASOVNI STREŽNIK POVEZAN"};
-  ws.onclose=ev=>{wsReady=false;$("wsDot").className="dot off";$("wsState").textContent="brez povezave";$("connState").textContent="POVEZAVA PREKINJENA";setState("standby","PRIPRAVLJEN");
+  ws.onclose=ev=>{wsReady=false;continuous=false;capturing=false;
+    if($("contBtn")){$("contBtn").textContent="STALNO";}
+    $("wsDot").className="dot off";$("wsState").textContent="brez povezave";$("connState").textContent="POVEZAVA PREKINJENA";setState("standby","PRIPRAVLJEN");
     if(ev&&ev.code===4401){addMsg("sys","povezava zavrnjena (4401): osveži stran z veljavnim žetonom — "+location.origin+"/hud/?token=…");return}
     setTimeout(connect,3000)};
   ws.onerror=()=>{};
@@ -499,8 +502,10 @@ function connect(){
       if(e.state==="thinking"){setState("thinking","OBDELUJEM");showStop(true)}
       else if(e.state==="tool_use"){setState("tool","DELAM");addActivity("",e.tool||"tool",e.preview)}
       else if(e.state==="speaking")setState("speaking","GOVORIM");
+      else if(e.state==="listening")setState("listening","POSLUŠAM",continuous?"RECI »MIA …« ALI KAR GOVORI":"KLIKNI ZNOVA ZA POŠILJANJE");
       else if(e.state==="stopped"){setState("standby","PRIPRAVLJEN");showStop(false);stopPlayback();addMsg("sys","izvajanje ustavljeno")}
     }
+    else if(e.type==="ignored"){ addMsg("sys","preskočeno (reci »Mia«)"); }
     else if(e.type==="error"){ clearLive(); addMsg("sys","napaka: "+e.message); setState("standby","PRIPRAVLJEN"); showStop(false); }
     else if(e.type==="done"){
       currentRun=null; showStop(false);
@@ -593,7 +598,31 @@ async function initMic(){
 }
 
 /* ============================== talk flow ========================== */
+async function toggleContinuous(){
+  if(!wsReady){addMsg("sys","glasovni strežnik ni dosegljiv");return}
+  if(continuous){
+    continuous=false; capturing=false;
+    try{ws.send(JSON.stringify({type:"stop"}))}catch{}
+    $("contBtn").textContent="STALNO";
+    $("talkBtn").textContent="VKLOPI GLAS"; $("micState").textContent="pripravljen";
+    $("levelBar").style.width="0%";
+    setState("standby","PRIPRAVLJEN");
+    addMsg("sys","neprestano poslušanje izklopljeno");
+    return;
+  }
+  try{await initMic()}catch(err){addMsg("sys","mikrofon blokiran: "+err.message);return}
+  stopPlayback();
+  ws.send(JSON.stringify({type:"start",sample_rate:16000,format:"pcm_s16le",channels:1,
+                          conversation:CONV,mode:"continuous"}));
+  capturing=true; continuous=true;
+  $("contBtn").textContent="■ STALNO";
+  $("talkBtn").textContent="VKLOPI GLAS"; $("micState").textContent="V ŽIVO";
+  setState("listening","POSLUŠAM","RECI »MIA …« ALI KAR GOVORI");
+  addMsg("sys","neprestano poslušanje vklopljeno — reci »Mia …«");
+}
+
 async function toggleTalk(){
+  if(continuous){ return toggleContinuous(); }
   if(!wsReady){addMsg("sys","glasovni strežnik ni dosegljiv");return}
   if(capturing){ // stop talking
     capturing=false;
@@ -611,6 +640,7 @@ async function toggleTalk(){
   setState("listening","POSLUŠAM","KLIKNI ZNOVA ZA POŠILJANJE");
 }
 $("talkBtn").onclick=toggleTalk;
+$("contBtn").onclick=toggleContinuous;
 $("reactorWrap").onclick=toggleTalk;
 $("stopBtn").onclick=stopRun;
 

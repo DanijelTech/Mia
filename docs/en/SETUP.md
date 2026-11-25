@@ -165,6 +165,39 @@ create a key at elevenlabs.io, pick a `voice_id`, add `ELEVENLABS_API_KEY` to
 quota bar. Note Flash v2.5 does not cover Slovenian or Serbian; use
 `eleven_v3_conversational` there.
 
+### Always-on listening (STALNO button)
+
+If you do not want to click the ring for every sentence, enable **STALNO** in the
+VOICE LINK panel:
+
+1. click `STALNO` (the mic opens and stays open),
+2. say **"Mia, …"** — she answers immediately, nothing to send,
+3. after the reply you can keep talking **without the wake word** for
+   `followup_seconds` (20 s by default); afterwards say "Mia" again,
+4. you may speak while she is answering — that **interrupts** her (`barge_in`),
+5. clicking `■ STALNO` (or `VKLOPI GLAS`) turns listening off.
+
+How it works: the browser streams audio continuously and the server segments
+utterances with a **VAD** (Silero when available, otherwise an energy gate),
+transcribes them and runs the turns. The `status` message reports which VAD is
+active (`silero`/`rms`).
+
+```yaml
+stt:
+  continuous:
+    wake_words: ["mia", "hej mia", "ej mia"]
+    followup_seconds: 20
+    silence_ms: 700
+    min_speech_ms: 300
+    threshold: 0.5
+    min_rms: 320
+    barge_in: true           # false = half duplex (Mia cannot hear herself)
+```
+
+Limits: the HUD tab must stay open (the mic lives in the browser), the browser
+needs mic permission, and with a loud speaker set `barge_in: false` if she keeps
+interrupting herself (echo).
+
 ### Female / gentle voice — where to set it
 
 Everything lives in `server/config/server.yaml` (the `tts:` block) plus, for the

@@ -177,6 +177,40 @@ voljo za oblak: ustvari ključ na elevenlabs.io, izberi `voice_id`, dodaj
 **User → Read**, če želiš vrstico kvote v HUD-u. Flash v2.5 **ne** pokriva
 slovenščine ali srbščine — tam uporabi `eleven_v3_conversational`.
 
+### Neprestano poslušanje (gumb STALNO)
+
+Če nočeš klikati obroča za vsako poved, vklopi **STALNO** v panelu GLASOVNA
+POVEZAVA:
+
+1. klikni `STALNO` (mikrofon se odpre in ostane odprt),
+2. reci **»Mia, …«** — Mia takoj odgovori, brez pošiljanja,
+3. po odgovoru lahko nadaljuješ **brez budnice** (`followup_seconds`, privzeto
+   20 s); po tem spet reci »Mia«,
+4. govori lahko tudi med njenim odgovorom — to jo **prekine** (`barge_in`),
+5. klik na `■ STALNO` (ali `VKLOPI GLAS`) poslušanje izklopi.
+
+Kako deluje: brskalnik pretaka zvok neprekinjeno, strežnik pa s **VAD** (Silero,
+če je na voljo; sicer energijski prag) sam reže izjave, jih prepisuje in sproža
+kroge. V `status` sporočilu piše, kateri VAD je aktiven (`silero`/`rms`).
+
+Nastavitve v `server.yaml`:
+
+```yaml
+stt:
+  continuous:
+    wake_words: ["mia", "hej mia", "ej mia"]
+    followup_seconds: 20
+    silence_ms: 700          # daljša tišina = počasnejši odziv, manj rezov
+    min_speech_ms: 300       # krajše od tega se ignorira
+    threshold: 0.5           # Silero VAD prag
+    min_rms: 320             # energijski fallback
+    barge_in: true           # false = Mia ne sliši sebe (pol-duplex)
+```
+
+Omejitve: zavihek s HUD-om mora ostati odprt (mikrofon živi v brskalniku),
+brskalnik mora imeti dovoljenje za mikrofon, in pri glasnem zvočniku vklopi
+`barge_in: false`, če Mia začne prekinjati sama sebe (odmev).
+
 ### Ženski / nežni glas — kje se nastavi
 
 Glas je v celoti v `server/config/server.yaml` (razdelek `tts:`) in, pri
