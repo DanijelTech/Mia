@@ -34,6 +34,7 @@ import argparse
 import io
 import json
 import os
+import pathlib
 import re
 import sys
 import threading
@@ -128,6 +129,7 @@ class ToneEngine(Engine):
 
     def __init__(self, device: str = "cpu", reason: str = ""):
         self.device, self.reason = device, reason
+        self.label = "tone"
 
     def synth(self, text: str) -> SynthResult:
         rate = 22050
@@ -150,6 +152,7 @@ class PiperEngine(Engine):
     def __init__(self, model: str, binary: str = "piper", device: str = "cpu", reason: str = ""):
         self.model, self.binary = model, binary
         self.device, self.reason = device, reason
+        self.label = f"piper:{pathlib.Path(model).stem}"
         if not os.path.exists(model):
             raise SystemExit(f"piper voice not found: {model} (scripts/get-voice.sh sl)")
 
@@ -393,13 +396,33 @@ class MayaEngine(Engine):
                 os.environ["PHONEMIZER_ESPEAK_LIBRARY"] = candidate
                 return
 
+    @staticmethod
+    def _explain(exc: BaseException) -> str:
+        text = f"{type(exc).__name__}: {exc}"
+        low = text.lower()
+        if "torchao" in low:
+            return (text + "\nTorchao in peft se ne ujemata (peft 0.18 + starejši torchao).\n"
+                    "Odstrani torchao ali pripni starejši peft:\n"
+                    "  python3 -m pip uninstall -y torchao\n"
+                    "  # ali: python3 -m pip install \"peft<0.18\"\n")
+        if "libnvjitlink" in low or "cannot open shared object" in low:
+            return (text + "\nManjka CUDA 13 knjižnica za torch. Namesti in nastavi pot:\n"
+                    "  python3 -m pip install -U nvidia-nvjitlink-cu13 nvidia-cuda-runtime-cu13\n"
+                    "  export LD_LIBRARY_PATH=$HOME/.local/lib/python3.12/site-packages/nvidia/nvjitlink/lib:$LD_LIBRARY_PATH\n")
+        return text
+
     def _load(self) -> None:
         torch, AutoModelForCausalLM, AutoTokenizer, PeftModel, SNAC, EspeakBackend = self._imports()
         self.torch = torch
         self._ensure_espeak_lib()
         self.tokenizer = AutoTokenizer.from_pretrained(self.base)
         self.backend = EspeakBackend("sl", with_stress=True, preserve_punctuation=True)
-        self.model = self._load_model(AutoModelForCausalLM, PeftModel)
+        try:
+            self.model = self._load_model(AutoModelForCausalLM, PeftModel)
+        except SystemExit:
+            raise
+        except Exception as exc:  # noqa: BLE001 - convert to a clean, actionable failure
+            raise SystemExit("Maya1 se ni naložil: " + self._explain(exc)) from exc
         codec_device = "cuda" if self.device == "cuda" and not self.offloaded_to_cpu else "cpu"
         try:
             codec_device = str(next(self.model.parameters()).device)
@@ -513,7 +536,7 @@ def build_engine(args) -> Engine:
                               temperature=args.temperature,
                               max_new_tokens=args.maya_max_new_tokens,
                               offload=args.offload, min_free_gb=args.min_free_vram_gb)
-        except SystemExit as exc:
+        except (SystemExit, Exception) as exc:  # noqa: BLE001
             return piper_fallback(exc)
     try:
         return GepardEngine(device, reason, offload=args.offload,
