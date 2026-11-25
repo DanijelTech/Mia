@@ -47,6 +47,15 @@ if ! $PY -c 'import yaml' >/dev/null 2>&1; then
   printf '    [warn] %s cannot import PyYAML — using config defaults\n' "$PY" >&2
 fi
 
+journal_tail() {  # journal_tail <unit> <lines> — works for user and system units
+  command -v journalctl >/dev/null 2>&1 || return 0
+  if [ "$(id -u)" != "0" ]; then
+    timeout 10 journalctl --user-unit "$1" -n "${2:-25}" --no-pager 2>/dev/null
+  else
+    timeout 10 journalctl -u "$1" -n "${2:-25}" --no-pager 2>/dev/null
+  fi
+}
+
 cfg() {  # cfg <dotted.key> [default]
   local out
   if [ "$CFG_OK" != 1 ]; then printf '%s\n' "${2:-}"; return; fi
@@ -115,6 +124,13 @@ if [ "$DO_START" = 1 ]; then
     timeout 20 "${SCTL[@]}" start mia-voice && info "systemd: mia-voice started" \
       || start_background "voice server" "$REPO/server/logs/mia.pid" "$REPO/server/logs/mia.out" \
            "$PY" "$REPO/server/server.py"
+    sleep 2
+    # a unit left in "failed"/"auto-restart" state after an earlier bad start
+    if ! timeout 10 "${SCTL[@]}" is-active --quiet mia-voice; then
+      info "unit is not active — restarting it once"
+      timeout 20 "${SCTL[@]}" restart mia-voice 2>/dev/null \
+        || warn "systemctl restart failed (see above)"
+    fi
   elif port_open "http://127.0.0.1:$HUD_PORT/api/hud-config"; then
     info "voice server already answering on :$HUD_PORT"
   else
@@ -160,7 +176,7 @@ if [ "$READY" != 1 ]; then
     printf '\n    --- systemd status ---\n'
     timeout 10 "${SCTL[@]}" --no-pager status mia-voice 2>&1 | tail -n 12 | sed 's/^/    /' || true
     printf '\n    --- last log lines ---\n'
-    timeout 10 journalctl --no-pager -n 25 -u mia-voice 2>/dev/null | sed 's/^/    /' \
+    journal_tail mia-voice 25 | sed 's/^/    /' \
       || printf '    (journalctl unavailable)\n'
   elif [ -f "$REPO/server/logs/mia.out" ]; then
     printf '\n    --- last log lines ---\n'
@@ -172,7 +188,8 @@ info "voice server is up"
 
 # ------------------------------------------------------------------- 3. open
 if [ -z "$HOST" ]; then
-  HOST="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  HOST="$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -vE '^(127\.|::|$)' | head -n1)"
+  [ -z "$HOST" ] && HOST="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}')"
   [ -z "$HOST" ] && HOST="$(ipconfig getifaddr en0 2>/dev/null)"
   [ -z "$HOST" ] && HOST="127.0.0.1"
 fi

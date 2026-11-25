@@ -107,13 +107,24 @@ aktivirata.
 pa brez njiju odpove), ali pa strežnik ne more vezati vrat. Poglej dnevnik:
 
 ```bash
-journalctl --user -u mia-voice -n 40 --no-pager     # uporabniška namestitev
+journalctl --user-unit mia-voice -n 40 --no-pager   # uporabniška namestitev
 sudo journalctl -u mia-voice -n 40 --no-pager       # sistemska
 ```
 
 Nato poženi `./install.sh --yes` znova — namesti manjkajoče pakete in popravi
 `tls_ports`. Trenutna koda posameznega poslušalca ne pusti več, da bi podrl
 ostale (prej je neuspešen bind na :443 ubil tudi :8765).
+
+**Storitev se ne zažene: `status=218/CAPABILITIES`** — v enoti je
+`AmbientCapabilities=CAP_NET_BIND_SERVICE`, ki ga **uporabniška** systemd enota ne
+more dobiti (systemd se zaključi s kodo 218, še preden se Python sploh zažene).
+To je bilo v starejših izdajah namestitvenika; v aktualni enoti te vrstice ni več.
+Rešitev:
+
+```bash
+cd ~/Mia && git pull && ./install.sh --yes     # prepiše enoto brez capabilities
+systemctl --user restart mia-voice && ./start.sh
+```
 
 **V dnevniku je `PermissionError` ali `SystemExit(1)` pri vratih 443** — tečeš
 kot navaden uporabnik. V `server/config/server.yaml` nastavi

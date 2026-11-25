@@ -8,10 +8,20 @@
 **Install completes but `mia-health.sh` shows everything DOWN** — nearly always
 `faster-whisper` and `silero-vad` missing (RealtimeSTT treats them as optional
 extras but fails at runtime without them), or the server cannot bind its ports.
-Check the log with `journalctl --user -u mia-voice -n 40 --no-pager` (or
+Check the log with `journalctl --user-unit mia-voice -n 40 --no-pager` (or
 `sudo journalctl` for a system unit), then re-run `./install.sh --yes` — it
 installs the missing packages and fixes `tls_ports`. A failing listener no
 longer takes the others down (previously a failed :443 bind killed :8765 too).
+
+**The service dies with `status=218/CAPABILITIES`** — the unit contains
+`AmbientCapabilities=CAP_NET_BIND_SERVICE`, which a **user** unit cannot get;
+systemd exits before Python even runs. Older installer builds wrote that line;
+current ones do not. Fix:
+
+```bash
+cd ~/Mia && git pull && ./install.sh --yes     # rewrites the unit without capabilities
+systemctl --user restart mia-voice && ./start.sh
+```
 
 **Log shows `PermissionError` / `SystemExit(1)` on port 443** — you are not root.
 Set `tls_ports: [8766]` in `server/config/server.yaml` and open

@@ -167,18 +167,33 @@ PY
 }
 
 
+journal_tail() {  # journal_tail <unit> <lines> — works for user and system units
+  command -v journalctl >/dev/null 2>&1 || return 0
+  if [ "$(id -u)" != "0" ]; then
+    timeout 10 journalctl --user-unit "$1" -n "${2:-25}" --no-pager 2>/dev/null
+  else
+    timeout 10 journalctl -u "$1" -n "${2:-25}" --no-pager 2>/dev/null
+  fi
+}
+
+lan_ip() {  # first non-loopback IPv4 of this host
+  local ip
+  ip="$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -vE '^(127\.|::|$)' | head -n1)"
+  [ -n "$ip" ] || ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}')"
+  [ -n "$ip" ] || ip="$(ipconfig getifaddr en0 2>/dev/null)"
+  [ -n "$ip" ] || ip="127.0.0.1"
+  printf '%s\n' "$ip"
+}
+
 hud_url() {  # print the URL the HUD will live at (respects TLS port and cert presence)
   local out
-  out="$($PYTHON - "$CFG" "$SERVER_DIR/certs/cert.pem" 2>/dev/null <<'PY'
-import sys, yaml, socket
+  out="$($PYTHON - "$CFG" "$SERVER_DIR/certs/cert.pem" "$(lan_ip)" 2>/dev/null <<'PY'
+import sys, yaml
 cfg = yaml.safe_load(open(sys.argv[1])) or {}
 server = cfg.get("server") or {}
 has_cert = __import__("pathlib").Path(sys.argv[2]).exists()
 ports = server.get("tls_ports") or ([server["tls_port"]] if server.get("tls_port") else [])
-try:
-    host = socket.gethostbyname(socket.gethostname())
-except Exception:
-    host = "127.0.0.1"
+host = sys.argv[3] if len(sys.argv) > 3 else "127.0.0.1"
 if has_cert and ports:
     port = int(ports[0])
     print(f"https://{host}/hud/" if port == 443 else f"https://{host}:{port}/hud/")
@@ -343,7 +358,14 @@ fi
 say "4/7 TLS certificate (required for the browser microphone)"
 if [ "$DO_CERT" = 1 ]; then
   if [ -f "$SERVER_DIR/certs/cert.pem" ]; then
-    info "certificate already present"
+    LAN="$(lan_ip)"
+    if command -v openssl >/dev/null 2>&1 \
+       && ! openssl x509 -in "$SERVER_DIR/certs/cert.pem" -noout -text 2>/dev/null | grep -q "IP Address:$LAN"; then
+      warn "existing certificate does not cover $LAN — regenerating (devices must trust the new one)"
+      run bash "$SERVER_DIR/scripts/make-certs.sh" "$LAN" || warn "certificate regeneration failed"
+    else
+      info "certificate already present"
+    fi
   else
     run bash "$SERVER_DIR/scripts/make-certs.sh" || warn "certificate generation failed"
     add_file "$SERVER_DIR/certs/cert.pem"
@@ -439,12 +461,20 @@ else
     SCTL=(systemctl --user); WANTED="default.target"
   fi
   unit() { # $1 = name, $2 = script, $3 = extra exec args
-    local file="$SERVICE_DIR/mia-$1.service"
+    local file="$SERVICE_DIR/mia-$1.service" caps="" deps=""
+    # AmbientCapabilities is invalid for user services (systemd exits with
+    # 218/CAPABILITIES); root does not need it either.
+    if [ "$MODE" = "system" ] && [ "$(id -u)" != "0" ]; then
+      caps="AmbientCapabilities=CAP_NET_BIND_SERVICE"
+    fi
+    # network-online.target only exists in the system manager; naming it from a
+    # user unit just produces warnings.
+    [ "$MODE" = "system" ] && deps="After=network-online.target
+Wants=network-online.target"
     cat > "$file" <<UNIT
 [Unit]
 Description=Mia $1 ($REPO_DIR)
-After=network-online.target
-Wants=network-online.target
+$deps
 
 [Service]
 Type=simple
@@ -453,7 +483,7 @@ ExecStart=$($PYTHON -c 'import sys;print(sys.executable)') $SERVER_DIR/$2 $3
 Restart=always
 RestartSec=5
 LimitNOFILE=8192
-AmbientCapabilities=CAP_NET_BIND_SERVICE
+$caps
 Environment=PYTHONUNBUFFERED=1
 
 [Install]
@@ -504,7 +534,7 @@ if [ "$DRY_RUN" = 0 ] && [ "$DO_SERVICE" = 1 ] && [ "$DO_START" = 1 ]; then
       warn "the voice server is not answering yet — here is what it says:"
       if [ ${#SCTL[@]} -gt 0 ] && [ -d /run/systemd/system ]; then
         timeout 10 "${SCTL[@]}" --no-pager status mia-voice 2>&1 | tail -n 15 | sed 's/^/    /' || true
-        timeout 10 journalctl --no-pager -n 20 -u mia-voice 2>/dev/null | sed 's/^/    /' || true
+        journal_tail mia-voice 25 | sed 's/^/    /' || true
       elif [ -f "$SERVER_DIR/logs/mia.out" ]; then
         tail -n 20 "$SERVER_DIR/logs/mia.out" | sed 's/^/    /'
       fi
@@ -515,7 +545,7 @@ fi
 
 cat <<DONE
 
-$([ "$DRY_RUN" = 1 ] && printf '\033[1;33mDry run complete — nothing was changed.\033[0m' || printf '\033[1;32mInstalled.\033[0m')
+$([ "$DRY_RUN" = 1 ] && printf '\033[1;33mDry run complete — nothing was changed.\033[0m'    || { [ "$SERVICE_OK" = "no" ] && printf '\033[1;33mInstalled, but the service is NOT running (see above).\033[0m'         || printf '\033[1;32mInstalled.\033[0m'; })
 
   config      $CFG
   manifest    $MANIFEST
