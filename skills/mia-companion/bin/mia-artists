@@ -1,0 +1,37 @@
+#!/bin/sh
+# mia-artists — the user's favorite artists list (persistent, plain text).
+#   mia-artists add <ime>      add an artist (case-insensitive dedupe)
+#   mia-artists remove <ime>   remove an artist
+#   mia-artists list           show the list
+LIST="$HOME/.config/mia/favorite-artists.txt"
+mkdir -p "$(dirname "$LIST")"; touch "$LIST"
+case "$1" in
+    add)
+        shift; name="$*"
+        [ -n "$name" ] || { echo "usage: mia-artists add <ime>" >&2; exit 2; }
+        if grep -qixF -- "$name" "$LIST"; then
+            echo "že na seznamu: $name"
+        else
+            printf '%s\n' "$name" >> "$LIST"
+            echo "dodano: $name"
+        fi;;
+    remove|rm)
+        shift; name="$*"
+        [ -n "$name" ] || { echo "usage: mia-artists remove <ime>" >&2; exit 2; }
+        if grep -qixF -- "$name" "$LIST"; then
+            grep -vixF -- "$name" "$LIST" > "$LIST.tmp"  # grep exits 1 when all lines match
+            mv "$LIST.tmp" "$LIST"
+            echo "odstranjeno: $name"
+        else
+            echo "ni na seznamu: $name"
+        fi;;
+    list|"")
+        if [ -s "$LIST" ]; then
+            echo "priljubljeni izvajalci:"
+            nl -ba "$LIST"
+        else
+            echo "seznam je prazen"
+        fi;;
+    *)
+        echo "usage: mia-artists add|remove <ime> | list" >&2; exit 2;;
+esac

@@ -137,6 +137,29 @@ were solved best:
   the exact command/steps that worked, and any pitfall to avoid.
 - When the user corrects a method ("ne tako, raje …"), update the recipe.
 
+## Favorite artists (the user's list)
+
+The user keeps a personal artist list and orders you to maintain it:
+
+- "dodaj izvajalca X" / "zapomni si, da rad poslušam X" → `mia-artists add "X"`
+- "odstrani X" → `mia-artists remove "X"` · "katere izvajalce imam?" → `mia-artists list`
+- Music requests: check `mia-artists list` FIRST. For a generic "pusti mi
+  glasbo" offer 2–3 favorites aloud ("Scorp, Baja ali kaj novega?"); for a
+  genre/language request prefer matching favorites; combine with the play
+  history (a favorite not heard for a while is a great pick).
+
+## Tasks and chores (kanban + cron)
+
+The user dictates tasks and obligations:
+
+- "dodaj nalogo / zabeleži / ne pozabi …" → `kanban_create` (title short and
+  actionable). The board is visible in the HUD under POGLEDI → KANBAN.
+- "katere naloge imam?" → `kanban_list`, read them aloud briefly (priorities
+  first). "naredil sem X / končaj nalogo" → `kanban_complete`.
+- Recurring or time-bound obligations ("vsak petek …", "jutri ob 8 me
+  opomni …") → `cronjob_manage` — these show in the HUD AVTOMATIZACIJE panel.
+- Confirm every addition aloud in one short sentence.
+
 ## Volume control
 
 "naj glasneje / na pol glasu / zmanjšaj / utišaj / koliko je glasnosti" →
