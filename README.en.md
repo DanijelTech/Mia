@@ -9,9 +9,10 @@ memory, terminal access, web search, file tools, and 80+ skills — through a
 glowing arc-reactor HUD in any browser on your LAN, or a push-to-talk client.
 
 **Everything runs on your own hardware.** By default nothing leaves the
-machine: Whisper for speech-to-text, a local Piper voice for speech, and your
-own model behind Hermes. Cloud LLMs and ElevenLabs remain optional — the
-offline setup needs no API keys at all.
+machine: Whisper for speech-to-text, a local Piper voice for speech, a local
+model (llama-server) behind Hermes, and a local voiceprint for recognizing
+your voice. Cloud LLMs and ElevenLabs remain optional — the offline setup
+needs no API keys at all.
 
 ## Demo
 
@@ -21,31 +22,43 @@ so its look and sound differ.
 
 ## What it does
 
+**Just say "Mia, …"** — nothing to click. The HUD starts continuous listening
+on load; a VAD (Silero) segments speech, the wake word opens the conversation,
+end-of-speech is detected automatically, and the reply streams back as speech,
+sentence by sentence, while the rest is still being generated. Typical round
+trip with a fast local TTS: 5–10 seconds.
 
-Click the ring and speak. Your words transcribe **live on screen** while you
-talk. The transcript goes to Hermes Agent, which actually *does things* — reads
-and writes files, runs commands, searches the web, remembers you across
-sessions — and the reply streams back as speech, sentence by sentence, while
-the rest is still being generated. Typical round trip: 3–5 seconds.
-
-The HUD around the ring is a real control center:
-
+- **Speaker verification (voice calibration)** — Mia obeys only your voice:
+  an ECAPA-TDNN voiceprint is checked *before* transcription (~0.1 s), so
+  other people and the TV are silently ignored. One-command enrollment,
+  multi-language profiles supported (e.g. Slovenian + Serbian):
+  `python3 server/scripts/enroll_voice.py`
+- **Strict wake word** — reacts only to "Mia …" (tolerates typical Whisper
+  mishearings); household noise is dropped without processing, and known
+  Whisper hallucinations ("Hvala što pratite" …) are filtered out
+- **Half-duplex stability** — no interruptions while processing/speaking
+  (noise cannot kill a turn); manual stop remains (STOP button / Esc)
+- **Voice pitch slider** — the GLAS panel in the HUD tunes the voice from
+  70 to 240 Hz live; applies from the next sentence and persists
+- **Speaks Slovenian and Serbian** — replies in the language you speak
+- **Opens AND CLOSES desktop windows** — "open Google", "play me some music"
+  … and "close it": the `mia-open`/`mia-close` helpers (skills/mia-companion/bin)
+  record window ids, so the agent can reliably close what it opened; music
+  plays in a dedicated Chrome app window (found via `yt-dlp`)
+- **Background tasks** — programming in any folder, files, terminal, web
+  search, scheduled jobs, kanban; dangerous actions wait for your ALLOW/DENY
+- **Learns your workflows** — the `mia-companion` skill (skills/) tells the
+  agent to remember not only preferences but *how* tasks were solved best,
+  and to reuse that recipe next time
 - **Live agent activity** — watch tool calls happen with command previews
-- **STOP button** — halt a runaway agent turn mid-tool-call (Esc works too)
 - **Approval cards** — dangerous commands pause for your ALLOW/DENY
-- **Interrupt-aware barge-in** — cut it off mid-sentence; it knows exactly
-  what you heard and what you didn't
-- **Embedded dashboards** — Hermes' kanban board and session browser pop up
-  in animated viewers, fully interactive
-- **Holographic media panels** — say *"show me a video of how arc reactors
-  work, on screen"* and a panel swoops in from Z-depth, traces its frame,
-  materializes through a scanline, and plays the video. The agent drives it
-  through a bundled Hermes plugin (`hud_display`); panels can fly into
-  left/right thirds, and "clear the screen" sweeps them away
+- **Embedded dashboards** — kanban, the Hermes dashboard and chat pop up in
+  animated viewers (VIEWS), fully interactive
+- **Holographic media panels** — say *"show me … on screen"* and a panel
+  swoops in from Z-depth; the agent drives it through a bundled Hermes plugin
+  (`hud_display`); "clear the screen" sweeps them away
 - **Usage tracking** — tokens/day, turns, ElevenLabs quota bar
 - **Machines panel** — live CPU/GPU stats for the host and remote workers
-- **Cinematic boot** — press `B`: panels flicker in, ring spins up,
-  "Systems online. Good morning."
 - **Privacy filter** — secret-shaped strings are redacted before any text
   reaches cloud TTS
 - **Optional GPU ears** — point it at any NVIDIA machine on your LAN running
@@ -57,20 +70,29 @@ The HUD around the ring is a real control center:
 ## Architecture
 
 ```
- Browser HUD (any LAN device)          Host machine (tested on macOS / Apple Silicon)
- ── https/wss :443 ──────────┐   ┌──────────────────────────────────────┐
+ Browser HUD (any LAN device)          Host machine (tested: Linux + systemd; macOS with tweaks)
+ ── https/wss :8766 ─────────┐   ┌──────────────────────────────────────┐
    mic · speaker · panels    ├──►│ voice pipeline server (this repo)    │
-                             │   │  STT: faster-whisper (local, free)   │   ┌─────────────────┐
- Push-to-talk client         │   │  TTS: ElevenLabs Flash (streaming)   ├──►│ Hermes Agent     │
- ── ws :8765 ────────────────┘   │  HUD + auth + dashboard TLS proxy    │   │  API :8642 (lo)  │
-                                 └──────────────────────────────────────┘   │  memory · tools  │
-                                                                             │  skills · cron   │
-                                                                             └─────────────────┘
+                             │   │  VAD + wake word + speaker voiceprint│   ┌──────────────────┐
+ Push-to-talk client         │   │  STT: faster-whisper (local)         │   │ llama-server     │
+ ── ws :8765 ────────────────┘   │  TTS: local Piper (or Gepard/Maya1)  ├──►│ (local LLM)      │
+                                 │  HUD + auth + TLS proxy              │   ├──────────────────┤
+                                 └──────────────────────────────────────┘──►│ Hermes Agent     │
+                                             │                              │  API :8642 (lo)  │
+                                             └── :9443 proxy ──────────────►│  memory · tools  │
+                                                (kanban/dash/chat :9119)    │  skills · cron   │
+                                                                             └──────────────────┘
 ```
 
 One brain, many faces: voice and typed chat share a single persistent Hermes
 session, so each knows what you said to the other — and memory survives every
 restart.
+
+**Whole-stack management**: with a `stack:` section in `server.yaml`,
+`start-mia.sh` boots llama-server (local model) → Hermes gateway → Hermes
+dashboard → TTS service → voice server in order (each step skipped when
+already up), and `stop-mia.sh` stops everything in reverse, freeing RAM/VRAM.
+See `server/config/server.example.yaml`.
 
 ## Quick start (one command)
 
@@ -110,16 +132,18 @@ The certificate is self-signed, so the browser asks once — accept it.
 
 ## Requirements
 
-- A machine for the server (tested: Mac mini, Apple Silicon). Linux should
-  work with minor changes (launchd → systemd).
+- A machine for the server (tested: Linux + systemd, 2× GPU for a local 35B
+  model; macOS works with tweaks, launchd instead of systemd)
 - [Hermes Agent](https://hermes-agent.nousresearch.com/docs/) installed and
-  configured with an LLM provider
+  configured with an LLM provider (by default a local model via llama-server)
 - Python 3.11+
-- TTS: local **Piper** (default, no key, fully offline), the more natural
-  **Gepard** service, the **Maya1** service (best Slovenian pronunciation), or an
-  [ElevenLabs](https://elevenlabs.io) API key for cloud voices — the two local
-  services fall back to CPU/RAM when the GPU is busy
+- TTS: local **Piper** (default, fast, no key, fully offline), the more natural
+  **Gepard** service, the **Maya1** service (best Slovenian pronunciation, slow
+  on CPU), or an [ElevenLabs](https://elevenlabs.io) API key for cloud voices —
+  the two local services fall back to CPU/RAM when the GPU is busy
 - Any modern browser on the LAN
+- Optional: `speechbrain` (voice calibration), `yt-dlp` (YouTube music),
+  `xdotool` (reliable window closing), `ffmpeg` (pitch shifting)
 
 ## Install
 
@@ -158,8 +182,8 @@ EOF
 hermes gateway   # or set up its LaunchAgent / service
 
 # 2. This repo
-git clone https://github.com/YOURNAME/mia-hermes-hud
-cd mia-hermes-hud/server
+git clone https://github.com/DanijelTech/Mia.git
+cd Mia/server
 python3 -m venv .venv
 .venv/bin/pip install fastapi uvicorn requests pyyaml numpy anthropic \
     RealtimeSTT faster-whisper silero-vad websockets psutil
@@ -187,12 +211,15 @@ evening.
 
 | Action | How |
 |---|---|
-| Talk | Click the ring (or Space) · speak · click again to send |
-| Stop the agent | red ■ STOP button or Esc |
-| Barge in | click the ring while it's speaking |
+| Talk | just say **"Mia, …"** — listening, end-of-speech and reply are automatic |
+| Stop the agent | red ■ STOP button or Esc (noise never interrupts mid-turn) |
+| Voice pitch | GLAS panel in the HUD — 70–240 Hz slider, applies from the next sentence |
+| Voice calibration | `python3 server/scripts/enroll_voice.py` (`--append` for another language) |
+| Music | "Mia, play me …" → YouTube app window · "close it / stop the music" |
+| Desktop windows | "open Google / \<page\>" and "close it" (mia-open/mia-close) |
 | Typed chat | input bar at the bottom (same conversation as voice) |
-| Cinematic boot | press `B` |
-| Kanban / dashboards | VIEWS panel → animated pop-up viewers |
+| Kanban / dashboards | VIEWS panel → kanban, dashboard, chat |
+| Push-to-talk | alternative: click the ring (or Space) · speak · click again |
 | Phone | open the HUD → Add to Home Screen |
 
 ## Repo layout
@@ -200,16 +227,21 @@ evening.
 ```
 server/          FastAPI voice pipeline + HUD host (the core of this project)
 server/hud/      single-file HUD (vanilla JS, no build step)
+server/continuous.py  VAD segmentation + wake gate for always-on listening
+server/speaker_gate.py  speaker verification (ECAPA-TDNN voiceprints, SpeechBrain)
 server/tts.py    local TTS backends: piper, http (Gepard/Maya1), command, elevenlabs
-server/scripts/  mia-start/stop/health/smoke + cert & boot-audio generators
+server/scripts/  mia-start/stop/health + enroll_voice.py (voice calibration)
+                 + gepard_tts.py (TTS service with per-request pitch)
 client/          optional Windows/Linux push-to-talk Python client (wake word capable)
 worker/          optional GPU sidecars: big-model STT server + stats agent
 hermes-plugin/   Hermes tool plugin: lets the agent summon/dismiss HUD media panels
+skills/mia-companion/  Hermes skill: Mia's manners, workflow memory, windows
+                 (bin/mia-open + bin/mia-close for reliable open/close)
 launchd/         macOS auto-start templates with hard-won TCC + FD-limit notes
 docs/            Slovenian docs; docs/en/ the English copies
 install.sh       install (no venv, root or user) + manifest
-start-mia.sh     start, wait for the server, open the HUD in a browser
-stop-mia.sh      stop (systemd/launchd/background), status, --restart, --free-ports
+start-mia.sh     boots the whole stack (stack: llama → Hermes → dashboard → Mia + TTS), opens HUD
+stop-mia.sh      stops everything and frees RAM/VRAM; status, --restart, --free-ports
 update.sh        git pull --ff-only + service restart + Ctrl+Shift+R reminder
 uninstall.sh     exact removal of everything install.sh created
 build-package.sh offline tarball for a machine without internet

@@ -8,8 +8,9 @@ datoteke in 80+ veščinami — prek žarečega HUD-a v katerem koli brskalniku 
 tvojem LAN-u ali prek odjemalca za pogovor s pritiskom na tipko.
 
 **Vse teče na tvoji strojni opremi.** Privzeto nič ne zapusti naprave: Whisper
-za pretvorbo govora v besedilo, lokalni Piper glas za govor in tvoj model za
-Hermesom. Oblačni LLM-ji in ElevenLabs ostajajo opcijski — za nastavitev brez
+za pretvorbo govora v besedilo, lokalni Piper glas za govor, lokalni model
+(llama-server) za Hermesom in lokalni govorniški odtis za prepoznavo tvojega
+glasa. Oblačni LLM-ji in ElevenLabs ostajajo opcijski — za nastavitev brez
 oblaka ne potrebuješ nobenega ključa.
 
 > English documentation: [README.en.md](README.en.md) · [docs/en/](docs/en/)
@@ -22,31 +23,44 @@ slovenskim vmesnikom, zato sta videz in zvok drugačna.
 
 ## Kaj dela
 
-Klikni obroč in govori. Besede se **sproti prepisujejo na zaslon**, medtem ko
-govoriš. Prepis gre do Hermesa, ki *res nekaj naredi* — bere in piše datoteke,
-izvaja ukaze, išče po spletu, si te zapomni med sejami — odgovor pa se vrača kot
-govor, poved za povedjo, medtem ko se preostanek še generira. Običajen krog:
-3–5 sekund.
+**Sam reci »Mia, …«** — ničesar ni treba klikati. HUD se ob odprtju sam vklopi
+v neprestano poslušanje; VAD (Silero) razreže govor na izjave, budnica »Mia«
+odpre pogovor, konec povedi se zazna sam in odgovor se vrne kot govor, poved
+za povedjo, medtem ko se preostanek še generira. Običajen krog s hitrim
+lokalnim TTS: 5–10 sekund.
 
-HUD okoli obroča je pravi nadzorni center:
-
+- **Prepoznava govornika (glasovna kalibracija)** — Mia uboga samo tvoj glas:
+  ECAPA-TDNN odtis se preveri *pred* transkripcijo (~0,1 s), tuji glasovi in
+  televizija se tiho ignorirajo. Vpis z enim ukazom, podprt je večjezični vpis
+  (npr. slovenščina + srbščina): `python3 server/scripts/enroll_voice.py`
+- **Stroga budnica** — reagira samo na »Mia …« (tolerira tipične Whisperjeve
+  variante: Mijo, Mija, Mio, Meja …); hišni hrup se zavrže brez obdelave,
+  znane Whisper halucinacije (»Hvala što pratite« …) se filtrirajo
+- **Pol-duplex stabilnost** — med obdelavo in govorenjem se ne prekinja (šum
+  ne more ubiti turna); ročna prekinitev ostane (gumb STOP / Esc)
+- **Drsnik višine glasu** — panel GLAS v HUD-u nastavlja ton od 70 do 240 Hz
+  v živo; velja od naslednjega stavka naprej in se trajno shrani
+- **Govori slovensko in srbsko** — odgovori v jeziku, v katerem govoriš
+- **Odpira in ZAPIRA namizna okna** — »odpri mi Google«, »pusti mi glasbo« …
+  in »zapri ga«: pomožni ukazi `mia-open`/`mia-close` (skills/mia-companion/bin)
+  si zapisujejo ID oken, zato jih agent zanesljivo zapre; glasba se predvaja v
+  namenski Chrome app-oknu (YouTube najde prek `yt-dlp`)
+- **Naloge v ozadju** — programiranje v poljubni mapi, datoteke, terminal,
+  iskanje po spletu, časovne naloge, kanban; nevarnejša dejanja čakajo na tvoj
+  DOVOLI/ZAVRNI v HUD-u
+- **Uči se tvojih postopkov** — skill `mia-companion` (skills/) naroči agentu,
+  da si poleg navad zapomni tudi *kako* je nalogo najlažje/pravilno izvedel,
+  in ta recept uporabi ob ponovitvi
 - **Aktivnost agenta v živo** — vidiš klice orodij s predogledi ukazov
-- **Gumb STOP** — ustavi ušel krog agenta sredi klica orodja (deluje tudi Esc)
 - **Kartice za odobritev** — nevarne ukaze agent ustavi in počaka na DOVOLI/ZAVRNI
-- **Prekinjanje med govorom (barge-in)** — prekini ga sredi povedi; ve natančno,
-  kaj si slišal in česa ne
-- **Vgrajene nadzorne plošče** — Hermesov kanban in brskalnik sej se odpreta v
-  animiranih pogledih in sta polno interaktivna
-- **Holografski medijski paneli** — reci *»pokaži mi video o tem, kako delujejo
-  ark reaktorji, na zaslonu«* in panel prileti iz globine, izriše okvir, se
-  materializira skozi skenirno linijo in predvaja video. Agent to sproži prek
-  priloženega Hermes vtičnika (`hud_display`); paneli lahko pristanejo levo/desno,
-  »počisti zaslon« pa jih pomete stran
+- **Vgrajene nadzorne plošče** — Hermesov kanban, nadzorna plošča in klepet se
+  odpreta v animiranih pogledih (POGLEDI) in so polno interaktivni
+- **Holografski medijski paneli** — reci *»pokaži … na zaslonu«* in panel
+  prileti iz globine; agent to sproži prek priloženega Hermes vtičnika
+  (`hud_display`); »počisti zaslon« jih pomete stran
 - **Sledenje porabi** — žetoni/dan, izmenjave, vrstica kvote ElevenLabs (če je
   TTS v oblaku)
 - **Panel Stroji** — statistika CPU/GPU za gostitelja in oddaljene delavce
-- **Kinematični zagon** — pritisni `B`: paneli utripnejo, obroč se zavrti,
-  »Sistemi so na voljo. Dobro jutro.«
 - **Filter zasebnosti** — nizi, ki izgledajo kot skrivnosti, se prekrijejo, preden
   besedilo doseže oblačni TTS
 - **Opcijska GPU ušesa** — usmeri jo na kateri koli NVIDIA stroj v LAN-u s
@@ -58,19 +72,28 @@ HUD okoli obroča je pravi nadzorni center:
 ## Arhitektura
 
 ```
- HUD v brskalniku (katera koli naprava v LAN-u)   Gostitelj (testirano: macOS / Apple Silicon)
- ── https/wss :443 ──────────┐   ┌──────────────────────────────────────┐
+ HUD v brskalniku (katera koli naprava v LAN-u)   Gostitelj (testirano: Linux + systemd; macOS s prilagoditvami)
+ ── https/wss :8766 ─────────┐   ┌──────────────────────────────────────┐
    mikrofon · zvočnik · panel├──►│ strežnik glasovnega cevovoda (ta repo)│
-                             │   │  STT: faster-whisper (lokalno)       │   ┌─────────────────┐
- Odjemalec za pritisk na tipko│  │  TTS: lokalni Piper (ali Gepard/Maya1)├──►│ Hermes Agent    │
- ── ws :8765 ────────────────┘   │  HUD + avtentikacija + TLS proxy     │   │  API :8642 (lo) │
-                                 └──────────────────────────────────────┘   │  spomin · orodja│
-                                                                             │  veščine · cron │
-                                                                             └─────────────────┘
+                             │   │  VAD + budnica + govorniški odtis    │   ┌──────────────────┐
+ Odjemalec za pritisk na tipko│  │  STT: faster-whisper (lokalno)       │   │ llama-server     │
+ ── ws :8765 ────────────────┘   │  TTS: lokalni Piper (ali Gepard/Maya1)├──►│ (lokalni LLM)    │
+                                 │  HUD + avtentikacija + TLS proxy     │   ├──────────────────┤
+                                 └──────────────────────────────────────┘──►│ Hermes Agent     │
+                                             │                              │  API :8642 (lo)  │
+                                             └── :9443 proxy ──────────────►│  spomin · orodja │
+                                                (kanban/plošča/klepet :9119) │  veščine · cron  │
+                                                                             └──────────────────┘
 ```
 
 Eni možgani, več obrazov: glas in tipkani klepet si delita eno trajno Hermes
 sejo, zato vsak ve, kaj si rekel drugemu — in spomin preživi vsak ponovni zagon.
+
+**Upravljanje celotnega sklada**: če v `server.yaml` izpolniš sekcijo `stack:`,
+`start-mia.sh` po vrsti zbudi llama-server (lokalni model) → Hermes gateway →
+Hermes dashboard → TTS storitev → glasovni strežnik (vsak korak se preskoči, če
+že teče), `stop-mia.sh` pa vse ustavi v obratnem vrstnem redu in sprosti
+RAM/VRAM. Glej `server/config/server.example.yaml`.
 
 ## Hiter začetek (en ukaz)
 
@@ -109,16 +132,18 @@ Certifikat je self-signed, zato brskalnik enkrat vpraša — sprejmi.
 
 ## Zahteve
 
-- Stroj za strežnik (testirano: Mac mini, Apple Silicon; Linux deluje s
-  prilagoditvami, systemd namesto launchd)
+- Stroj za strežnik (testirano: Linux + systemd, 2× GPU za lokalni 35B model;
+  macOS deluje s prilagoditvami, launchd namesto systemd)
 - [Hermes Agent](https://hermes-agent.nousresearch.com/docs/) nameščen in
-  nastavljen z ponudnikom LLM
+  nastavljen z ponudnikom LLM (privzeto lokalni model za llama-server)
 - Python 3.11+
-- TTS: lokalni **Piper** (privzeto, brez ključa, popolnoma offline), naravnejši
-  **Gepard**, **Maya1** (najboljša slovenska izgovorjava) ali
-  [ElevenLabs](https://elevenlabs.io) ključ za oblačne glasove — lokalna
-  servisa se ob zasedenem GPU samodejno preklopita na CPU/RAM
+- TTS: lokalni **Piper** (privzeto, hiter, brez ključa, popolnoma offline),
+  naravnejši **Gepard**, **Maya1** (najboljša slovenska izgovorjava, na CPU
+  počasna) ali [ElevenLabs](https://elevenlabs.io) ključ za oblačne glasove —
+  lokalna servisa se ob zasedenem GPU samodejno preklopita na CPU/RAM
 - Kateri koli sodoben brskalnik v LAN-u
+- Opcijsko: `speechbrain` (glasovna kalibracija), `yt-dlp` (YouTube glasba),
+  `xdotool` (zanesljivo zapiranje oken), `ffmpeg` (premik višine tona)
 
 ## Namestitev
 
@@ -176,12 +201,15 @@ macOS-a (TCC pri zunanjih diskih in poti do logov).
 
 | Dejanje | Kako |
 |---|---|
-| Pogovor | klikni obroč (ali preslednica) · govori · klikni znova za pošiljanje |
-| Ustavi agenta | rdeč gumb ■ USTAVI ali Esc |
-| Prekini med govorom | klikni obroč, medtem ko govori |
+| Pogovor | samo reci **»Mia, …«** — poslušanje, zaznava konca in odgovor so samodejni |
+| Prekinitev | rdeč gumb ■ USTAVI ali Esc (med obdelavo/govorjenjem šum ne prekinja) |
+| Višina glasu | panel GLAS v HUD-u — drsnik 70–240 Hz, velja od naslednjega stavka |
+| Glasovna kalibracija | `python3 server/scripts/enroll_voice.py` (`--append` za dodaten jezik) |
+| Glasba | »Mia, pusti mi …« → YouTube app-okno · »zapri ga / ustavi glasbo« |
+| Okna na namizju | »odpri mi Google / \<stran\>« in »zapri ga« (mia-open/mia-close) |
 | Tipkani klepet | vnosno polje na dnu (ista seja kot glas) |
-| Kinematični zagon | pritisni `B` |
-| Kanban / plošče | panel POGLEDI → animirani pogledi |
+| Kanban / plošče | panel POGLEDI → kanban, nadzorna plošča, klepet |
+| Pritisni-in-govori | alternativa: klikni obroč (ali preslednica) · govori · klikni znova |
 | Telefon | odpri HUD → Dodaj na začetni zaslon |
 
 ## Struktura repozitorija
@@ -189,17 +217,22 @@ macOS-a (TCC pri zunanjih diskih in poti do logov).
 ```
 server/          FastAPI glasovni cevovod + gostitelj HUD-a (jedro projekta)
 server/hud/      HUD v eni datoteki (vanilla JS, brez gradnje)
+server/continuous.py  VAD segmentacija, budnica (wake gate) za neprestano poslušanje
+server/speaker_gate.py  prepoznava govornika (ECAPA-TDNN odtisi, SpeechBrain)
 server/tts.py    lokalni TTS pogoni: piper, http (Gepard/Maya1), command, elevenlabs
-server/scripts/  mia-start/stop/health/smoke + generatorji certifikatov in boot zvoka
+server/scripts/  mia-start/stop/health + enroll_voice.py (glasovna kalibracija)
+                 + gepard_tts.py (TTS storitev s per-request višino tona)
 client/          opcijski Windows/Linux odjemalec za pritisk na tipko (z zaznavo budnice)
 worker/          opcijska GPU sidecarja: STT strežnik z velikim modelom + statistika
 hermes-plugin/   Hermes vtičnik: agent lahko prikliče/skrije medijske panele na HUD-u
+skills/mia-companion/  Hermes skill: Mijin govor, trajni spomin postopkov, okna
+                 (bin/mia-open + bin/mia-close za zanesljivo odpiranje/zapiranje)
 launchd/         predloge za samodejni zagon na macOS (pripombe o TCC in FD limitih)
 docs/            slovenska dokumentacija: SETUP, ARCHITECTURE, TROUBLESHOOTING
 docs/en/         ista dokumentacija v angleščini
 install.sh       namestitev (brez venv, root ali uporabnik) + manifest
-start-mia.sh     zagon, čakanje na strežnik, odpiranje HUD-a v brskalniku
-stop-mia.sh      ustavljanje (systemd/launchd/ozadje), status, --restart, --free-ports
+start-mia.sh     zbudi cel sklad (stack: llama → Hermes → dashboard → Mia + TTS), odpre HUD
+stop-mia.sh      ustavi vse in sprosti RAM/VRAM; status, --restart, --free-ports
 update.sh        git pull --ff-only + restart storitve + opozorilo za Ctrl+Shift+R
 uninstall.sh     natančna odstranitev vsega, kar je namestil install.sh
 build-package.sh arhiv za namestitev na stroju brez interneta
