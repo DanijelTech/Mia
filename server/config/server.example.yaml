@@ -53,7 +53,16 @@ stt:
     max_utterance_ms: 20000  # izjava se nikoli ne "izgubi": po 20 s se zaključi
     energy_override: true    # glasen zvok šteje kot govor, tudi če VAD reče ne
     min_rms: 320             # rezervni energijski prag
-    barge_in: true           # prekini Mio z govorom; false = pol-duplex (brez odmeva)
+    barge_in: false          # false = pol-duplex (priporočeno: šum ne ubije turna;
+                             # prekinitev z govorom med Mijinim govorjenjem)
+  # Whisper na tišini/šumu "sliši" znane fraze (YouTube podnapisi ipd.) —
+  # transkript, sestavljen samo iz njih, se zavrže:
+  hallucination_filter:
+    - "hvala što pratite"
+    - "hvala za gledanje"
+    - "hvala za ogled"
+    - "thank you for watching"
+    - "like and subscribe"
   partials: true             # live transcript while speaking
   partial_interval: 1.2      # seconds of new audio between partial passes
   # Optional GPU worker (worker/stt_server.py on any NVIDIA machine):

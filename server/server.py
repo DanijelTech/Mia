@@ -410,6 +410,27 @@ class VoicePipelineServer:
         self.turn_counter += 1
         return self.turn_counter
 
+    def filter_hallucinations(self, text: str) -> str:
+        """Drop Whisper's silence/noise hallucinations ('Hvala što pratite' …).
+
+        A transcript that consists ONLY of known hallucination phrases (repeated
+        or not) becomes empty; real speech containing them is kept untouched.
+        """
+        phrases = (self.cfg["stt"].get("hallucination_filter") or [])
+        if not text or not phrases:
+            return text
+
+        def flat(s: str) -> str:
+            return re.sub(r"\s+", " ", re.sub(r"[^a-zčšžćđ0-9 ]+", " ", s.lower())).strip()
+
+        rest = flat(text)
+        for phrase in phrases:
+            rest = rest.replace(flat(phrase), " ")
+        if not flat(rest):
+            print(f"STT hallucination dropped: {text[:80]!r}", flush=True)
+            return ""
+        return text
+
     async def transcribe(self, audio: bytes, timing: TurnTiming | None = None) -> str:
         if timing:
             timing.stt_start_monotonic = time.perf_counter()
@@ -1271,6 +1292,7 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
         # seconds, and silence here reads as "she is not reacting"
         await ws.send_json({"type": "agent_status", "state": "thinking"})
         transcript = await pipeline.transcribe(audio, timing)
+        transcript = pipeline.filter_hallucinations(transcript)
         timing.transcript = transcript
         await ws.send_json({"type": "transcript", "text": transcript})
         if transcript and wake is not None:
@@ -1297,6 +1319,10 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             await pipeline.stream_response_audio(ws, transcript_sent, timing, conn)
             timing.total_done_monotonic = time.perf_counter()
             await ws.send_json({"type": "done", "turn_id": timing.turn_id, "timing": timing.summary()})
+            if timing.response_text:
+                # the follow-up window opens only after a REAL reply — phantom
+                # turns (noise, hallucinations) must not unlock wake-free speech
+                conn.last_reply_at = time.time()
     except asyncio.CancelledError:
         timing.errors.append("turn cancelled (barge-in or stop)")
         raise
@@ -1319,7 +1345,6 @@ async def _continuous_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: C
     try:
         await _run_turn(ws, pipeline, conn, wake=conn.wake)
     finally:
-        conn.last_reply_at = time.time()
         if conn.continuous:
             try:
                 await ws.send_json({"type": "status", "message": "continuous listening"})
