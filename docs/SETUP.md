@@ -1,61 +1,67 @@
-# Full Setup Guide
+# Podrobna navodila za namestitev
 
-## 0. Automated install (recommended)
+> Angleška različica: [docs/en/SETUP.md](en/SETUP.md)
 
-`install.sh` performs sections 2–5 of this guide in one pass, straight into the
-system Python (no virtualenv) — the same way a root Hermes install runs:
+## 0. Avtomatska namestitev (priporočeno)
+
+`install.sh` opravi razdelke 2–5 tega vodnika v enem prehodu, neposredno v
+sistemski Python (brez venv) — tako, kot teče Hermes, nameščen kot root:
 
 ```bash
 git clone https://github.com/DanijelTech/Mia.git && cd Mia
-sudo ./install.sh --dry-run          # 1. see exactly what will happen
-sudo ./install.sh --yes --open       # 2. install, start and open the HUD
-sudo ./install.sh --with-gepard      #    ...plus the Gepard TTS service
-sudo ./install.sh --with-maya1       #    ...or Maya1 (best pronunciation)
+./install.sh --dry-run               # 1. točno vidi, kaj bo naredil
+./install.sh --yes --open            # 2. namesti, zaženi in odpri HUD
+./install.sh --with-gepard           #    ...plus Gepard TTS storitev
+./install.sh --with-maya1            #    ...ali Maya1 (najboljša izgovorjava)
 ```
 
-`--open` waits for the voice server, prints the LAN URL and the access token,
-and opens `https://<lan-ip>/hud/?token=…` in the default browser (the HUD turns
-that parameter into a cookie and removes it from the address bar). Later runs:
-`./start.sh` (or `./start.sh --no-open` to just start and print the URL).
+`--open` počaka na glasovni strežnik, izpiše LAN naslov in dostopni žeton ter
+odpre `https://<lan-ip>/hud/?token=…` v privzetem brskalniku (HUD ta parameter
+pretvori v piškotek in ga odstrani iz naslovne vrstice). Poznejši zagoni:
+`./start.sh` (ali `./start.sh --no-open`, da samo zaženeš in izpišeš URL).
 
-It installs the Python packages (retrying with `--break-system-packages` when the
-distro marks Python as externally managed), downloads the Slovenian voice,
-generates the TLS certificate, adds `MIA_HUD_TOKEN` to `~/.hermes/.env` if it is
-missing, writes and starts the systemd unit (launchd on macOS), and finishes
-with the health check.
+Namestitvenik:
+- namesti pakete (ob „externally managed“ Pythonu sam ponovi z
+  `--break-system-packages`),
+- prenese slovenski glas,
+- ustvari TLS certifikat,
+- doda `MIA_HUD_TOKEN` v `~/.hermes/.env`, če ga še ni,
+- napiše in zažene systemd enoto (na macOS launchd plist),
+- na koncu požene zdravstveno preverjanje.
 
-Everything it creates is written to a manifest
-(`/var/lib/mia/install-manifest.json` for root, `~/.local/state/mia/...` for a
-user install). `uninstall.sh` uses that manifest, so removal is exact:
+Vse, kar ustvari, zapiše v manifest
+(`/var/lib/mia/install-manifest.json` za root, `~/.local/state/mia/...` za
+uporabniško namestitev). `uninstall.sh` se tega manifesta drži, zato je
+odstranitev natančna:
 
 ```bash
-sudo ./uninstall.sh --dry-run        # preview
-sudo ./uninstall.sh                  # stop+disable service, remove unit, certs,
-                                     # voices, boot audio, logs, server.yaml, token line
-sudo ./uninstall.sh --purge-deps     # also pip-uninstall the recorded packages
-sudo ./uninstall.sh --keep-data      # keep voices/certs/logs/config
+./uninstall.sh --dry-run        # predogled
+./uninstall.sh                  # ustavi+onemogoči storitev, odstrani enoto, certifikate,
+                                # glasove, boot zvok, loge, server.yaml, vrstico z žetonom
+./uninstall.sh --purge-deps     # tudi pip-odstranitev zabeleženih paketov
+./uninstall.sh --keep-data      # obdrži glasove/certifikate/loge/config
 ```
 
-It never touches Hermes, its sessions/memory, your models, or the source tree.
+Nikoli se ne dotakne Hermesa, njegovih sej/spomina, tvojih modelov ali izvorne kode.
 
-To build a tarball for an offline machine: `./build-package.sh`.
+Za arhiv na stroj brez interneta: `./build-package.sh`.
 
-Tested on macOS (Apple Silicon) with Hermes Agent v0.16. Allow ~1 hour.
+Testirano na macOS (Apple Silicon) s Hermes Agent v0.16. Predviden čas: ~1 ura.
 
-## 1. Hermes Agent (the brain)
+## 1. Hermes Agent (možgani)
 
-Install Hermes Agent and give it an LLM provider — follow the
-[official quickstart](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart).
-Verify `hermes` works in your terminal before continuing.
+Namesti Hermes Agent in mu nastavi ponudnika LLM — sledi
+[uradnemu hitremu začetku](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart).
+Preden nadaljuješ, preveri, da `hermes` deluje v terminalu.
 
-Enable its API server in `~/.hermes/.env`:
+Vključi njegov API strežnik v `~/.hermes/.env`:
 
 ```bash
 API_SERVER_ENABLED=true
-API_SERVER_KEY=<long random secret>      # required — full toolset incl. terminal!
+API_SERVER_KEY=<dolga naključna skrivnost>    # obvezno — poln nabor orodij, tudi terminal!
 ```
 
-Start the gateway (`hermes gateway`) and verify:
+Zaženi gateway (`hermes gateway`) in preveri:
 
 ```bash
 KEY=$(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)
@@ -63,59 +69,57 @@ curl -H "Authorization: Bearer $KEY" http://127.0.0.1:8642/health
 # {"status": "ok", ...}
 ```
 
-Recommended: add voice-behavior rules to your global `~/.hermes/SOUL.md`
-(short spoken sentences, no markdown aloud, never speak secrets, announce risky
-actions and wait for approval). The agent — not the voice server — should own
-its personality.
+Priporočeno: v globalni `~/.hermes/SOUL.md` dodaj pravila za govor (kratke
+povedi, brez markdowna na glas, nikoli ne izgovori skrivnosti, napovej tvegane
+akcije in počakaj na odobritev). Osebnost naj ima agent — ne glasovni strežnik.
 
-## 2. The voice: local Piper (offline) or ElevenLabs (cloud)
+## 2. Glas: lokalni Piper (offline) ali ElevenLabs (oblak)
 
-Default is **local Piper** — no API key, no network, ~0.7 s to synthesize a
-sentence on CPU (4–6× realtime):
+Privzeto je **lokalni Piper** — brez ključa, brez omrežja, ~0,7 s za poved na
+CPU (4–6× hitreje od realnega časa):
 
 ```bash
-.venv/bin/pip install piper-tts          # GPL-3.0, used as a subprocess
-scripts/get-voice.sh sl                  # Slovenian (63 MB) — or `all` for sl + sr
+pip install piper-tts                     # GPL-3.0; teče kot ločen proces
+scripts/get-voice.sh sl                   # slovenščina (63 MB) — ali `all` za sl + sr
 ```
 
-Voices land in `server/voices/` (gitignored). Then in `config/server.yaml`:
+Glasovi pristanejo v `server/voices/` (gitignored). Nato v `config/server.yaml`:
 
 ```yaml
 tts:
   provider: piper
   piper:
-    language: sl                         # sl | sr — picks from `voices`
+    language: sl                         # sl | sr — izbere iz `voices`
     voices:
       sl: voices/sl_SI-artur-medium.onnx
       sr: voices/sr_RS-serbski_institut-medium.onnx
 ```
 
-Other local engines plug in through `tts.provider: command`: any binary that
-reads text on stdin and writes a WAV (or raw PCM16) on stdout — e.g. a Gepard
-or Maya1 wrapper. `tts.provider: elevenlabs` remains available for cloud use:
-create a key at elevenlabs.io, pick a `voice_id`, add `ELEVENLABS_API_KEY` to
-`~/.hermes/.env`, and give the key the **User → Read** permission for the HUD
-quota bar. Note Flash v2.5 does not cover Slovenian or Serbian; use
-`eleven_v3_conversational` there.
+Drugi lokalni pogoni se priklopijo prek `tts.provider: command`: katera koli
+binarna datoteka, ki bere besedilo s stdin in piše WAV (ali surov PCM16) na
+stdout — npr. ovoj za Gepard ali Maya1. `tts.provider: elevenlabs` ostaja na
+voljo za oblak: ustvari ključ na elevenlabs.io, izberi `voice_id`, dodaj
+`ELEVENLABS_API_KEY` v `~/.hermes/.env` in ključu podeli pravico
+**User → Read**, če želiš vrstico kvote v HUD-u. Flash v2.5 **ne** pokriva
+slovenščine ali srbščine — tam uporabi `eleven_v3_conversational`.
 
-### Better voice: Gepard (optional, GPU with RAM offload)
+### Naravnejši glas: Gepard (opcijsko, GPU z RAM offloadom)
 
-Piper is clear but flat. [texdata/Gepard-Slovenian-TTS](https://huggingface.co/texdata/Gepard-Slovenian-TTS)
-(Apache-2.0 LoRA, ~555 M, 22 kHz) has noticeably more natural Slovenian prosody.
-It is heavier than Piper, so it runs as a **service** — the model loads once, not
-per sentence:
+Piper je razločen, a raven. [texdata/Gepard-Slovenian-TTS](https://huggingface.co/texdata/Gepard-Slovenian-TTS)
+(Apache-2.0 LoRA, ~555 M, 22 kHz) ima opazno naravnejšo slovensko prozodijo.
+Ker je težji, teče kot **storitev** — model se naloži enkrat, ne na vsako poved:
 
 ```bash
-.venv/bin/pip install accelerate
-.venv/bin/pip install "nemo_toolkit[tts]"
-.venv/bin/pip install git+https://github.com/nineninesix-ai/gepard-inference
+pip install accelerate
+pip install "nemo_toolkit[tts]"
+pip install git+https://github.com/nineninesix-ai/gepard-inference
 
-# start it (device picked automatically, see below)
-.venv/bin/python scripts/gepard_tts.py --serve --port 8770 \
+# zagon (napravo izbere samodejno, glej spodaj)
+python3 scripts/gepard_tts.py --serve --port 8770 \
     --engine gepard --fallback-piper
 ```
 
-Then point the voice server at it:
+Nato glasovni strežnik usmeri nanjo:
 
 ```yaml
 tts:
@@ -125,116 +129,114 @@ tts:
     format: wav
     timeout: 120
     name: gepard
+    engine: gepard          # gepard | maya1 — kaj zažene start.sh
 ```
 
-**GPU vs RAM offload.** The service picks its device at startup:
-`--device auto` (default) uses CUDA only when at least `--min-free-vram-gb`
-(3 GB) is actually free; otherwise it runs on CPU/RAM. With `--offload auto` it
-first tries an accelerate `device_map` split (part GPU, part RAM), then falls
-back to pure CPU, and if the CUDA load itself fails it retries on CPU instead of
-crashing. That is what keeps Mia alive on a box where the LLM already owns the
-GPU:
+**GPU proti RAM-u.** Storitev izbere napravo ob zagonu: `--device auto`
+(privzeto) uporabi CUDA le, če je takrat prostih vsaj `--min-free-vram-gb` (3 GB),
+sicer teče na CPU/RAM. Z `--offload auto` najprej poskusi razcep prek accelerate
+`device_map` (del GPU, del RAM), nato pade na čisti CPU, in če nalaganje na CUDA
+spodleti, ponovi na CPU, namesto da bi se sesul. Prav to drži Mio pri življenju
+na stroju, kjer GPU že zaseda LLM:
 
-| Qwen3-30B-A3B | Whisper large-v3-turbo | Gepard | Fits 32 GB? |
+| Qwen3-30B-A3B | Whisper large-v3-turbo | Gepard | Gre v 32 GB? |
 |---|---|---|---|
-| Q4_K_M ~18.6 GB | ~1.6 GB | ~2 GB | yes, comfortable |
-| Q5_K_M ~21.7 GB | ~1.6 GB | ~2 GB | yes |
-| Q6_K ~26.7 GB | ~1.6 GB | ~2 GB | tight — TTS drops to CPU |
-| Q8_0 ~32.5 GB | — | — | GPU is full — TTS and STT use CPU/RAM |
+| Q4_K_M ~18,6 GB | ~1,6 GB | ~2 GB | da, udobno |
+| Q5_K_M ~21,7 GB | ~1,6 GB | ~2 GB | da |
+| Q6_K ~26,7 GB | ~1,6 GB | ~2 GB | tesno — TTS pade na CPU |
+| Q8_0 ~32,5 GB | — | — | GPU poln — TTS in STT na CPU/RAM |
 
-`--fallback-piper` means: if the Gepard stack is missing or fails to load, the
-service still answers with the Piper voice instead of leaving Mia mute.
-Check what it chose with `curl -s localhost:8770/health` (`device`, `reason`,
-`free_vram_gb`).
+`--fallback-piper` pomeni: če Gepard ni nameščen ali se ne naloži, storitev še
+vedno odgovori s Piperjevim glasom, da Mia ne onemi. Kaj je izbrala, preveri s
+`curl -s localhost:8770/health` (`device`, `reason`, `free_vram_gb`).
 
-The same service can run on a second machine (e.g. the GPU workstation) — just
-put its address in `tts.http.url` and set `MIA_HUD_TOKEN` on both sides; the
-token is sent as `X-Mia-Token`.
+Ista storitev lahko teče na drugem stroju (npr. GPU delovni postaji) — vpiši
+njen naslov v `tts.http.url` in imej `MIA_HUD_TOKEN` na obeh straneh; žeton se
+pošilja kot `X-Mia-Token`.
 
-For a permanent start use systemd (`systemd --user`, `ExecStart=.../gepard_tts.py
---serve --port 8770`) or `nohup ... &` on Linux, and Task Scheduler on Windows.
+Za trajni zagon uporabi systemd (`systemd --user`, `ExecStart=.../gepard_tts.py
+--serve --port 8770`) ali `nohup ... &` na Linuxu, na Windowsu Task Scheduler.
 
-Note: the LoRA card is Apache-2.0; check the base model
-(`nineninesix/gepard-1.0`) and the NeMo codec licenses before redistributing.
+Opomba: LoRA je Apache-2.0; preveri licenco osnovnega modela
+(`nineninesix/gepard-1.0`) in NeMo codec-a, preden karkoli distribuiraš.
 
-### Best pronunciation: Maya1 (optional, GPU with RAM offload)
+### Najboljša izgovorjava: Maya1 (opcijsko, GPU z RAM offloadom)
 
 [Maya1 Slovenian TTS](https://huggingface.co/texdata/Maya1-Slovenian-TTS)
-(Apache-2.0) is a LoRA on the 3B `maya-research/maya1` Orpheus-style speech LM
-with a **phoneme front-end**: text is converted to espeak-ng `sl` IPA before
-generation, which fixes the stress and č/š/ž problems grapheme models have (the
-author measures the lowest character error rate of their variants, 4.2% vs 5.0%
-for grapheme). It is the heaviest and slowest of the three local voices.
+(Apache-2.0) je LoRA na 3B modelu `maya-research/maya1` (Orpheus-style) s
+**fonemskim front-endom**: besedilo se pred generiranjem pretvori v espeak-ng
+`sl` IPA, kar odpravi težave z naglasom in č/š/ž, ki jih imajo grafemski modeli
+(avtor meri najnižjo stopnjo napak na znakih med svojimi različicami: 4,2 %
+proti 5,0 % pri grafemski). Je najtežji in najpočasnejši od treh lokalnih glasov.
 
 ```bash
-sudo ./install.sh --with-maya1        # deps + espeak-ng + systemd unit
-# or manually:
+./install.sh --with-maya1        # odvisnosti + espeak-ng + systemd enota
+# ali ročno:
 pip install transformers peft snac soundfile phonemizer accelerate
 sudo apt-get install espeak-ng        # macOS: brew install espeak
 scripts/gepard_tts.py --serve --port 8770 --engine maya1 --fallback-piper
 ```
 
-Point Mia at it exactly like Gepard (`tts.provider: http`, `url:
+Mio usmeri nanjo enako kot pri Gepardu (`tts.provider: http`, `url:
 http://127.0.0.1:8770/tts`).
 
 | | Piper | Gepard | Maya1 |
 |---|---|---|---|
 | VRAM | 0 (CPU) | ~2 GB | ~6–7 GB (bf16) |
-| Speed | 4–6× realtime | ~0.5–2 s per sentence on GPU | slowest (3B autoregressive) |
-| Quality | clear, flat | natural-ish | best Slovenian pronunciation |
-| Extras | `piper-tts` | NeMo + `gepard-inference` | `transformers`/`peft`/`snac`/`phonemizer` + espeak-ng |
+| Hitrost | 4–6× realtime | ~0,5–2 s na poved na GPU | najpočasnejši (3B avtoregresivno) |
+| Kakovost | jasno, ravno | naravnejše | najboljša slovenska izgovorjava |
+| Dodatki | `piper-tts` | NeMo + `gepard-inference` | `transformers`/`peft`/`snac`/`phonemizer` + espeak-ng |
 
-Voice control: `--maya-emotion nevtralno|veselo|jezno|gnus|zaspano` swaps the
-English voice description (the Slovenian adapter was fine-tuned on neutral read
-speech, so emotional range is limited). `--temperature` defaults to 0.75 for
-Maya1 (0.4 for Gepard); `--maya-max-new-tokens` bounds the generation (~1800 ≈
-10 s). The built-in `repetition_penalty=1.1` matters: without it short inputs can
-fail to emit the end token.
+Nadzor glasu: `--maya-emotion nevtralno|veselo|jezno|gnus|zaspano` zamenja
+angleški opis govorca (slovenski adapter je učen na nevtralnem bralnem govoru,
+zato je čustveni razpon omejen). `--temperature` je privzeto 0,75 za Maya1
+(0,4 za Geparda); `--maya-max-new-tokens` omeji generiranje (~1800 ≈ 10 s).
+Vgrajeni `repetition_penalty=1.1` je pomemben: brez njega kratki vnosi včasih ne
+izdajo končnega žetona.
 
-On a 32 GB card with Qwen3-30B-A3B **Q4** (~18.6 GB) + Whisper (~1.6 GB) Maya1
-fits (~26 GB total). With Q5/Q6 it first tries the accelerate GPU/RAM split, then
-CPU; on CPU a sentence takes tens of seconds, so Piper or Gepard is the better
-choice there.
+Na 32 GB z Qwen3-30B-A3B **Q4** (~18,6 GB) + Whisper (~1,6 GB) se Maya1 usede
+(~26 GB skupaj). Pri Q5/Q6 najprej poskusi razcep GPU/RAM prek accelerate, nato
+CPU; na CPU poved traja desetine sekund, zato sta tam boljša Piper ali Gepard.
 
-Licences: adapter and base model are Apache-2.0; the SNAC codec
-(`hubertsiuzdak/snac_24khz`) carries its own — check before redistributing.
-Citation: Tadej Fius, MediaAtlas (see the model card).
+Licence: adapter in osnovni model sta Apache-2.0; SNAC codec
+(`hubertsiuzdak/snac_24khz`) ima svojo — preveri pred redistribucijo.
+Citiranje: Tadej Fius, MediaAtlas (glej model card).
 
-### Fully offline checklist
+### Kontrolni seznam za popolnoma brez oblaka
 
-| Item | Setting |
+| Element | Nastavitev |
 |---|---|
-| TTS | `tts.provider: piper` (no key needed) |
-| LLM | local model behind Hermes (`hermes.base_url` → 127.0.0.1) |
-| STT | local Whisper (`stt.model: large-v3-turbo`) |
-| Cloud fallback | `hermes.fallback_provider: ""` |
-| External media panels | `hud.allow_external_media: false` |
-| Fonts | self-hosted in `server/hud/fonts/` |
+| TTS | `tts.provider: piper` (brez ključa) |
+| LLM | lokalni model za Hermesom (`hermes.base_url` → 127.0.0.1) |
+| STT | lokalni Whisper (`stt.model: large-v3-turbo`) |
+| Oblačni fallback | `hermes.fallback_provider: ""` |
+| Zunanji medijski paneli | `hud.allow_external_media: false` |
+| Pisave | self-hosted v `server/hud/fonts/` |
 
-Verify: `curl -s localhost:8765/api/hud-config` returns
-`"tts_provider": "piper"` and `"allow_external_media": false`, and
-`/api/usage` returns `"elevenlabs": null` (no outbound request).
+Preveri: `curl -s localhost:8765/api/hud-config` vrne `"tts_provider": "piper"`
+in `"allow_external_media": false`, `/api/usage` pa `"elevenlabs": null` (brez
+odhodnega klica).
 
-### Upgrading an existing install (jarvis_ai → Mia)
+### Nadgradnja obstoječe namestitve (jarvis_ai → Mia)
 
-Everything user-visible is renamed, but the old names keep working so you can
-migrate at your own pace:
+Vse vidno je preimenovano, stare oznake pa še delujejo, da se lahko seliš v
+svojem tempu:
 
-| Old | New | Compatibility |
+| Staro | Novo | Združljivost |
 |---|---|---|
-| `JARVIS_HUD_TOKEN`, `JARVIS_STT_*`, `JARVIS_SUMMON_URL`, `JARVIS_WORKER_NAME` | `MIA_*` | old env vars are still read when the new one is unset |
-| cookie `jarvis_token`, header `X-Jarvis-Token` | `mia_token`, `X-Mia-Token` | both accepted on input |
-| `jarvis.local`, `jarvis` | `mia.local`, `mia` | both allowed as HUD origins |
-| `scripts/jarvis-*.sh` | `scripts/mia-*.sh` | old names removed — update your aliases/cron |
-| `com.jarvis.voice`, `com.jarvis.dashboard` | `com.mia.voice`, `com.mia.dashboard` | old LaunchAgents keep running until you swap them |
-| `hud/jarvis.cer` | `hud/mia.cer` | phones must install the new profile (old cert still trusted) |
+| `JARVIS_HUD_TOKEN`, `JARVIS_STT_*`, `JARVIS_SUMMON_URL`, `JARVIS_WORKER_NAME` | `MIA_*` | stare spremenljivke se berejo, če nove ni |
+| piškotek `jarvis_token`, glava `X-Jarvis-Token` | `mia_token`, `X-Mia-Token` | oba sprejeta na vhodu |
+| `jarvis.local`, `jarvis` | `mia.local`, `mia` | oba dovoljena kot izvor HUD-a |
+| `scripts/jarvis-*.sh` | `scripts/mia-*.sh` | stara imena odstranjena — posodobi alias/cron |
+| `com.jarvis.voice`, `com.jarvis.dashboard` | `com.mia.voice`, `com.mia.dashboard` | stari LaunchAgenti tečejo, dokler jih ne zamenjaš |
+| `hud/jarvis.cer` | `hud/mia.cer` | telefoni morajo namestiti nov profil (stari cert ostane zaupanja vreden) |
 
-Two changes are not cosmetic:
+Dve spremembi nista kozmetični:
 
-- **`hermes.session_key`** went from `jarvis:user:main` to `mia:user:main`.
-  That starts a fresh long-term memory scope. To keep the old memories, set
-  `session_key: jarvis:user:main` back in `config/server.yaml`.
-- **launchd** needs a swap on macOS:
+- **`hermes.session_key`** se je preselil iz `jarvis:user:main` v `mia:user:main`.
+  To začne novo območje dolgoročnega spomina. Če želiš obdržati stare spomine,
+  v `config/server.yaml` nastavi nazaj `session_key: jarvis:user:main`.
+- **launchd** je treba na macOS zamenjati:
   ```bash
   launchctl bootout gui/$(id -u)/com.jarvis.voice 2>/dev/null
   launchctl bootout gui/$(id -u)/com.jarvis.dashboard 2>/dev/null
@@ -242,139 +244,138 @@ Two changes are not cosmetic:
   scripts/mia-start.sh
   ```
 
-## 3. The voice pipeline server (this repo)
+## 3. Strežnik glasovnega cevovoda (ta repo)
 
 ```bash
 cd server
-python3 -m venv .venv
-.venv/bin/pip install fastapi uvicorn requests pyyaml numpy anthropic \
+pip install fastapi uvicorn requests pyyaml numpy \
     RealtimeSTT faster-whisper silero-vad websockets psutil
 cp config/server.example.yaml config/server.yaml
 ```
 
-Note: `faster-whisper` and `silero-vad` are REQUIRED — recent RealtimeSTT
-releases treat them as optional extras and fail at runtime without them
-(silently for VAD, loudly for the engine). The first start takes 60–90 s
-(torch import + model download); subsequent starts are faster.
+Opomba: `faster-whisper` in `silero-vad` sta **obvezna** — novejši RealtimeSTT
+ju obravnava kot opcijska dodatka in brez njiju odpove ob zagonu (pri VAD tiho,
+pri samem pogonu glasno). Prvi zagon traja 60–90 s (uvoz torch + prenos modela),
+naslednji so hitrejši.
 
-Edit `config/server.yaml`: set `voice.voice_id`, and adjust the `machines:`
-list (or delete it). The first run downloads the Whisper model (~460 MB for
-`small.en`).
+V `config/server.yaml` nastavi `stt.language` (sl/sr), `tts.provider` in po
+potrebi seznam `machines:`. Prvi zagon prenese Whisper model (`large-v3-turbo`
+~1,6 GB).
 
-### TLS certificates (required for browser microphone)
+### TLS certifikati (obvezni za mikrofon v brskalniku)
 
-Browsers only expose the mic to secure origins:
+Brskalniki dajo mikrofon samo varnim izvorom:
 
 ```bash
-scripts/make-certs.sh            # auto-detects your LAN IP for the SAN
+scripts/make-certs.sh            # samodejno zazna LAN IP za SAN
 ```
 
-Trust `certs/cert.pem` on each device (macOS: Keychain; Windows:
-`certutil -user -addstore Root cert.pem`; iPhone: download
-`https://host:8765/hud/mia.cer`, install profile, then enable in
-Settings → General → About → Certificate Trust Settings).
+Zaupaj `certs/cert.pem` na vsaki napravi (macOS: Keychain; Windows:
+`certutil -user -addstore Root cert.pem`; iPhone: prenesi
+`https://host:8765/hud/mia.cer`, namesti profil in ga nato omogoči v
+Nastavitve → Splošno → O napravi → Nastavitve zaupanja certifikatov).
 
-Optional but nice: rename your host's mDNS name (`sudo scutil --set
-LocalHostName mia` on macOS) so the HUD lives at `https://mia.local/hud/`.
-Port 443 needs the wildcard bind already set in the example config.
+Opcijsko: preimenuj mDNS ime gostitelja (`sudo scutil --set LocalHostName mia`
+na macOS), da HUD živi na `https://mia.local/hud/`. Vrata 443 zahtevajo wildcard
+bind, ki je že v primeru konfiguracije.
 
-### HUD access token
+### Dostopni žeton HUD-a
 
 ```bash
 echo "MIA_HUD_TOKEN=mia-$(python3 -c 'import secrets;print(secrets.token_hex(3))')" >> ~/.hermes/.env
 ```
 
-The HUD asks for this once per device. Omit the variable entirely to disable
-auth (not recommended).
+HUD ga vpraša enkrat na napravo. Če spremenljivko izpustiš, je avtentikacija
+izklopljena (ni priporočeno).
 
-### Boot greeting (one-time, local)
-
-```bash
-scripts/make-boot-audio.sh YourFirstName    # writes hud/audio/boot_*.wav
-```
-
-Uses the same local Piper voice — no cloud characters spent.
-
-### Run it
+### Pozdrav ob zagonu (enkratno, lokalno)
 
 ```bash
-.venv/bin/python server.py
+scripts/make-boot-audio.sh TvojeIme    # zapiše hud/audio/boot_*.wav
 ```
 
-Wait ~40 s for the STT model to warm, then open `https://YOUR_HOST/hud/`.
-Run `scripts/mia-health.sh` to check all five services.
+Uporabi isti lokalni Piper glas — brez oblačnih znakov.
 
-## 4. Auto-start on boot (macOS)
+### Zagon
 
-Copy the two plists from `launchd/`, edit the `/PATH/TO` and `YOUR_USER`
-placeholders, then:
+```bash
+python3 server.py
+```
+
+Počakaj ~40 s, da se STT model ogreje, nato odpri `https://TVOJ_HOST/hud/`.
+Za pregled vseh petih storitev poženi `scripts/mia-health.sh`.
+
+## 4. Samodejni zagon ob bootu (macOS)
+
+Kopiraj oba plista iz `launchd/`, zamenjaj `/PATH/TO` in `YOUR_USER`, nato:
 
 ```bash
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mia.voice.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mia.dashboard.plist
 ```
 
-**Read the comments in the plists** — there are two macOS traps (external-drive
-TCC permissions and log-path location) that produce silent hangs or `EX_CONFIG`
-errors if ignored. Day-to-day management: `scripts/mia-{start,stop,restart,health}.sh`.
+**Preberi komentarje v plistih** — tam sta dve pasti macOS-a (TCC za zunanje
+diske in mesto poti do logov), ki ob ignoriranju povzročita tihe zastoje ali
+napake `EX_CONFIG`. Vsakodnevno upravljanje: `scripts/mia-{start,stop,restart,health}.sh`.
 
-## 5. Optional extras
+Na Linuxu `install.sh` napiše systemd enoti `mia-voice` in (opcijsko) `mia-tts`.
 
-**Push-to-talk client** (Windows/Linux box with a mic):
+## 5. Opcijski dodatki
+
+**Odjemalec za pritisk na tipko** (Windows/Linux stroj z mikrofonom):
 
 ```bash
 cd client
-python -m venv .venv && .venv/Scripts/pip install sounddevice websockets numpy openwakeword
-python client.py --push-to-talk --server ws://YOUR_HOST:8765/ws --list-devices
+pip install sounddevice websockets numpy openwakeword
+python client.py --push-to-talk --server ws://TVOJ_HOST:8765/ws --list-devices
 ```
 
-**GPU worker stats** (shows in the Machines panel): copy
-`worker/worker_stats.py` to the worker machine, `pip install psutil`, run it,
-and point a `machines:` entry's `stats_url` at `http://worker-ip:8767/stats`.
+**Statistika GPU delavca** (prikaže se v panelu Stroji): kopiraj
+`worker/worker_stats.py` na delavca, `pip install psutil`, zaženi in v vnosu
+`machines:` nastavi `stats_url` na `http://worker-ip:8767/stats`.
 
-**GPU speech recognition** — the single biggest quality upgrade if you own any
-NVIDIA machine on the LAN. On that machine:
+**GPU prepoznavanje govora** — največji skok v kakovosti, če imaš v LAN-u kateri
+koli NVIDIA stroj. Na njem:
 
 ```
 cd worker
-python -m venv .venv
-.venv/Scripts/pip install faster-whisper fastapi uvicorn nvidia-cublas-cu12 nvidia-cudnn-cu12
-copy run-stt.example.bat run-stt.bat    # fill in your MIA_HUD_TOKEN value
+pip install faster-whisper fastapi uvicorn nvidia-cublas-cu12 nvidia-cudnn-cu12
+copy run-stt.example.bat run-stt.bat    # vpiši svoj MIA_HUD_TOKEN
 run-stt.bat
 ```
 
-Then uncomment the `stt.remote:` block in the server's `server.yaml` (point
-`url` at the GPU machine) and restart the voice server. Result: `large-v3-turbo`
-accuracy at ~0.2 s per utterance, with automatic fallback to the local model
-whenever the GPU machine is off. For auto-start at Windows logon, drop a
-`MiaSTT.vbs` in `shell:startup` (template in the .bat comments).
+Nato v `server.yaml` odkomentiraj blok `stt.remote:` (usmeri `url` na GPU stroj)
+in znova zaženi glasovni strežnik. Rezultat: natančnost `large-v3-turbo` pri
+~0,2 s na izjavo, s samodejnim preklopom na lokalni model, kadar je GPU stroj
+ugasnjen. Za samodejni zagon ob prijavi v Windows daj `MiaSTT.vbs` v
+`shell:startup` (predloga v komentarjih .bat).
 
-**Phone app feel**: open the HUD in Safari/Chrome on your phone →
-Share → Add to Home Screen.
+**Občutek aplikacije na telefonu**: odpri HUD v Safari/Chrome na telefonu →
+Deli → Dodaj na začetni zaslon.
 
-**Let the agent put things on your screen** (the showstopper): install the
-bundled Hermes plugin so "show me a video of X on screen" makes holographic
-media panels materialize on every open HUD:
+**Da agent postavlja stvari na zaslon** (najbolj impresivno): namesti priloženi
+Hermes vtičnik, da »pokaži video o X na zaslonu« materializira holografske
+medijske panele na vseh odprtih HUD-ih:
 
 ```bash
 cp -R hermes-plugin/hud_display ~/.hermes/plugins/hud_display
-# edit ~/.hermes/plugins/hud_display/schemas.py: replace YOUR_HOST
-hermes plugins enable hud_display     # repeat with -p <profile> if you use profiles
-# restart your hermes gateway
+# uredi ~/.hermes/plugins/hud_display/schemas.py: zamenjaj YOUR_HOST
+hermes plugins enable hud_display     # ponovi z -p <profil>, če uporabljaš profile
+# znova zaženi hermes gateway
 ```
 
-The plugin needs `MIA_HUD_TOKEN` in `~/.hermes/.env` (same token as the
-HUD). Directory name must stay a valid Python module name — hyphens silently
-break plugin discovery. The agent then has `hud_display` / `hud_dismiss`
-tools; YouTube links play as embedded video, `position` left/right lets it
-fly in multiple panels from different vectors.
+Vtičnik potrebuje `MIA_HUD_TOKEN` v `~/.hermes/.env` (isti žeton kot HUD). Ime
+mape mora ostati veljavno ime Python modula — vezaji tiho zlomijo odkrivanje
+vtičnikov. Agent dobi orodji `hud_display` / `hud_dismiss`; YouTube povezave se
+predvajajo kot vgrajen video, `position` left/right omogoča več panelov z
+različnih strani.
 
-## 6. Verify everything
+## 6. Preveri vse skupaj
 
 ```bash
-scripts/mia-health.sh   # all five rows OK
-scripts/mia-smoke.sh    # synthesized voice turn through the full stack (macOS)
+scripts/mia-health.sh   # vseh pet vrstic OK (in TTS storitev, če je http)
+scripts/mia-smoke.sh    # sintetiziran glasovni krog skozi celoten sklad (macOS)
 ```
 
-Then the real test: click the ring and ask "what's in your memory file?" —
-a real agent answers with real file contents.
+Nato pravi test: klikni obroč in vprašaj »kaj je v tvoji spominski datoteki?« —
+resnični agent odgovori z resnično vsebino datoteke.

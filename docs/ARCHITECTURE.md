@@ -1,116 +1,119 @@
-# Architecture & Protocols
+# Arhitektura in protokoli
 
-## How a voice turn flows
+> Angleška različica: [docs/en/ARCHITECTURE.md](en/ARCHITECTURE.md)
 
-1. Browser captures mic at 16 kHz mono (AudioContext created at 16 kHz —
-   avoids resampling artifacts that wreck Whisper accuracy) and streams int16
-   PCM over WebSocket `/ws`.
-2. While you speak, the server runs incremental Whisper passes every ~1.2 s
-   and emits `partial_transcript` events (live captions).
-3. On stop: final transcription — the server first tries the optional **GPU
-   STT worker** (`stt.remote`, big model, ~0.2 s) and falls back to local
-   Whisper if it's unreachable — then the transcript goes to Hermes via its **Sessions
-   API** (`POST /api/sessions/{id}/chat/stream`, SSE). Session ids persist in
-   `logs/hermes_sessions.json` per conversation name, so memory survives
-   restarts. Typed chat (`/api/chat`) uses the *same* session.
-4. SSE events parsed: `run.started` (run id → STOP support), `assistant.delta`
-   (text), `tool.started` (name + preview → HUD activity), `assistant.completed`
-   (incl. `interrupted` flag), `run.completed` (token usage), `*approval*`
-   (→ HUD approval cards).
-5. Text is sentence-split, markdown/think-block-stripped, **secret-redacted**,
-   then each sentence streams through the configured TTS backend (`server/tts.py`:
-   local `piper` by default, `http` for a local TTS service such as Gepard,
-   `command` for a per-sentence local CLI, or `elevenlabs` for cloud) back to the
-   client as 16 kHz PCM while generation continues. Local voices at 22.05 kHz are
-   resampled streamingly in-process.
+## Kako teče glasovni krog
 
-Why the Sessions API and not `/v1/responses` or `/v1/runs`: on Hermes v0.16,
-sessions are the only surface that combines named persistent memory, run ids,
-tool events, and approval events in one stream.
+1. Brskalnik zajema mikrofon pri 16 kHz mono (`AudioContext` ustvarjen pri
+   16 kHz — to prepreči artefakte pri prevzorčenju, ki pokvarijo natančnost
+   Whisperja) in pretaka int16 PCM prek WebSocketa `/ws`.
+2. Medtem ko govoriš, strežnik vsakih ~1,2 s požene inkrementalni Whisper in
+   pošilja dogodke `partial_transcript` (podnapisi v živo).
+3. Ob koncu govora: končni prepis — strežnik najprej poskusi opcijskega **GPU
+   STT delavca** (`stt.remote`, velik model, ~0,2 s), sicer pade na lokalni
+   Whisper — nato gre prepis do Hermesa prek njegovega **Sessions API**
+   (`POST /api/sessions/{id}/chat/stream`, SSE). ID seje se hrani v
+   `logs/hermes_sessions.json` po imenu pogovora, zato spomin preživi ponovne
+   zagone. Tipkani klepet (`/api/chat`) uporablja *isto* sejo.
+4. Razčlenjevanje SSE dogodkov: `run.started` (id kroga → podpora gumbu STOP),
+   `assistant.delta` (besedilo), `tool.started` (ime + predogled → aktivnost v
+   HUD-u), `assistant.completed` (vključno z zastavico `interrupted`),
+   `run.completed` (poraba žetonov), `*approval*` (→ kartice za odobritev).
+5. Besedilo se razdeli na povedi, odstrani se markdown/think-bloki, **prekrijejo
+   se skrivnosti**, nato vsaka poved steče skozi izbrani TTS pogon
+   (`server/tts.py`: privzeto lokalni `piper`, `http` za lokalno storitev, kot je
+   Gepard ali Maya1, `command` za lokalni CLI na poved, ali `elevenlabs` za
+   oblak) nazaj do odjemalca kot 16 kHz PCM, medtem ko generiranje še teče.
+   Lokalni glasovi pri 22,05 kHz se pretakajoče prevzorčijo v procesu.
 
-## WebSocket protocol (voice clients)
+Zakaj Sessions API in ne `/v1/responses` ali `/v1/runs`: v Hermesu v0.16 so seje
+edina površina, ki v enem toku združuje imenovan trajni spomin, ID krogov,
+dogodke orodij in dogodke odobritev.
 
-Client → server (JSON + binary):
+## WebSocket protokol (glasovni odjemalci)
+
+Odjemalec → strežnik (JSON + binarno):
 
 ```
 {"type":"start","sample_rate":16000,"format":"pcm_s16le","channels":1,"conversation":"mia-main"?}
-<binary int16 PCM chunks>
+<binarni int16 PCM kosi>
 {"type":"stop"}
 {"type":"stop_run"}
 {"type":"approval_decision","run_id":...,"approval_id":...,"decision":"allow"|"deny"}
 ```
 
-`start` during an active turn = barge-in: the server cancels the turn, stops
-the Hermes run, records the last spoken sentence, and prefixes the next turn's
-input with an interruption note so the agent's memory matches what you heard.
+`start` med aktivnim krogom = prekinitev: strežnik prekliče krog, ustavi Hermesov
+krog, zabeleži zadnjo izgovorjeno poved in naslednjemu vnosu doda opombo o
+prekinitvi, da se agentov spomin ujema s tem, kar si slišal.
 
-Server → client:
+Strežnik → odjemalec:
 
 ```
 status · partial_transcript · transcript · run_started{run_id}
 agent_status{state: thinking|tool_use(+tool,preview)|speaking|stopped}
 approval_request{data,run_id} · error · done{timing}
-<binary TTS PCM — frames split at arbitrary byte boundaries; buffer odd bytes>
+<binarni TTS PCM — kosi se režejo na poljubnih bajtnih mejah; shrani neparni bajt>
 ```
 
-## HTTP endpoints (voice server)
+## HTTP končne točke (glasovni strežnik)
 
-| Endpoint | Purpose |
+| Končna točka | Namen |
 |---|---|
-| `/hud/` | the HUD (static, single file) |
-| `/api/hermes/{path}` | **allowlist** proxy to Hermes API, injects the bearer key (GET: health, capabilities, skills, toolsets, jobs, sessions; POST: v1/responses only) |
-| `/api/chat` | typed chat turn on the shared voice session |
-| `/api/machines` | host psutil stats + remote workers from config |
-| `/api/usage` | local token/char tally; ElevenLabs quota only when TTS is cloud-based |
-| `/api/hud-config` | HUD switches: `allow_external_media`, reply `language`, `tts_provider` |
-| `/api/summon` | broadcasts a holographic media panel (`{media, src, title, position}` or `{action:"dismiss"}`) to every connected HUD over its WebSocket — this is what the bundled `hud_display` Hermes plugin calls |
-| port 9443 (separate app) | TLS reverse proxy of the Hermes dashboard with WebSocket bridge and frame-header stripping, so the HTTPS HUD can iframe it |
+| `/hud/` | HUD (statičen, ena datoteka) |
+| `/api/hermes/{path}` | **allowlist** proxy do Hermes API, vstavi bearer ključ (GET: health, capabilities, skills, toolsets, jobs, sessions; POST: samo v1/responses) |
+| `/api/chat` | tipkani krog klepeta v skupni glasovni seji |
+| `/api/machines` | psutil statistika gostitelja + oddaljeni delavci iz konfiguracije |
+| `/api/usage` | lokalno štetje žetonov/znakov; kvota ElevenLabs le, kadar je TTS v oblaku |
+| `/api/hud-config` | stikala HUD-a: `allow_external_media`, jezik odgovorov, `tts_provider` |
+| `/api/summon` | razglasi holografski medijski panel (`{media, src, title, position}` ali `{action:"dismiss"}`) vsem povezanim HUD-om prek WebSocketa — to kliče priloženi Hermes vtičnik `hud_display` |
+| vrata 9443 (ločena aplikacija) | TLS povratni proxy Hermesove nadzorne plošče z WebSocket mostom in odstranjevanjem glav, da jo HTTPS HUD lahko vgradi v iframe |
 
-## Auth model
+## Model avtentikacije
 
-`MIA_HUD_TOKEN` (env) gates `/api/*`, the dashboard proxy, and
-browser-originated WebSockets (Origin allowlist + cookie). Native clients (the
-PTT client, test scripts) send no Origin header and are exempt — the
-threat model is a malicious *website* doing cross-origin requests against your
-LAN, not your own processes. The Hermes API key never reaches any browser.
+`MIA_HUD_TOKEN` (okoljska spremenljivka) varuje `/api/*`, proxy do plošče in
+WebSockete iz brskalnika (allowlist izvorov + piškotek). Domorodni odjemalci
+(PTT odjemalec, testne skripte) ne pošiljajo glave Origin in so izvzeti — model
+grožnje je zlonamerno *spletno mesto*, ki dela medizvorne zahteve v tvoj LAN, ne
+tvoji lastni procesi. Hermesov API ključ nikoli ne doseže brskalnika.
 
-## Latency profile (Apple Silicon, local Whisper + Piper)
+## Profil zakasnitve (Apple Silicon, lokalni Whisper + Piper)
 
-STT finalize ~0.7 s · Hermes first token 1–3 s (more with tools) · first
-audible audio ~3 s · total simple turn ~4 s. The biggest lever is the LLM
-behind Hermes; the second is the Whisper model size.
+STT zaključek ~0,7 s · prvi žeton Hermesa 1–3 s (več z orodji) · prvi slišni zvok
+~3 s · cel enostaven krog ~4 s. Največji vzvod je LLM za Hermesom; drugi je
+velikost Whisper modela.
 
-## Gotchas encoded in this repo (learned the hard way)
+## Podrobnosti, zakodirane v tem repozitoriju (naučene na težji način)
 
-1. **SSE charset**: Hermes' event stream has no charset header; Python
-   `requests` then decodes as Latin-1 → mojibake. The client forces UTF-8.
-2. **macOS port 443**: non-root binds only work on the wildcard address
-   (`0.0.0.0`), not a specific IP.
-3. **launchd + external drives**: see launchd/*.plist comments (TCC hang on
-   `getcwd`, EX_CONFIG from external log paths, venv-python invocation).
-4. **Browser mic**: requires a secure context — hence the self-signed TLS and
-   the per-device cert trust.
-5. **ElevenLabs frames** arrive at arbitrary byte boundaries; decode only
-   complete int16 pairs and carry the leftover byte.
-6. **Near-silent audio** makes faster-whisper raise ("No clip timestamps
-   found") — both STT paths treat any transcription exception as an empty
-   transcript rather than failing the turn.
-7. **Windows venv + NVIDIA pip wheels**: locate the cuBLAS/cuDNN DLLs via
-   `sys.prefix` (`site.getsitepackages()` misses the venv) and
-   `os.add_dll_directory` them before importing ctranslate2.
-8. **Startup**: listeners open immediately; the local Whisper fallback warms
-   in the background, exactly once and race-locked (the startup hook fires
-   once per uvicorn listener — concurrent recorder inits crash lifespans).
-9. **FD limits**: launchd grants 256 file descriptors by default and the
-   server idles at ~244 — set NumberOfFiles=8192 in the plist (shipped) and
-   close streaming responses in `finally` (done) or it dies within hours.
-10. **Orphaned STT children steal ports**: the recorder's child process has a
-    cmdline without "server.py", survives naive pkills, and can inherit the
-    listen socket — the next spawn then fails its first bind and uvicorn's
-    SystemExit cancels ALL listeners. Stop by PORT ownership
-    (`lsof -ti tcp:PORT -sTCP:LISTEN | xargs kill -9`) — shipped in
+1. **Pisava SSE**: Hermesov tok dogodkov nima glave charset; Python `requests`
+   bi nato dekodiral kot Latin-1 → mojibake. Odjemalec vsili UTF-8.
+2. **Vrata 443 na macOS**: neprivilegirani bind deluje le na wildcard naslovu
+   (`0.0.0.0`), ne na določenem IP-ju.
+3. **launchd + zunanji diski**: glej komentarje v `launchd/*.plist` (TCC zastoj
+   na `getcwd`, `EX_CONFIG` pri zunanjih poteh do logov, zagon prek venv
+   python-a).
+4. **Mikrofon v brskalniku**: zahteva varen kontekst — zato self-signed TLS in
+   zaupanje certifikata na vsaki napravi.
+5. **Kosi ElevenLabs** prihajajo na poljubnih bajtnih mejah; dekodiraj le
+   popolne pare int16 in shrani preostali bajt.
+6. **Skoraj tih zvok** povzroči, da faster-whisper vrže izjemo (»No clip
+   timestamps found«) — oba STT poti vsako izjemo pri prepisu obravnavata kot
+   prazen prepis, ne kot neuspešen krog.
+7. **Windows venv + NVIDIA pip kolesa**: cuBLAS/cuDNN DLL-je poišči prek
+   `sys.prefix` (`site.getsitepackages()` zgreši venv) in jih dodaj z
+   `os.add_dll_directory`, preden uvoziš ctranslate2.
+8. **Zagon**: poslušalci se odprejo takoj; lokalni Whisper se ogreva v ozadju,
+   natanko enkrat in z zaklepom (startup kavelj se sproži enkrat na uvicorn
+   poslušalca — sočasne inicializacije snemalnika sesujejo življenjske dobe).
+9. **Omejitve FD**: launchd privzeto dovoli 256 datotečnih opisnikov, strežnik
+   pa v mirovanju drži ~244 — nastavi `NumberOfFiles=8192` v plistu (priloženo)
+   in zapri pretočne odgovore v `finally` (narejeno), sicer umre v nekaj urah.
+10. **Osiroteli STT otroci ukradejo vrata**: podproces snemalnika ima ukazno
+    vrstico brez »server.py«, preživi naivne `pkill` in lahko podeduje
+    poslušalni socket — naslednji zagon zato prvi bind zgreši in uvicornov
+    `SystemExit` prekliče VSE poslušalce. Ustavljaj po lastništvu vrat
+    (`lsof -ti tcp:PORT -sTCP:LISTEN | xargs kill -9`) — priloženo v
     `scripts/mia-stop.sh`.
-11. **Agent tool-choice**: SOUL.md prose cannot redirect the model away from
-    attractive built-in tools (it kept "showing" videos in its own invisible
-    browser); a first-class plugin tool with an explicit schema wins
-    instantly. Hence `hermes-plugin/hud_display`.
+11. **Izbira orodja pri agentu**: proza v SOUL.md ne odvrne modela od privlačnih
+    vgrajenih orodij (video je kar naprej »kazal« v svojem nevidnem brskalniku);
+    orodje prvega reda z eksplicitno shemo zmaga takoj. Zato
+    `hermes-plugin/hud_display`.

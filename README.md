@@ -1,225 +1,223 @@
-# MIA — Voice + HUD for Hermes Agent
+# MIA — glas in HUD za Hermes Agent
 
-A self-hosted, Iron-Man-style voice assistant and command center built on top of
-[Hermes Agent](https://github.com/NousResearch/hermes-agent) (NousResearch's
-open-source autonomous agent). Talk to a *real* agent — one with persistent
-memory, terminal access, web search, file tools, and 80+ skills — through a
-glowing arc-reactor HUD in any browser on your LAN, or a push-to-talk client.
+Samostojni glasovni asistent in nadzorni center v stilu Iron Mana, zgrajen na
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) (odprtokodni
+avtonomni agent podjetja NousResearch). Z *resničnim* agentom se pogovarjaš —
+tistim s trajnim spominom, dostopom do terminala, iskanjem po spletu, orodji za
+datoteke in 80+ veščinami — prek žarečega HUD-a v katerem koli brskalniku v
+tvojem LAN-u ali prek odjemalca za pogovor s pritiskom na tipko.
 
-**Everything runs on your own hardware.** By default nothing leaves the
-machine: Whisper for speech-to-text, a local Piper voice for speech, and your
-own model behind Hermes. Cloud LLMs and ElevenLabs remain optional — the
-offline setup needs no API keys at all.
+**Vse teče na tvoji strojni opremi.** Privzeto nič ne zapusti naprave: Whisper
+za pretvorbo govora v besedilo, lokalni Piper glas za govor in tvoj model za
+Hermesom. Oblačni LLM-ji in ElevenLabs ostajajo opcijski — za nastavitev brez
+oblaka ne potrebuješ nobenega ključa.
 
-## Demo
+> English documentation: [README.en.md](README.en.md) · [docs/en/](docs/en/)
 
-The original upstream project ([eadmin2/jarvis_ai](https://github.com/eadmin2/jarvis_ai))
-has a demo video; this fork runs with a local voice engine and a Slovenian UI,
-so its look and sound differ.
+## Predstavitev
 
-## What it does
+Izvirni projekt ([eadmin2/jarvis_ai](https://github.com/eadmin2/jarvis_ai)) ima
+predstavitveni video; ta različica teče z lokalnim glasovnim pogonom in
+slovenskim vmesnikom, zato sta videz in zvok drugačna.
 
+## Kaj dela
 
-Click the ring and speak. Your words transcribe **live on screen** while you
-talk. The transcript goes to Hermes Agent, which actually *does things* — reads
-and writes files, runs commands, searches the web, remembers you across
-sessions — and the reply streams back as speech, sentence by sentence, while
-the rest is still being generated. Typical round trip: 3–5 seconds.
+Klikni obroč in govori. Besede se **sproti prepisujejo na zaslon**, medtem ko
+govoriš. Prepis gre do Hermesa, ki *res nekaj naredi* — bere in piše datoteke,
+izvaja ukaze, išče po spletu, si te zapomni med sejami — odgovor pa se vrača kot
+govor, poved za povedjo, medtem ko se preostanek še generira. Običajen krog:
+3–5 sekund.
 
-The HUD around the ring is a real control center:
+HUD okoli obroča je pravi nadzorni center:
 
-- **Live agent activity** — watch tool calls happen with command previews
-- **STOP button** — halt a runaway agent turn mid-tool-call (Esc works too)
-- **Approval cards** — dangerous commands pause for your ALLOW/DENY
-- **Interrupt-aware barge-in** — cut it off mid-sentence; it knows exactly
-  what you heard and what you didn't
-- **Embedded dashboards** — Hermes' kanban board and session browser pop up
-  in animated viewers, fully interactive
-- **Holographic media panels** — say *"show me a video of how arc reactors
-  work, on screen"* and a panel swoops in from Z-depth, traces its frame,
-  materializes through a scanline, and plays the video. The agent drives it
-  through a bundled Hermes plugin (`hud_display`); panels can fly into
-  left/right thirds, and "clear the screen" sweeps them away
-- **Usage tracking** — tokens/day, turns, ElevenLabs quota bar
-- **Machines panel** — live CPU/GPU stats for the host and remote workers
-- **Cinematic boot** — press `B`: panels flicker in, ring spins up,
-  "Systems online. Good morning."
-- **Privacy filter** — secret-shaped strings are redacted before any text
-  reaches cloud TTS
-- **Optional GPU ears** — point it at any NVIDIA machine on your LAN running
-  the included sidecar and transcription jumps to `large-v3-turbo` at ~0.2 s,
-  with automatic fallback to local Whisper when that machine is off
-- **Mobile-ready** — responsive layout + Add to Home Screen = full-screen
-  Mia app on your phone
+- **Aktivnost agenta v živo** — vidiš klice orodij s predogledi ukazov
+- **Gumb STOP** — ustavi ušel krog agenta sredi klica orodja (deluje tudi Esc)
+- **Kartice za odobritev** — nevarne ukaze agent ustavi in počaka na DOVOLI/ZAVRNI
+- **Prekinjanje med govorom (barge-in)** — prekini ga sredi povedi; ve natančno,
+  kaj si slišal in česa ne
+- **Vgrajene nadzorne plošče** — Hermesov kanban in brskalnik sej se odpreta v
+  animiranih pogledih in sta polno interaktivna
+- **Holografski medijski paneli** — reci *»pokaži mi video o tem, kako delujejo
+  ark reaktorji, na zaslonu«* in panel prileti iz globine, izriše okvir, se
+  materializira skozi skenirno linijo in predvaja video. Agent to sproži prek
+  priloženega Hermes vtičnika (`hud_display`); paneli lahko pristanejo levo/desno,
+  »počisti zaslon« pa jih pomete stran
+- **Sledenje porabi** — žetoni/dan, izmenjave, vrstica kvote ElevenLabs (če je
+  TTS v oblaku)
+- **Panel Stroji** — statistika CPU/GPU za gostitelja in oddaljene delavce
+- **Kinematični zagon** — pritisni `B`: paneli utripnejo, obroč se zavrti,
+  »Sistemi so na voljo. Dobro jutro.«
+- **Filter zasebnosti** — nizi, ki izgledajo kot skrivnosti, se prekrijejo, preden
+  besedilo doseže oblačni TTS
+- **Opcijska GPU ušesa** — usmeri jo na kateri koli NVIDIA stroj v LAN-u s
+  priloženim sidecarjem in prepis skoči na `large-v3-turbo` pri ~0,2 s, z
+  samodejnim preklopom na lokalni Whisper, ko je ta stroj ugasnjen
+- **Za mobilne naprave** — odzivna postavitev + »Dodaj na začetni zaslon« = Mia
+  kot aplikacija čez cel zaslon
 
-## Architecture
+## Arhitektura
 
 ```
- Browser HUD (any LAN device)          Host machine (tested on macOS / Apple Silicon)
+ HUD v brskalniku (katera koli naprava v LAN-u)   Gostitelj (testirano: macOS / Apple Silicon)
  ── https/wss :443 ──────────┐   ┌──────────────────────────────────────┐
-   mic · speaker · panels    ├──►│ voice pipeline server (this repo)    │
-                             │   │  STT: faster-whisper (local, free)   │   ┌─────────────────┐
- Push-to-talk client         │   │  TTS: ElevenLabs Flash (streaming)   ├──►│ Hermes Agent     │
- ── ws :8765 ────────────────┘   │  HUD + auth + dashboard TLS proxy    │   │  API :8642 (lo)  │
-                                 └──────────────────────────────────────┘   │  memory · tools  │
-                                                                             │  skills · cron   │
+   mikrofon · zvočnik · panel├──►│ strežnik glasovnega cevovoda (ta repo)│
+                             │   │  STT: faster-whisper (lokalno)       │   ┌─────────────────┐
+ Odjemalec za pritisk na tipko│  │  TTS: lokalni Piper (ali Gepard/Maya1)├──►│ Hermes Agent    │
+ ── ws :8765 ────────────────┘   │  HUD + avtentikacija + TLS proxy     │   │  API :8642 (lo) │
+                                 └──────────────────────────────────────┘   │  spomin · orodja│
+                                                                             │  veščine · cron │
                                                                              └─────────────────┘
 ```
 
-One brain, many faces: voice and typed chat share a single persistent Hermes
-session, so each knows what you said to the other — and memory survives every
-restart.
+Eni možgani, več obrazov: glas in tipkani klepet si delita eno trajno Hermes
+sejo, zato vsak ve, kaj si rekel drugemu — in spomin preživi vsak ponovni zagon.
 
-## Quick start (one command)
-
-```bash
-git clone https://github.com/DanijelTech/Mia.git && cd Mia && sudo ./install.sh --yes --open
-```
-
-That single line clones the repo, installs the Python packages into the system
-interpreter (no virtualenv), downloads the Slovenian voice, generates the TLS
-certificate, adds `MIA_HUD_TOKEN` to `~/.hermes/.env`, writes and starts the
-systemd unit, then opens the HUD in your browser **already logged in**
-(`?token=` is converted to a cookie and stripped from the URL).
-
-Without root, drop `sudo` — it installs into `pip --user` and `systemctl --user`.
-Variants:
+## Hiter začetek (en ukaz)
 
 ```bash
-sudo ./install.sh --yes --open --with-maya1   # best Slovenian pronunciation
-sudo ./install.sh --yes --open --with-gepard  # lighter GPU voice
-./install.sh --dry-run                        # see everything first
+git clone https://github.com/DanijelTech/Mia.git && cd Mia && ./install.sh --yes --open
 ```
 
-Afterwards, start/open again at any time with:
+Ta vrstica klonira repo, namesti pakete v sistemski Python (brez venv), prenese
+slovenski glas, ustvari TLS certifikat, doda `MIA_HUD_TOKEN` v `~/.hermes/.env`,
+napiše in zažene systemd enoto ter odpre HUD v brskalniku **že prijavljen**
+(`?token=` se pretvori v piškotek in odstrani iz naslova).
+
+Če nisi root, dodaj `sudo` — namestitev gre v `pip --user` in `systemctl --user`.
+Različice:
 
 ```bash
-./start.sh                # start (if needed), wait, open the HUD
-./start.sh --no-open      # just start and print URL + token
+./install.sh --yes --open --with-maya1   # najboljša slovenska izgovorjava
+./install.sh --yes --open --with-gepard  # lažji glasovni model za GPU
+./install.sh --dry-run                   # najprej poglej, kaj bi naredil
 ```
 
-The certificate is self-signed, so the browser asks once — accept it.
+Pozneje kadar koli zaženi/odpri znova:
 
-## Requirements
+```bash
+./start.sh                # zaženi (če je treba), počakaj, odpri HUD
+./start.sh --no-open      # samo zaženi in izpiši URL + žeton
+```
 
-- A machine for the server (tested: Mac mini, Apple Silicon). Linux should
-  work with minor changes (launchd → systemd).
-- [Hermes Agent](https://hermes-agent.nousresearch.com/docs/) installed and
-  configured with an LLM provider
+Certifikat je self-signed, zato brskalnik enkrat vpraša — sprejmi.
+
+## Zahteve
+
+- Stroj za strežnik (testirano: Mac mini, Apple Silicon; Linux deluje s
+  prilagoditvami, systemd namesto launchd)
+- [Hermes Agent](https://hermes-agent.nousresearch.com/docs/) nameščen in
+  nastavljen z ponudnikom LLM
 - Python 3.11+
-- TTS: local **Piper** (default, no key, fully offline), the more natural
-  **Gepard** service, the **Maya1** service (best Slovenian pronunciation), or an
-  [ElevenLabs](https://elevenlabs.io) API key for cloud voices — the two local
-  services fall back to CPU/RAM when the GPU is busy
-- Any modern browser on the LAN
+- TTS: lokalni **Piper** (privzeto, brez ključa, popolnoma offline), naravnejši
+  **Gepard**, **Maya1** (najboljša slovenska izgovorjava) ali
+  [ElevenLabs](https://elevenlabs.io) ključ za oblačne glasove — lokalna
+  servisa se ob zasedenem GPU samodejno preklopita na CPU/RAM
+- Kateri koli sodoben brskalnik v LAN-u
 
-## Install
+## Namestitev
 
-One command, no virtualenv (installs into the system Python, which is how a
-root Hermes install runs anyway):
+En ukaz, brez venv (namesti se v sistemski Python, tako kot teče Hermes kot root):
 
 ```bash
-sudo ./install.sh                  # system-wide (root): deps, voice, cert, token, systemd
-./install.sh --dry-run             # show every action first
-sudo ./install.sh --with-gepard    # + optional Gepard TTS service
-sudo ./install.sh --with-maya1     #   or Maya1 (best SL pronunciation)
+./install.sh                       # sistemsko (root): odvisnosti, glas, cert, žeton, systemd
+./install.sh --dry-run             # najprej pokaži vse korake
+./install.sh --with-gepard         # + opcijska Gepard TTS storitev
+./install.sh --with-maya1          #   ali Maya1 (najboljša izgovorjava)
 ```
 
-It records everything it creates in a manifest, so removal is exact:
+Vse, kar ustvari, zapiše v manifest, zato je odstranitev natančna:
 
 ```bash
-sudo ./uninstall.sh --dry-run      # preview
-sudo ./uninstall.sh                # stop services, remove units, certs, voices, token line
-sudo ./uninstall.sh --purge-deps   # ...and pip-uninstall the packages it added
+./uninstall.sh --dry-run      # predogled
+./uninstall.sh                # ustavi storitve, odstrani enote, certifikate, glasove, vrstico z žetonom
+./uninstall.sh --purge-deps   # ...in pip-odstrani nameščene pakete
 ```
 
-Offline machine? `./build-package.sh` produces a tarball (installer included,
-no voices) that you can copy over and run with `./install.sh`.
+Za stroj brez interneta: `./build-package.sh` naredi arhiv (z namestitvenimi
+skripti, brez glasov), ki ga preneseš in zaženeš z `./install.sh`.
 
-Manual walkthrough (and what the installer automates) is in
-[docs/SETUP.md](docs/SETUP.md). Short version without the installer:
+Ročni postopek (in kaj namestitvenik avtomatizira) je v
+[docs/SETUP.md](docs/SETUP.md). Kratka različica brez namestitvenika:
 
 ```bash
-# 1. Enable the Hermes Agent API server
+# 1. Vključi API strežnik Hermesa
 cat >> ~/.hermes/.env <<EOF
 API_SERVER_ENABLED=true
 API_SERVER_KEY=$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')
 MIA_HUD_TOKEN=$(python3 -c 'import secrets;print("mia-"+secrets.token_hex(3))')
-ELEVENLABS_API_KEY=your-key-here
 EOF
-hermes gateway   # or set up its LaunchAgent / service
+hermes gateway   # ali nastavi njegov LaunchAgent / storitev
 
-# 2. This repo
-git clone https://github.com/YOURNAME/mia-hermes-hud
-cd mia-hermes-hud/server
-python3 -m venv .venv
-.venv/bin/pip install fastapi uvicorn requests pyyaml numpy anthropic \
+# 2. Ta repo
+git clone https://github.com/DanijelTech/Mia.git
+cd Mia/server
+pip install fastapi uvicorn requests pyyaml numpy \
     RealtimeSTT faster-whisper silero-vad websockets psutil
-cp config/server.example.yaml config/server.yaml   # edit: your ElevenLabs voice_id etc.
-scripts/make-certs.sh                              # self-signed TLS (browser mic needs it)
-scripts/make-boot-audio.sh YourName                # one-time boot greeting synthesis
+cp config/server.example.yaml config/server.yaml
+scripts/make-certs.sh          # self-signed TLS (brskalnik za mikrofon potrebuje HTTPS)
+scripts/get-voice.sh sl        # slovenski glas (63 MB)
 
-# 3. Local voice (offline, Slovenian/Serbian) — skip if using ElevenLabs
-.venv/bin/pip install piper-tts
-scripts/get-voice.sh sl
-
-# 4. Run
-.venv/bin/python server.py
-# open https://YOUR_HOST/hud/ → accept cert → enter your MIA_HUD_TOKEN → talk
+# 3. Zaženi
+python3 server.py
+# odpri https://TVOJ_HOST/hud/ → sprejmi certifikat → vnesi MIA_HUD_TOKEN
 ```
 
-Offline voice stack (Piper + local Whisper + local LLM, no cloud calls) is
-documented in [docs/SETUP.md](docs/SETUP.md#2-the-voice-local-piper-offline-or-elevenlabs-cloud).
+Za samodejni zagon ob bootu glej [launchd/](launchd/) (macOS) oz. systemd enote,
+ki jih ustvari `install.sh` — komentarji v plistih opisujejo dve neočitni pasti
+macOS-a (TCC pri zunanjih diskih in poti do logov).
 
-For auto-start on boot, see [launchd/](launchd/) (macOS) — the plists document
-two non-obvious macOS traps (external-drive TCC and log paths) that cost us an
-evening.
+## Uporaba
 
-## Usage
-
-| Action | How |
+| Dejanje | Kako |
 |---|---|
-| Talk | Click the ring (or Space) · speak · click again to send |
-| Stop the agent | red ■ STOP button or Esc |
-| Barge in | click the ring while it's speaking |
-| Typed chat | input bar at the bottom (same conversation as voice) |
-| Cinematic boot | press `B` |
-| Kanban / dashboards | VIEWS panel → animated pop-up viewers |
-| Phone | open the HUD → Add to Home Screen |
+| Pogovor | klikni obroč (ali preslednica) · govori · klikni znova za pošiljanje |
+| Ustavi agenta | rdeč gumb ■ USTAVI ali Esc |
+| Prekini med govorom | klikni obroč, medtem ko govori |
+| Tipkani klepet | vnosno polje na dnu (ista seja kot glas) |
+| Kinematični zagon | pritisni `B` |
+| Kanban / plošče | panel POGLEDI → animirani pogledi |
+| Telefon | odpri HUD → Dodaj na začetni zaslon |
 
-## Repo layout
+## Struktura repozitorija
 
 ```
-server/          FastAPI voice pipeline + HUD host (the core of this project)
-server/hud/      single-file HUD (vanilla JS, no build step)
-server/scripts/  start/stop/health/smoke + cert & boot-audio generators
-client/          optional Windows/Linux push-to-talk Python client (wake word capable)
-worker/          optional GPU sidecars: big-model STT server + stats agent for the Machines panel
-hermes-plugin/   Hermes tool plugin: lets the agent summon/dismiss HUD media panels
-launchd/         macOS auto-start templates with hard-won TCC + FD-limit notes
-docs/            SETUP, ARCHITECTURE (protocols/endpoints), TROUBLESHOOTING
+server/          FastAPI glasovni cevovod + gostitelj HUD-a (jedro projekta)
+server/hud/      HUD v eni datoteki (vanilla JS, brez gradnje)
+server/tts.py    lokalni TTS pogoni: piper, http (Gepard/Maya1), command, elevenlabs
+server/scripts/  mia-start/stop/health/smoke + generatorji certifikatov in boot zvoka
+client/          opcijski Windows/Linux odjemalec za pritisk na tipko (z zaznavo budnice)
+worker/          opcijska GPU sidecarja: STT strežnik z velikim modelom + statistika za panel Stroji
+hermes-plugin/   Hermes vtičnik: agent lahko prikliče/skrije medijske panele na HUD-u
+launchd/         predloge za samodejni zagon na macOS (s pripombami o TCC in FD limitih)
+docs/            slovenska dokumentacija: SETUP, ARCHITECTURE, TROUBLESHOOTING
+docs/en/         ista dokumentacija v angleščini
+install.sh       namestitev (brez venv, root ali uporabnik) + manifest
+start.sh         zagon, čakanje na strežnik in odpiranje HUD-a v brskalniku
+uninstall.sh     natančna odstranitev vsega, kar je namestil install.sh
+build-package.sh arhiv za namestitev na stroju brez interneta
 ```
 
-## Security model
+## Varnostni model
 
-- The Hermes API key never reaches the browser: the HUD talks through a
-  strict allowlist proxy on the voice server.
-- All HUD endpoints + dashboard proxy + browser WebSockets are gated by a
-  token (cookie, entered once per device).
-- Hermes' API binds to loopback only; the dashboard binds to loopback only.
-- Secret-shaped strings are redacted before text leaves for cloud TTS.
-- LAN-only by design — do not port-forward this to the internet.
+- Hermesov API ključ nikoli ne doseže brskalnika: HUD komunicira prek strogo
+  omejenega proxyja na glasovnem strežniku.
+- Vse HUD končne točke + proxy do plošče + brskalniški WebSocketi so zaščiteni z
+  žetonom (piškotek, vnesen enkrat na napravo; `start.sh` ga lahko vnese
+  samodejno prek `?token=`).
+- Hermesov API in plošča poslušata samo na loopbacku.
+- Nizi, ki izgledajo kot skrivnosti, se prekrijejo, preden gredo v oblačni TTS.
+- Zasnovano za LAN — tega ne odpiraj na internet.
 
-## Credits & license
+## Zasluge in licenca
 
-Built on [Hermes Agent](https://github.com/NousResearch/hermes-agent) by Nous
-Research. HUD aesthetics inspired by
+Zgrajeno na [Hermes Agent](https://github.com/NousResearch/hermes-agent) (Nous
+Research). Estetika HUD-a navdihnjena po
 [jarvis-dashboard](https://github.com/AndrewKochulab/jarvis-dashboard).
-STT by [faster-whisper](https://github.com/SYSTRAN/faster-whisper) /
-[RealtimeSTT](https://github.com/KoljaB/RealtimeSTT). Voice by
-[ElevenLabs](https://elevenlabs.io).
+STT: [faster-whisper](https://github.com/SYSTRAN/faster-whisper) /
+[RealtimeSTT](https://github.com/KoljaB/RealtimeSTT). Glas: Piper, opcijsko
+Gepard / Maya1 (MediaAtlas), opcijsko [ElevenLabs](https://elevenlabs.io).
 
-Originally derived from [eadmin2/jarvis_ai](https://github.com/eadmin2/jarvis_ai)
-(MIT, © Chris Lassiter); rebranded and extended for local Slovenian/Serbian voice.
+Izvirno izpeljano iz [eadmin2/jarvis_ai](https://github.com/eadmin2/jarvis_ai)
+(MIT, © Chris Lassiter); preimenovano in razširjeno za lokalni slovenski/srbski glas.
 
-MIT — see [LICENSE](LICENSE). Use it, fork it, build your own Mia.
+MIT — glej [LICENSE](LICENSE). Uporabi, razveji, zgradi svojo Mio.

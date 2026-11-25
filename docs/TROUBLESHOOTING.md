@@ -1,83 +1,99 @@
-# Troubleshooting
+# Odpravljanje težav
 
-> Renamed from `jarvis_ai`: the server still accepts the old `JARVIS_HUD_TOKEN` env var, the `jarvis_token` cookie and `X-Jarvis-Token` header, so an upgrade cannot silently disable auth.
+> Angleška različica: [docs/en/TROUBLESHOOTING.md](en/TROUBLESHOOTING.md)
 
+> Preimenovano iz `jarvis_ai`: strežnik še vedno sprejme staro okoljsko
+> spremenljivko `JARVIS_HUD_TOKEN`, piškotek `jarvis_token` in glavo
+> `X-Jarvis-Token`, zato nadgradnja ne more tiho izklopiti avtentikacije.
 
-**HUD loads but mic is blocked** — you're on plain http or an untrusted cert.
-Browsers require a secure context for `getUserMedia`. Trust `certs/cert.pem`
-on the device (see SETUP §3) and use `https://`.
+**HUD se naloži, mikrofon pa je blokiran** — si na navadnem http ali na
+certifikatu, ki mu brskalnik ne zaupa. Brskalniki zahtevajo varen kontekst za
+`getUserMedia`. Zaupaj `certs/cert.pem` na napravi (glej SETUP §3) in uporabi
+`https://`.
 
-**First connection after server start times out** — the Whisper model warms at
-startup (~40 s). `scripts/mia-health.sh` until all rows are OK.
+**Prva povezava po zagonu strežnika poteče** — Whisper se ob zagonu ogreva
+(~40 s). `scripts/mia-health.sh`, dokler niso vse vrstice OK.
 
-**"Agent backend offline. Running in basic mode."** — the Hermes API server
-isn't reachable. Check `API_SERVER_ENABLED/KEY` in `~/.hermes/.env` and that
-`hermes gateway` is running; verify with `curl -H "Authorization: Bearer $KEY"
+**»Agent backend offline. Running in basic mode.«** — Hermesov API strežnik ni
+dosegljiv. Preveri `API_SERVER_ENABLED/KEY` v `~/.hermes/.env` in da teče
+`hermes gateway`; preveri s `curl -H "Authorization: Bearer $KEY"
 http://127.0.0.1:8642/health`.
 
-**Transcripts are wrong/garbled words** — make sure you're on the current HUD
-(hard refresh): mic must capture at 16 kHz natively. Upgrading `stt.model` to
-`small.en` helps. Loud rooms: get closer to the mic; echo cancellation is on.
+**Prepis je napačen / besede so zmešane** — poskrbi, da si na aktualnem HUD-u
+(trda osvežitev): mikrofon mora zajemati pri 16 kHz. Pomaga tudi večji model
+(`stt.model`). V hrupnih prostorih se približaj mikrofonu; dušenje odmeva je
+vklopljeno.
 
-**Replies show â€™ / â€œ style garbage** — you're running an old server.py;
-current code forces UTF-8 on the Hermes SSE stream.
+**V odgovorih se pojavlja â€™ / â€œ** — teče star `server.py`; aktualna koda vsili
+UTF-8 na Hermesovem SSE toku.
 
-**401 everywhere / ACCESS CODE loop** — the token you entered doesn't match
-`MIA_HUD_TOKEN` in `~/.hermes/.env`. Clear the `mia_token` cookie and
-retry; restart the voice server after changing the env var.
+**401 povsod / krog ACCESS CODE** — vneseni žeton se ne ujema z
+`MIA_HUD_TOKEN` v `~/.hermes/.env`. Počisti piškotek `mia_token` in poskusi
+znova; po spremembi spremenljivke znova zaženi glasovni strežnik.
 
-**LaunchAgent exits with EX_CONFIG** — your log paths point at an external
-volume. Keep `StandardOutPath`/`StandardErrorPath` on the internal disk.
+**LaunchAgent se konča z EX_CONFIG** — poti do logov kažejo na zunanji disk.
+`StandardOutPath`/`StandardErrorPath` naj bodo na internem disku.
 
-**LaunchAgent "running" but nothing listens, log empty** — TCC is blocking the
-process from your external drive: it hangs inside `getcwd()`/`open()`. Grant
-Full Disk Access to `Python.app` inside your Python framework (see the plist
-comments), and invoke the **venv** python directly — no `bash -c 'cd ...'`
-wrapper.
+**LaunchAgent je »running«, a nič ne posluša, log prazen** — TCC blokira proces
+z zunanjega diska: obvisi v `getcwd()`/`open()`. Podeli Full Disk Access
+`Python.app` v svojem Python frameworku (glej komentarje v plistu) in kliči
+**venv** python neposredno — brez ovoja `bash -c 'cd ...'`.
 
-**Port 443 "address already in use" or permission denied** — bind `0.0.0.0`
-(macOS only exempts wildcard binds for non-root low ports) and make sure a
-previous instance fully released the port before restarting.
+**Vrata 443 »address already in use« ali »permission denied«** — bind na
+`0.0.0.0` (macOS oprosti nizka vrata za neprivilegirane le pri wildcard bindu)
+in poskrbi, da je prejšnja instanca vrata v celoti sprostila.
 
-**ElevenLabs quota shows "chars today" instead of a quota bar** — give your
-API key the User → Read permission in the ElevenLabs dashboard.
+**Kvota ElevenLabs kaže »znakov danes« namesto vrstice kvote** — ključu dodeli
+pravico User → Read v nadzorni plošči ElevenLabs. (Pri lokalnem TTS je to
+pričakovano: kvote ni.)
 
-**Stop button says stopped but Hermes kept working briefly** — on Hermes
-v0.16, session runs aren't registered in the runs store (`/stop` 404s); the
-halt works by dropping the SSE stream. Newer Hermes builds may fix this.
+**Gumb za ustavitev javi »ustavljeno«, Hermes pa je še malo delal** — v Hermesu
+v0.16 seje niso registrirane v shrambi krogov (`/stop` vrne 404); ustavitev
+deluje tako, da spusti SSE tok. Novejši Hermes to lahko popravi.
 
-**"No clip timestamps found. Set 'vad_filter'..." error** — old build; current
-code treats silent/unintelligible audio as an empty transcript on both the
-local and GPU STT paths.
+**Napaka »No clip timestamps found. Set 'vad_filter'…«** — stara različica;
+aktualna koda tih/nerazumljiv zvok obravnava kot prazen prepis na obeh poteh
+(lokalni in GPU).
 
-**GPU STT: "Library cublas64_12.dll is not found"** — the NVIDIA pip wheels
-aren't on the DLL search path. Use the shipped `worker/stt_server.py` (it
-resolves them via `sys.prefix`) and install `nvidia-cublas-cu12
-nvidia-cudnn-cu12` into the same venv.
+**GPU STT: »Library cublas64_12.dll is not found«** — NVIDIA kolesa niso v
+iskalni poti DLL-jev. Uporabi priloženi `worker/stt_server.py` (reši jih prek
+`sys.prefix`) in v isti venv namesti `nvidia-cublas-cu12 nvidia-cudnn-cu12`.
 
-**HUD unreachable for ~15 s after a restart** — normal: launchd's respawn
-throttle. If it lasts longer, run `scripts/mia-health.sh` on the host.
+**HUD ni dosegljiv ~15 s po ponovnem zagonu** — normalno: omejevanje ponovnih
+zagonov pri launchd. Če traja dlje, na gostitelju poženi `scripts/mia-health.sh`.
 
-**HTTPS dead but the plain ws port still answers** — two known causes, both
-fixed in current files but worth knowing: (1) file-descriptor exhaustion
-(launchd default is 256; the shipped plist raises it to 8192), and (2) an
-orphaned STT child process holding a port from a previous run, which makes the
-next spawn fail its first bind and silently cancel all the TLS listeners. Use
-`scripts/mia-stop.sh` — it kills by port ownership — never a bare pkill.
+**HTTPS mrtev, navadna ws vrata pa še odgovarjajo** — dva znana vzroka, oba
+popravljena v aktualnih datotekah, a ju je dobro poznati: (1) izčrpani
+datotečni opisniki (launchd privzeto 256; priloženi plist dvigne na 8192) in
+(2) osirotel STT podproces, ki drži vrata prejšnjega zagona — naslednji zagon
+zato zgreši prvi bind in tiho prekliče vse TLS poslušalce. Uporabi
+`scripts/mia-stop.sh` — ubija po lastništvu vrat — nikoli goli `pkill`.
 
-**Slow page loads from Windows (10s+), instant by IP** — Windows mDNS is
-flaky with `.local` names. Add a hosts-file entry (admin):
-`<server-ip> mia.local mia` (give the server a DHCP reservation first).
+**Počasno nalaganje strani iz Windows (10 s+), po IP takojšnje** — Windowsov
+mDNS je nezanesljiv z imeni `.local`. Dodaj vrstico v hosts (admin):
+`<server-ip> mia.local mia` (najprej daj strežniku DHCP rezervacijo).
 
-**Agent replies are empty (content null, 0 input tokens)** — your LLM
-provider is out of quota/credits, not a bug here. Check the Hermes gateway
-log for 429/402 errors and configure a `fallback_providers` entry in Hermes'
-config.yaml.
+**Odgovori agenta so prazni (content null, 0 vhodnih žetonov)** — ponudnik LLM
+je brez kvote/dobropisa, ne napaka tukaj. Poglej v dnevnik Hermesovega gatewaya
+za 429/402 in v Hermesovem `config.yaml` nastavi `fallback_providers`.
 
-**Agent "shows" things in its own browser instead of the HUD** — install and
-enable the bundled `hermes-plugin/hud_display` (see SETUP). Prose
-instructions don't beat tool schemas; the plugin does.
+**Agent »kaže« stvari v svojem brskalniku namesto na HUD-u** — namesti in
+omogoči priloženi `hermes-plugin/hud_display` (glej SETUP). Prozna navodila ne
+premagajo shem orodij; vtičnik jih.
 
-**Phone can't reach mia.local** — some Android versions lack mDNS; use the
-raw IP (and add it to `security.extra_origin_hosts` in server.yaml so the
-WebSocket origin check accepts it).
+**Telefon ne doseže mia.local** — nekatere različice Androida ne poznajo mDNS;
+uporabi surov IP (in ga dodaj v `security.extra_origin_hosts` v `server.yaml`,
+da preverjanje izvora WebSocketa sprejme zahtevo).
+
+**`./start.sh` javi, da se je strežnik ustavil med zagonom** — izpiše zadnjih 20
+vrstic `server/logs/mia.out`. Najpogosteje manjkajoče odvisnosti
+(`pip install …`) ali zasedena vrata. Po odpravi: `./start.sh --no-start`.
+
+**Sistemske storitve se ne zaženejo (container/WSL)** — `install.sh` in
+`start.sh` zaznata, da systemd ne teče, in uporabita proces v ozadju
+(`server/logs/mia.pid`). V takem okolju systemd enote samo napišeta, ne
+aktivirata.
+
+**Žeton se je znašel v zgodovini brskalnika** — `?token=` se po prijavi odstrani
+iz naslova, a ostane v zgodovini. Če te to moti, uporabi
+`./start.sh --no-token-in-url` in žeton vpiši ročno.
