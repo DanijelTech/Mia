@@ -70,6 +70,29 @@ USAGE_PATH = ROOT / "logs" / "usage_stats.json"
 _USAGE_LOCK = threading.Lock()
 
 
+class BackendUnavailable(RuntimeError):
+    """Hermes gateway or its key is unusable; the message is user-friendly."""
+
+
+def friendly_error(exc: BaseException) -> str:
+    """One actionable sentence for the HUD; the full traceback stays in the log."""
+    base = ((CFG.get("hermes") or {}).get("base_url") or "http://127.0.0.1:8642")
+    text = str(exc) or exc.__class__.__name__
+    low = text.lower()
+    if ("connection refused" in low or "max retries exceeded" in low
+            or "failed to establish a new connection" in low
+            or isinstance(exc, requests.exceptions.ConnectionError)):
+        return (f"Hermesov gateway ni dosegljiv na {base} — zaženi `hermes gateway` "
+                f"(preveri tudi API_SERVER_ENABLED/KEY v ~/.hermes/.env).")
+    if "api key not found" in low:
+        return ("Mia ne vidi Hermesovega ključa — dodaj API_SERVER_KEY v ~/.hermes/.env "
+                "in znova zaženi Mio (systemctl --user restart mia-voice).")
+    if "401" in low:
+        return "Hermes je zavrnil ključ (401) — API_SERVER_KEY v ~/.hermes/.env se ne ujema."
+    first = text.strip().splitlines()[0]
+    return first[:300]
+
+
 def _today() -> str:
     return time.strftime("%Y-%m-%d")
 
@@ -455,7 +478,7 @@ class VoicePipelineServer:
                 print(f"Hermes unavailable ({type(exc).__name__}: {exc}); fallback={fb}", flush=True)
                 timing.errors.append(f"hermes_fallback: {exc}")
                 if not fb:
-                    raise
+                    raise BackendUnavailable(friendly_error(exc)) from exc
                 yield ("text", "Agent backend offline. Running in basic mode. ")
                 provider = fb
             else:
@@ -587,6 +610,17 @@ class VoicePipelineServer:
             if tail:
                 conn.spoken_sentences.append(tail)
                 await self._send_tts_sentence(ws, tail, timing)
+        except BackendUnavailable:
+            # nothing was said yet: tell the user out loud instead of staying mute
+            if not spoken and not conn.spoken_sentences:
+                notice = ((self.cfg.get("hermes") or {}).get("unreachable_text")
+                          or "Hermesov gateway ni dosegljiv. Zaženi hermes gateway in poskusi znova.")
+                await ws.send_json({"type": "agent_status", "state": "speaking"})
+                try:
+                    await self._send_tts_sentence(ws, notice, timing)
+                except Exception as tts_exc:
+                    print(f"could not speak the unreachable notice: {tts_exc}", flush=True)
+            raise
         finally:
             if not forward_task.done():
                 forward_task.cancel()
@@ -857,7 +891,8 @@ async def hud_chat(request: Request) -> JSONResponse:
         await asyncio.to_thread(run_sync)
         return JSONResponse(out)
     except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=502)
+        print(f"hud_chat failed: {type(exc).__name__}: {exc}", flush=True)
+        return JSONResponse({"error": friendly_error(exc)}, status_code=502)
 
 
 _ELEVEN_CACHE: dict = {"ts": 0.0, "data": None}

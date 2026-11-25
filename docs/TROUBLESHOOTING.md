@@ -113,6 +113,18 @@ vrstic `server/logs/mia.out`. Najpogosteje manjkajoče odvisnosti
 (`server/logs/mia.pid`). V takem okolju systemd enote samo napišeta, ne
 aktivirata.
 
+**V HUD-u se pojavi `HTTPConnectionPool(... port=8642): Connection refused` / Mia
+reče »Hermesov gateway ni dosegljiv«** — Hermesov gateway ne teče (pogosto zato,
+ker je bil zagnan v terminalu, ki si ga zaprl). Zaženi ga trajno:
+
+```bash
+systemctl --user enable --now hermes-gateway     # če imaš enoto (glej SETUP §1)
+# ali začasno:
+nohup hermes gateway >> ~/.hermes/gateway.log 2>&1 &
+```
+
+Preveri: `curl -s -H "Authorization: Bearer $(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)" http://127.0.0.1:8642/health`
+
 **HUD javi »glasovni strežnik ni dosegljiv« / »povezava zavrnjena (4401)«** —
 brskalnik je spletni priključek (`/ws`) odprl z izvorom, ki ni bil na seznamu.
 Pri odpiranju po LAN IP (`https://192.168.1.10:8766/hud/`) je izvor

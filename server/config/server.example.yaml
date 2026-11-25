@@ -23,6 +23,7 @@ hermes:
   ack_texts: ["Takoj.", "Še delam.", "Skoraj."]
   fallback_provider: ""              # "" = offline: never fall back to a cloud LLM
   language_directive: "Odgovarjaj izključno v slovenščini, v kratkih govorjenih povedih."
+  unreachable_text: "Hermesov gateway ni dosegljiv. Zaženi hermes gateway in poskusi znova."
   # ^ Prepended to every turn sent to Hermes. Hermes' own system prompt is the
   #   better place for persona rules; this line guarantees the reply language.
 

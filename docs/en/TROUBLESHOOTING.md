@@ -5,6 +5,18 @@
 > Renamed from `jarvis_ai`: the server still accepts the old `JARVIS_HUD_TOKEN` env var, the `jarvis_token` cookie and `X-Jarvis-Token` header, so an upgrade cannot silently disable auth.
 
 
+**HUD shows `HTTPConnectionPool(... port=8642): Connection refused` / Mia says
+"Hermes gateway unreachable"** — the Hermes gateway is not running (often because
+it was started in a terminal that got closed). Run it persistently:
+
+```bash
+systemctl --user enable --now hermes-gateway     # if you created the unit (SETUP §1)
+# or temporarily:
+nohup hermes gateway >> ~/.hermes/gateway.log 2>&1 &
+```
+
+Verify: `curl -s -H "Authorization: Bearer $(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)" http://127.0.0.1:8642/health`
+
 **HUD says "voice server unreachable" / "connection refused (4401)"** — the
 browser opened the WebSocket with an Origin that was not allowlisted. Opening the
 HUD by LAN IP (`https://192.168.1.10:8766/hud/`) sends

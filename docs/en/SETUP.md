@@ -83,6 +83,41 @@ Recommended: add voice-behavior rules to your global `~/.hermes/SOUL.md`
 actions and wait for approval). The agent — not the voice server — should own
 its personality.
 
+### Keep the Hermes gateway running
+
+Mia talks to Hermes at `127.0.0.1:8642`. If you start the gateway in a terminal
+(`hermes gateway`), it dies with that terminal — the HUD then shows "Hermes API
+offline" and Mia says "Hermes gateway unreachable" out loud. Run it as a user
+service instead:
+
+```ini
+# ~/.config/systemd/user/hermes-gateway.service
+[Unit]
+Description=Hermes Agent gateway (API for Mia)
+After=default.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.hermes/.env
+ExecStart=%h/.local/bin/hermes gateway
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now hermes-gateway
+systemctl --user status hermes-gateway
+loginctl enable-linger "$USER"
+```
+
+Adjust `ExecStart` to the path from `command -v hermes` if needed. Quick
+alternative: `nohup hermes gateway >> ~/.hermes/gateway.log 2>&1 &` or
+`tmux new -d -s hermes 'hermes gateway'`.
+
 ## 2. The voice: local Piper (offline) or ElevenLabs (cloud)
 
 Default is **local Piper** — no API key, no network, ~0.7 s to synthesize a

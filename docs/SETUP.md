@@ -93,6 +93,48 @@ Priporočeno: v globalni `~/.hermes/SOUL.md` dodaj pravila za govor (kratke
 povedi, brez markdowna na glas, nikoli ne izgovori skrivnosti, napovej tvegane
 akcije in počakaj na odobritev). Osebnost naj ima agent — ne glasovni strežnik.
 
+### Naj Hermesov gateway teče stalno
+
+Mia se pogovarja s Hermesom prek `127.0.0.1:8642`. Če gateway zaženeš samo v
+terminalu (`hermes gateway`), ugasne, ko terminal zapreš — HUD takrat javi
+»Hermes API offline«, Mia pa ob govoru reče »Hermesov gateway ni dosegljiv«.
+Za trajno delovanje (uporabniška systemd enota):
+
+```ini
+# ~/.config/systemd/user/hermes-gateway.service
+[Unit]
+Description=Hermes Agent gateway (API for Mia)
+After=default.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.hermes/.env
+ExecStart=%h/.local/bin/hermes gateway
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now hermes-gateway
+systemctl --user status hermes-gateway        # active (running)
+loginctl enable-linger "$USER"                # preživi odjavo in reboot
+```
+
+Če `hermes` ni v `~/.local/bin`, popravi `ExecStart` na pot iz `command -v hermes`.
+Hitra alternativa brez systemda: `nohup hermes gateway >> ~/.hermes/gateway.log 2>&1 &`
+ali `tmux new -d -s hermes 'hermes gateway'`.
+
+Preveri z:
+
+```bash
+KEY=$(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)
+curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:8642/health
+```
+
 ## 2. Glas: lokalni Piper (offline) ali ElevenLabs (oblak)
 
 Privzeto je **lokalni Piper** — brez ključa, brez omrežja, ~0,7 s za poved na
