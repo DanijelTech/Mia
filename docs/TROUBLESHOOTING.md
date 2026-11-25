@@ -119,9 +119,13 @@ ker je bil zagnan v terminalu, ki si ga zaprl). Zaženi ga trajno:
 
 ```bash
 hermes gateway install --start-now --start-on-login   # Hermesov upravitelj storitev
-hermes gateway status --deep                          # ali teče + platforme
+hermes gateway status                                 # ali teče (PID)
 hermes gateway list                                   # profili
+tail -n 40 ~/.hermes/logs/gateway.log                 # išči "API Server"
 ```
+
+Če v dnevniku piše `API Server: aiohttp not installed`, gateway platformo tiho
+preskoči: `python3 -m pip install --user aiohttp` in `hermes gateway restart`.
 
 Če `status --deep` ne omenja `api_server`, gateway v svojem okolju ne vidi
 `API_SERVER_ENABLED`/`API_SERVER_KEY` (pri profilih ima vsak svoj `.env`).

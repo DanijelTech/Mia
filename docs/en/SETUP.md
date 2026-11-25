@@ -94,8 +94,19 @@ Hermes ships its own service manager — use that instead of hand-written units:
 
 ```bash
 hermes gateway install --start-now --start-on-login   # systemd/launchd service
-hermes gateway status --deep                          # is it running, which platforms
+hermes gateway status                                 # is it running (PID, service)
 hermes gateway list                                   # profiles and their gateways
+tail -n 40 ~/.hermes/logs/gateway.log                 # which platforms started
+```
+
+Whether `api_server` really started shows up in the log (an `API Server` line) and
+in `curl` on 8642. If the log says **`API Server: aiohttp not installed`**, the
+gateway skips the platform silently — install `aiohttp` in the Hermes runtime and
+restart:
+
+```bash
+python3 -m pip install --user aiohttp     # or into Hermes' own venv, if it uses one
+hermes gateway restart
 ```
 
 Boot-time without login (Linux, root):

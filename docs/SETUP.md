@@ -104,8 +104,19 @@ Hermes ima svoj upravitelj storitev — uporabi njega, ne ročnih enot:
 
 ```bash
 hermes gateway install --start-now --start-on-login   # systemd/launchd storitev
-hermes gateway status --deep                          # ali teče in katere platforme
+hermes gateway status                                 # ali teče (PID, storitev)
 hermes gateway list                                   # profili in njihovi gatewayi
+tail -n 40 ~/.hermes/logs/gateway.log                 # katere platforme so se zagnale
+```
+
+Ali je `api_server` res vklopljen, preveriš v dnevniku (vrstica `API Server`) in z
+`curl` na 8642. Če v dnevniku piše **`API Server: aiohttp not installed`**, gateway
+platformo tiho preskoči — v Hermesov runtime namesti `aiohttp` in znova zaženi
+gateway:
+
+```bash
+python3 -m pip install --user aiohttp     # ali v Hermesov venv, če ga uporablja
+hermes gateway restart
 ```
 
 Za zagon ob bootu brez prijave (Linux, kot root):

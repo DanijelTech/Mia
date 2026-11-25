@@ -11,9 +11,13 @@ it was started in a terminal that got closed). Run it persistently:
 
 ```bash
 hermes gateway install --start-now --start-on-login   # Hermes' own service manager
-hermes gateway status --deep                          # running? which platforms?
+hermes gateway status                                 # running? (PID)
 hermes gateway list                                   # profiles
+tail -n 40 ~/.hermes/logs/gateway.log                 # look for "API Server"
 ```
+
+If the log says `API Server: aiohttp not installed`, the gateway silently skips the
+platform: `python3 -m pip install --user aiohttp` and `hermes gateway restart`.
 
 If `status --deep` does not mention `api_server`, the gateway does not see
 `API_SERVER_ENABLED`/`API_SERVER_KEY` in its environment (profiles have their own
