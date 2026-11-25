@@ -77,9 +77,10 @@ restart.
 - [Hermes Agent](https://hermes-agent.nousresearch.com/docs/) installed and
   configured with an LLM provider
 - Python 3.11+
-- TTS: local **Piper** (default, no key, fully offline), the more natural local
-  **Gepard** service (optional, GPU with CPU/RAM fallback), or an
-  [ElevenLabs](https://elevenlabs.io) API key for cloud voices
+- TTS: local **Piper** (default, no key, fully offline), the more natural
+  **Gepard** service, the **Maya1** service (best Slovenian pronunciation), or an
+  [ElevenLabs](https://elevenlabs.io) API key for cloud voices — the two local
+  services fall back to CPU/RAM when the GPU is busy
 - Any modern browser on the LAN
 
 ## Install
@@ -91,6 +92,7 @@ root Hermes install runs anyway):
 sudo ./install.sh                  # system-wide (root): deps, voice, cert, token, systemd
 ./install.sh --dry-run             # show every action first
 sudo ./install.sh --with-gepard    # + optional Gepard TTS service
+sudo ./install.sh --with-maya1     #   or Maya1 (best SL pronunciation)
 ```
 
 It records everything it creates in a manifest, so removal is exact:

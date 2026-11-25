@@ -150,6 +150,49 @@ For a permanent start use systemd (`systemd --user`, `ExecStart=.../gepard_tts.p
 Note: the LoRA card is Apache-2.0; check the base model
 (`nineninesix/gepard-1.0`) and the NeMo codec licenses before redistributing.
 
+### Best pronunciation: Maya1 (optional, GPU with RAM offload)
+
+[Maya1 Slovenian TTS](https://huggingface.co/texdata/Maya1-Slovenian-TTS)
+(Apache-2.0) is a LoRA on the 3B `maya-research/maya1` Orpheus-style speech LM
+with a **phoneme front-end**: text is converted to espeak-ng `sl` IPA before
+generation, which fixes the stress and č/š/ž problems grapheme models have (the
+author measures the lowest character error rate of their variants, 4.2% vs 5.0%
+for grapheme). It is the heaviest and slowest of the three local voices.
+
+```bash
+sudo ./install.sh --with-maya1        # deps + espeak-ng + systemd unit
+# or manually:
+pip install transformers peft snac soundfile phonemizer accelerate
+sudo apt-get install espeak-ng        # macOS: brew install espeak
+scripts/gepard_tts.py --serve --port 8770 --engine maya1 --fallback-piper
+```
+
+Point Mia at it exactly like Gepard (`tts.provider: http`, `url:
+http://127.0.0.1:8770/tts`).
+
+| | Piper | Gepard | Maya1 |
+|---|---|---|---|
+| VRAM | 0 (CPU) | ~2 GB | ~6–7 GB (bf16) |
+| Speed | 4–6× realtime | ~0.5–2 s per sentence on GPU | slowest (3B autoregressive) |
+| Quality | clear, flat | natural-ish | best Slovenian pronunciation |
+| Extras | `piper-tts` | NeMo + `gepard-inference` | `transformers`/`peft`/`snac`/`phonemizer` + espeak-ng |
+
+Voice control: `--maya-emotion nevtralno|veselo|jezno|gnus|zaspano` swaps the
+English voice description (the Slovenian adapter was fine-tuned on neutral read
+speech, so emotional range is limited). `--temperature` defaults to 0.75 for
+Maya1 (0.4 for Gepard); `--maya-max-new-tokens` bounds the generation (~1800 ≈
+10 s). The built-in `repetition_penalty=1.1` matters: without it short inputs can
+fail to emit the end token.
+
+On a 32 GB card with Qwen3-30B-A3B **Q4** (~18.6 GB) + Whisper (~1.6 GB) Maya1
+fits (~26 GB total). With Q5/Q6 it first tries the accelerate GPU/RAM split, then
+CPU; on CPU a sentence takes tens of seconds, so Piper or Gepard is the better
+choice there.
+
+Licences: adapter and base model are Apache-2.0; the SNAC codec
+(`hubertsiuzdak/snac_24khz`) carries its own — check before redistributing.
+Citation: Tadej Fius, MediaAtlas (see the model card).
+
 ### Fully offline checklist
 
 | Item | Setting |

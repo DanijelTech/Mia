@@ -8,13 +8,17 @@
 #   sudo ./install.sh                 # system-wide, root (Hermes runs as root)
 #   ./install.sh                      # user mode: pip --user + systemd --user
 #   ./install.sh --with-gepard        # also install the Gepard TTS service
+#   ./install.sh --with-maya1         # ...or the Maya1 TTS service (better SL)
 #   ./install.sh --dry-run            # show every action, change nothing
 #
 # Common options:
 #   --yes                 no prompts
 #   --mode system|user    force install mode (default: root -> system)
 #   --python PATH         interpreter to install into (default: python3)
-#   --with-gepard         install accelerate/NeMo/gepard-inference + TTS service
+#   --with-gepard         install Gepard TTS (accelerate/NeMo/gepard-inference)
+#   --with-maya1          install Maya1 TTS (transformers/peft/snac/phonemizer + espeak-ng)
+#   --tts-engine E        gepard | maya1 | piper | none
+#   --no-system-pkgs      never call apt/dnf/brew (install espeak-ng yourself)
 #   --no-stt-deps         skip RealtimeSTT/torch (if you already have them)
 #   --no-deps             skip every pip step
 #   --voice sl|sr|all|none
@@ -33,7 +37,8 @@ VERSION="$(git -C "$REPO_DIR" describe --tags --always 2>/dev/null || echo unkno
 
 MODE=""
 PYTHON="${PYTHON:-python3}"
-WITH_GEPARD=0
+TTS_ENGINE=""
+DO_SYSTEM_PKGS=1
 DO_DEPS=1
 DO_STT_DEPS=1
 DO_VOICE=1
@@ -54,7 +59,10 @@ while [ $# -gt 0 ]; do
     --dry-run) DRY_RUN=1 ;;
     --mode) MODE="${2:-}"; shift ;;
     --python) PYTHON="${2:-}"; shift ;;
-    --with-gepard) WITH_GEPARD=1 ;;
+    --with-gepard) TTS_ENGINE="gepard" ;;
+    --with-maya1) TTS_ENGINE="maya1" ;;
+    --tts-engine) TTS_ENGINE="${2:-}"; shift ;;
+    --no-system-pkgs) DO_SYSTEM_PKGS=0 ;;
     --no-stt-deps) DO_STT_DEPS=0 ;;
     --no-deps) DO_DEPS=0 ;;
     --voice) VOICE_LANG="${2:-}"; shift ;;
@@ -70,6 +78,12 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+case "${TTS_ENGINE:-}" in
+  ""|none) TTS_ENGINE="none" ;;
+  gepard|maya1|piper) ;;
+  *) echo "unknown --tts-engine: $TTS_ENGINE (gepard|maya1|piper|none)" >&2; exit 2 ;;
+esac
 
 # ------------------------------------------------------------------ plumbing
 say()  { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
@@ -208,7 +222,7 @@ else
 fi
 pip_install piper-tts || warn "piper-tts missing: local voice unavailable"
 
-if [ "$WITH_GEPARD" = 1 ]; then
+if [ "$TTS_ENGINE" = "gepard" ]; then
   say "1b/7 Gepard TTS extras (heavy, ~3 GB)"
   pip_install accelerate || warn "accelerate missing: no GPU/RAM layer split"
   if confirm "Install NeMo toolkit for the NanoCodec (large download)?"; then
@@ -216,6 +230,32 @@ if [ "$WITH_GEPARD" = 1 ]; then
   fi
   pip_install "git+https://github.com/nineninesix-ai/gepard-inference" \
     || warn "gepard-inference failed — start the TTS service with --engine piper instead"
+elif [ "$TTS_ENGINE" = "maya1" ]; then
+  say "1b/7 Maya1 TTS extras (transformers + SNAC + phonemizer)"
+  pip_install accelerate transformers peft snac soundfile phonemizer \
+    || warn "Maya1 Python deps incomplete — the service will fall back to Piper"
+  if [ "$DO_SYSTEM_PKGS" = 1 ]; then
+    if command -v espeak-ng >/dev/null 2>&1; then
+      info "espeak-ng already installed"
+    elif [ "$(id -u)" = "0" ] || [ "$MODE" = "system" ]; then
+      if command -v apt-get >/dev/null 2>&1; then
+        run apt-get update -qq && run apt-get install -y espeak-ng || warn "could not install espeak-ng"
+      elif command -v dnf >/dev/null 2>&1; then
+        run dnf install -y espeak-ng || warn "could not install espeak-ng"
+      elif command -v pacman >/dev/null 2>&1; then
+        run pacman -S --noconfirm espeak-ng || warn "could not install espeak-ng"
+      elif command -v brew >/dev/null 2>&1; then
+        run brew install espeak || warn "could not install espeak"
+      else
+        warn "unknown package manager — install espeak-ng manually (needed for Slovenian phonemes)"
+      fi
+    else
+      warn "espeak-ng missing: run 'sudo apt-get install espeak-ng' (phonemizer needs it)"
+    fi
+  else
+    info "skip system packages (--no-system-pkgs) — make sure espeak-ng is present"
+  fi
+  pip_install transformers || true
 fi
 
 if [ "$DRY_RUN" = 0 ] && [ "$DO_DEPS" = 1 ]; then
@@ -318,8 +358,8 @@ PLIST
   }
   if [ "$DRY_RUN" = 0 ]; then
     plist voice "server.py" ""
-    if [ "$WITH_GEPARD" = 1 ]; then
-      plist tts "scripts/gepard_tts.py" "<string>--serve</string><string>--port</string><string>$PORT_TTS</string><string>--engine</string><string>gepard</string><string>--fallback-piper</string>"
+    if [ "$TTS_ENGINE" != "none" ] && [ "$TTS_ENGINE" != "piper" ]; then
+      plist tts "scripts/gepard_tts.py" "<string>--serve</string><string>--port</string><string>$PORT_TTS</string><string>--engine</string><string>$TTS_ENGINE</string><string>--fallback-piper</string>"
     fi
     if [ "$DO_START" = 1 ]; then
       for s in $(cat "$TMP_MF/svc"); do
@@ -364,8 +404,8 @@ UNIT
   if [ "$DRY_RUN" = 0 ]; then
     mkdir -p "$SERVICE_DIR"
     unit voice "server.py" ""
-    if [ "$WITH_GEPARD" = 1 ]; then
-      unit tts "scripts/gepard_tts.py" "--serve --port $PORT_TTS --engine gepard --fallback-piper"
+    if [ "$TTS_ENGINE" != "none" ] && [ "$TTS_ENGINE" != "piper" ]; then
+      unit tts "scripts/gepard_tts.py" "--serve --port $PORT_TTS --engine $TTS_ENGINE --fallback-piper"
     fi
     run "${SCTL[@]}" daemon-reload 2>/dev/null || warn "systemctl not available here (unit written, not activated)"
     if [ "$DO_START" = 1 ]; then
@@ -373,7 +413,7 @@ UNIT
     fi
   else
     printf '    [dry-run] would write units to %s for: mia-voice%s\n' "$SERVICE_DIR" \
-      "$([ "$WITH_GEPARD" = 1 ] && echo ', mia-tts')"
+      "$([ "$TTS_ENGINE" != "none" ] && [ "$TTS_ENGINE" != "piper" ] && echo ', mia-tts')"
   fi
 fi
 
@@ -403,6 +443,7 @@ $([ "$DRY_RUN" = 1 ] && printf '\033[1;33mDry run complete — nothing was chang
   mode        $MODE
   voices      $(ls "$SERVER_DIR/voices" 2>/dev/null | grep -c '\.onnx$') model(s)
   service     ${SERVICE_KIND:-none}${SERVICE_DIR:+ ($SERVICE_DIR)}
+  tts engine  $TTS_ENGINE
   HUD         https://$(hostname 2>/dev/null || echo localhost)/hud/
 
 Next steps

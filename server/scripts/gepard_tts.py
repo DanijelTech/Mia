@@ -12,7 +12,9 @@ answering HTTP costs milliseconds. Mia's server talks to it via
     echo "Dober dan." | scripts/gepard_tts.py --stdio --engine gepard
 
 Engine:
-  gepard   texdata/Gepard-Slovenian-TTS + NVIDIA NanoCodec (needs the extras below)
+  gepard   texdata/Gepard-Slovenian-TTS + NVIDIA NanoCodec (~2 GB VRAM)
+  maya1    texdata/Maya1-Slovenian-TTS (3B + SNAC-24k, best SL pronunciation,
+           ~6-7 GB VRAM, needs espeak-ng + phonemizer; slow on CPU)
   piper    local Piper voice — fallback and smoke tests, ~5x realtime on CPU
   tone     deterministic test tone, no models (used by the integration tests)
 
@@ -185,7 +187,7 @@ class GepardEngine(Engine):
         self.device, self.reason = device, reason
         self.offload = offload
         self.min_free_gb = min_free_gb
-        self.temperature = temperature
+        self.temperature = 0.4 if temperature is None else temperature
         self.cfg_scale = cfg_scale
         self.cfg_frames = cfg_frames
         self.repetition_penalty = repetition_penalty
@@ -279,6 +281,192 @@ class GepardEngine(Engine):
                                synth_seconds=time.perf_counter() - t0)
 
 
+class MayaEngine(Engine):
+    """texdata/Maya1-Slovenian-TTS — 3B Orpheus-style LM + SNAC-24kHz codec.
+
+    Phoneme front-end: input MUST be espeak-ng `sl` IPA (the adapter was trained
+    on phonemes, not graphemes), so `phonemizer` + the espeak-ng shared library
+    are required. Heavier than Gepard (~6-7 GB in bf16) and autoregressive, so
+    the same GPU/RAM policy applies; on CPU it works but is far slower than
+    realtime — Piper or Gepard is the better choice there.
+    """
+
+    name = "maya1"
+    CODE_END = 128258
+    OFFSET = 128266
+    SNAC_MIN = 128266
+    SNAC_MAX = 156937
+    DEFAULT_ADAPTER = "texdata/Maya1-Slovenian-TTS"
+    DEFAULT_BASE = "maya-research/maya1"
+    DEFAULT_SNAC = "hubertsiuzdak/snac_24khz"
+    DEFAULT_SPEAKER = "Artur-B-G0911"
+    EMOTIONS = {
+        "nevtralno": "A neutral Slovenian voice.",
+        "veselo": "An amused, cheerful, laughing Slovenian voice.",
+        "jezno": "An angry, upset Slovenian voice.",
+        "gnus": "A disgusted Slovenian voice.",
+        "zaspano": "A sleepy, tired Slovenian voice.",
+    }
+
+    def __init__(self, device: str, reason: str, adapter: str = "", base: str = "",
+                 speaker: str = "", emotion: str = "", temperature: float | None = None,
+                 max_new_tokens: int = 1800, repetition_penalty: float = 1.1,
+                 offload: str = "auto", min_free_gb: float = 3.0):
+        self.device, self.reason = device, reason
+        self.adapter = adapter or self.DEFAULT_ADAPTER
+        self.base = base or self.DEFAULT_BASE
+        self.speaker = speaker or self.DEFAULT_SPEAKER
+        self.emotion = (emotion or "").strip().lower()
+        self.temperature = 0.75 if temperature is None else float(temperature)
+        self.max_new_tokens = int(max_new_tokens)
+        self.repetition_penalty = float(repetition_penalty)
+        self.offload = offload
+        self.min_free_gb = min_free_gb
+        self.lock = threading.Lock()
+        self.load_seconds = 0.0
+        self.offloaded_to_cpu = False
+        t0 = time.perf_counter()
+        self._load()
+        self.load_seconds = time.perf_counter() - t0
+
+    # -- description the model understands (English), tuned per emotion preset
+    @property
+    def description(self) -> str:
+        if self.emotion and self.emotion in self.EMOTIONS:
+            return self.EMOTIONS[self.emotion]
+        return f"A Slovenian voice, speaker {self.speaker}."
+
+    def describe(self) -> dict:
+        info = super().describe()
+        info.update(adapter=self.adapter, speaker=self.speaker,
+                    emotion=self.emotion or "nevtralno")
+        return info
+
+    def _imports(self):
+        try:
+            import torch  # noqa: PLC0415
+            from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: PLC0415
+            from peft import PeftModel  # noqa: PLC0415
+            from snac import SNAC  # noqa: PLC0415
+            from phonemizer.backend import EspeakBackend  # noqa: PLC0415
+        except Exception as exc:  # noqa: BLE001
+            raise SystemExit(
+                "Maya1 engine unavailable: "
+                f"{type(exc).__name__}: {exc}\n"
+                "Install it with:\n"
+                "  pip install transformers peft torch snac soundfile phonemizer accelerate\n"
+                "  sudo apt-get install espeak-ng        (or: brew install espeak)\n"
+                "Or start with --engine piper / --engine gepard to keep Mia speaking.\n"
+            ) from exc
+        return torch, AutoModelForCausalLM, AutoTokenizer, PeftModel, SNAC, EspeakBackend
+
+    def _ensure_espeak_lib(self) -> None:
+        if os.environ.get("PHONEMIZER_ESPEAK_LIBRARY"):
+            return
+        for candidate in ("/usr/lib/x86_64-linux-gnu/libespeak-ng.so.1",
+                          "/usr/lib64/libespeak-ng.so.1",
+                          "/usr/lib/libespeak-ng.so.1",
+                          "/usr/local/lib/libespeak-ng.dylib",
+                          "/opt/homebrew/lib/libespeak-ng.dylib"):
+            if os.path.exists(candidate):
+                os.environ["PHONEMIZER_ESPEAK_LIBRARY"] = candidate
+                return
+
+    def _load(self) -> None:
+        torch, AutoModelForCausalLM, AutoTokenizer, PeftModel, SNAC, EspeakBackend = self._imports()
+        self.torch = torch
+        self._ensure_espeak_lib()
+        self.tokenizer = AutoTokenizer.from_pretrained(self.base)
+        self.backend = EspeakBackend("sl", with_stress=True, preserve_punctuation=True)
+        self.model = self._load_model(AutoModelForCausalLM, PeftModel)
+        codec_device = "cuda" if self.device == "cuda" and not self.offloaded_to_cpu else "cpu"
+        try:
+            codec_device = str(next(self.model.parameters()).device)
+        except Exception:  # noqa: BLE001
+            pass
+        self.codec_device = codec_device
+        self.snac = SNAC.from_pretrained(self.DEFAULT_SNAC).eval().to(codec_device)
+
+    def _load_model(self, AutoModelForCausalLM, PeftModel):
+        dtype = self.torch.bfloat16 if self.device == "cuda" else self.torch.float32
+        model = None
+        if self.device == "cuda" and self.offload == "auto":
+            free = gpu_free_gb() or 0.0
+            budget = max(1.0, free - 0.5)
+            try:
+                model = AutoModelForCausalLM.from_pretrained(
+                    self.base, dtype=dtype, device_map="auto",
+                    max_memory={0: f"{budget:.1f}GiB", "cpu": "24GiB"},
+                )
+                print(f"[maya1] accelerate device_map=auto (gpu budget {budget:.1f} GiB)",
+                      file=sys.stderr, flush=True)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[maya1] device_map failed ({type(exc).__name__}) — plain device",
+                      file=sys.stderr, flush=True)
+                model = None
+        if model is None:
+            try:
+                model = AutoModelForCausalLM.from_pretrained(self.base, dtype=dtype).to(self.device)
+            except Exception as exc:  # noqa: BLE001
+                if self.device != "cuda":
+                    raise
+                print(f"[maya1] CUDA load failed ({type(exc).__name__}: {exc}) — RAM fallback",
+                      file=sys.stderr, flush=True)
+                self.offloaded_to_cpu = True
+                self.device = "cpu"
+                self.reason += " | CUDA load failed -> RAM fallback"
+                model = AutoModelForCausalLM.from_pretrained(
+                    self.base, dtype=self.torch.float32).to("cpu")
+        return PeftModel.from_pretrained(model, self.adapter).eval()
+
+    # -- SNAC token unpacking (7 tokens per frame, 3 hierarchical levels)
+    def unpack_snac(self, ids: list[int]) -> list[list[int]]:
+        frames = len(ids) // 7
+        ids = ids[: frames * 7]
+        l1, l2, l3 = [], [], []
+        for i in range(frames):
+            s = ids[i * 7:(i + 1) * 7]
+            l1.append((s[0] - self.OFFSET) % 4096)
+            l2 += [(s[1] - self.OFFSET) % 4096, (s[4] - self.OFFSET) % 4096]
+            l3 += [(s[2] - self.OFFSET) % 4096, (s[3] - self.OFFSET) % 4096,
+                   (s[5] - self.OFFSET) % 4096, (s[6] - self.OFFSET) % 4096]
+        return [l1, l2, l3]
+
+    def phonemize(self, text: str) -> str:
+        from phonemizer.separator import Separator  # noqa: PLC0415
+        return self.backend.phonemize([text], separator=Separator(phone="", word=" "),
+                                      strip=True)[0]
+
+    def synth(self, text: str) -> SynthResult:
+        phonemes = self.phonemize(clean_text(text))
+        content = f'<description="{self.description}"> {phonemes}'
+        prompt = self.tokenizer.apply_chat_template(
+            [{"role": "user", "content": content}], tokenize=False, add_generation_prompt=True)
+        with self.lock:  # one generation at a time: the model is stateful
+            t0 = time.perf_counter()
+            ids = self.tokenizer(prompt, add_special_tokens=False,
+                                 return_tensors="pt").input_ids.to(self.codec_device)
+            out = self.model.generate(
+                ids, max_new_tokens=self.max_new_tokens, do_sample=True,
+                temperature=self.temperature, top_p=0.9,
+                repetition_penalty=self.repetition_penalty,
+                eos_token_id=self.CODE_END, pad_token_id=self.CODE_END,
+            )
+            generated = out[0, ids.shape[1]:].tolist()
+            snac_ids = [t for t in generated if self.SNAC_MIN <= t <= self.SNAC_MAX]
+            if not snac_ids:
+                raise RuntimeError("Maya1 produced no SNAC tokens (runaway or empty generation)")
+            codes = [self.torch.tensor(c, device=self.codec_device).unsqueeze(0)
+                     for c in self.unpack_snac(snac_ids)]
+            audio = self.snac.decoder(self.snac.quantizer.from_codes(codes))[0, 0]
+            pcm = audio.detach().float().cpu().numpy()
+            pcm16 = (np.clip(pcm, -1.0, 1.0) * 32767).astype(np.int16)
+            rate = 24000
+            return SynthResult(pcm16, rate, pcm16.size / rate, self.name, self.device,
+                               self.reason, load_seconds=self.load_seconds,
+                               synth_seconds=time.perf_counter() - t0)
+
+
 def build_engine(args) -> Engine:
     device, reason = pick_device(args.device, args.min_free_vram_gb)
     print(f"[tts] device={device} ({reason})", file=sys.stderr, flush=True)
@@ -287,21 +475,34 @@ def build_engine(args) -> Engine:
         return ToneEngine(device, reason)
     if engine == "piper":
         return PiperEngine(args.piper_model, args.piper_bin, device, reason)
+
+    def piper_fallback(exc) -> Engine:
+        if not (args.fallback_piper and os.path.exists(args.piper_model)):
+            raise exc
+        print(f"[tts] {engine} unavailable — falling back to Piper.\n{exc}",
+              file=sys.stderr, flush=True)
+        return PiperEngine(args.piper_model, args.piper_bin, device,
+                           reason + f" | {engine} unavailable -> piper")
+
+    if engine == "maya1":
+        try:
+            return MayaEngine(device, reason, adapter=args.maya_adapter, base=args.maya_base,
+                              speaker=args.maya_speaker, emotion=args.maya_emotion,
+                              temperature=args.temperature,
+                              max_new_tokens=args.maya_max_new_tokens,
+                              offload=args.offload, min_free_gb=args.min_free_vram_gb)
+        except SystemExit as exc:
+            return piper_fallback(exc)
     try:
         return GepardEngine(device, reason, offload=args.offload,
                             min_free_gb=args.min_free_vram_gb,
-                            temperature=args.temperature, cfg_scale=args.cfg_scale,
-                            cfg_frames=args.cfg_frames,
+                            temperature=0.4 if args.temperature is None else args.temperature,
+                            cfg_scale=args.cfg_scale, cfg_frames=args.cfg_frames,
                             repetition_penalty=args.repetition_penalty,
                             repetition_window=args.repetition_window,
                             max_frames=args.max_frames)
     except SystemExit as exc:
-        if args.fallback_piper and os.path.exists(args.piper_model):
-            print(f"[tts] Gepard unavailable — falling back to Piper.\n{exc}",
-                  file=sys.stderr, flush=True)
-            return PiperEngine(args.piper_model, args.piper_bin, device,
-                               reason + " | gepard unavailable -> piper")
-        raise
+        return piper_fallback(exc)
 
 
 def wav_bytes(result: SynthResult) -> bytes:
@@ -376,7 +577,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--stdio", action="store_true", help="one-shot: stdin text -> WAV on stdout")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8770)
-    ap.add_argument("--engine", default="gepard", choices=("gepard", "piper", "tone"))
+    ap.add_argument("--engine", default="gepard", choices=("gepard", "maya1", "piper", "tone"))
     ap.add_argument("--device", default="auto", choices=("auto", "cuda", "cpu"))
     ap.add_argument("--min-free-vram-gb", type=float, default=3.0,
                     help="below this free VRAM the service runs on CPU/RAM instead")
@@ -390,7 +591,15 @@ def main(argv: list[str] | None = None) -> int:
                     help="Piper voice path used by --engine piper / --fallback-piper")
     ap.add_argument("--piper-bin", default="piper")
     ap.add_argument("--token-env", default="MIA_HUD_TOKEN")
-    ap.add_argument("--temperature", type=float, default=0.4)
+    ap.add_argument("--temperature", type=float, default=None,
+                    help="sampling temperature (gepard: 0.4, maya1: 0.75)")
+    ap.add_argument("--maya-adapter", default="", help="LoRA id/path (default: texdata/Maya1-Slovenian-TTS)")
+    ap.add_argument("--maya-base", default="", help="base model (default: maya-research/maya1)")
+    ap.add_argument("--maya-speaker", default="", help="speaker description (default: Artur-B-G0911)")
+    ap.add_argument("--maya-emotion", default="",
+                    choices=("", "nevtralno", "veselo", "jezno", "gnus", "zaspano"),
+                    help="voice description preset (neutral read-speech adapter)")
+    ap.add_argument("--maya-max-new-tokens", type=int, default=1800)
     ap.add_argument("--cfg-scale", type=float, default=4.5)
     ap.add_argument("--cfg-frames", type=int, default=25)
     ap.add_argument("--repetition-penalty", type=float, default=1.45)

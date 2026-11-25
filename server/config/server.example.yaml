@@ -56,6 +56,7 @@ tts:
     length_scale: 1.0        # >1 slower, <1 faster
   # Local TTS *service*: model loads once, may run on another machine.
   # Start it with: scripts/gepard_tts.py --serve --port 8770 --engine gepard --fallback-piper
+  #           or: scripts/gepard_tts.py --serve --port 8770 --engine maya1  --fallback-piper
   http:
     url: http://127.0.0.1:8770/tts
     format: wav              # wav | raw (raw needs sample_rate)
