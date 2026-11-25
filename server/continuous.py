@@ -65,6 +65,15 @@ class SpeechDetector:
     def kind(self) -> str:
         return "silero" if self._silero is not None else "rms"
 
+    def loud(self, frame: np.ndarray) -> bool:
+        """Energy gate: is this frame clearly above the room noise floor?"""
+        if frame.size == 0:
+            return False
+        rms = float(np.sqrt(np.mean(np.square(frame.astype(np.float32)))))
+        if rms < self._noise * 1.5:
+            self._noise = 0.98 * self._noise + 0.02 * rms
+        return rms >= max(self.min_rms, self._noise * 3.0)
+
     def process(self, frame: np.ndarray) -> float:
         if frame.size == 0:
             return 0.0
@@ -75,13 +84,7 @@ class SpeechDetector:
                     return float(self._silero(tensor, SAMPLE_RATE).item())
             except Exception:
                 self._silero = None          # fall back for the rest of the session
-        rms = float(np.sqrt(np.mean(np.square(frame.astype(np.float32)))))
-        # adaptive noise floor: tracks quiet passages so a fan or a fridge does not
-        # hold the gate open forever
-        if rms < self._noise * 1.5:
-            self._noise = 0.98 * self._noise + 0.02 * rms
-        level = max(self.min_rms, self._noise * 3.0)
-        return 1.0 if rms >= level else 0.0
+        return 1.0 if self.loud(frame) else 0.0
 
 
 @dataclass
@@ -89,7 +92,10 @@ class SegmenterConfig:
     silence_ms: int = 700
     min_speech_ms: int = 300
     pre_roll_ms: int = 320
-    threshold: float = 0.5
+    threshold: float = 0.4          # to start an utterance
+    end_threshold: float = 0.25     # to keep it open (hysteresis)
+    max_utterance_ms: int = 20000   # never swallow speech: force-close here
+    energy_override: bool = True    # loud audio counts as speech even if VAD says no
 
 
 class UtteranceSegmenter:
@@ -99,6 +105,7 @@ class UtteranceSegmenter:
         self.cfg = cfg or SegmenterConfig()
         self.detector = detector
         self._silence_frames = max(1, self.cfg.silence_ms // FRAME_MS)
+        self._max_frames = max(1, self.cfg.max_utterance_ms // FRAME_MS)
         self._min_speech_frames = max(1, self.cfg.min_speech_ms // FRAME_MS)
         self._pre_roll_frames = max(1, self.cfg.pre_roll_ms // FRAME_MS)
         self._pending = b""
@@ -111,6 +118,10 @@ class UtteranceSegmenter:
         self._silence_run = 0
         self._speech_frames = 0
         self._announced = False
+        self.state = "silence"
+        self.prob = 0.0
+        self.state = "silence"
+        self.prob = 0.0
 
     def feed(self, pcm: bytes) -> list[tuple[str, bytes]]:
         events: list[tuple[str, bytes]] = []
@@ -121,7 +132,16 @@ class UtteranceSegmenter:
         for off in range(0, usable, frame_bytes):
             frame = np.frombuffer(data[off:off + frame_bytes], dtype=np.int16)
             prob = self.detector.process(frame)
-            is_speech = prob >= self.cfg.threshold
+            loud = bool(self.cfg.energy_override and hasattr(self.detector, "loud")
+                        and self.detector.loud(frame))
+            threshold = self.cfg.end_threshold if self._speaking else self.cfg.threshold
+            if self._speaking:
+                # end only when the VAD says silence *and* the room is quiet
+                is_speech = prob >= threshold or loud
+            else:
+                is_speech = prob >= threshold or loud
+            self.prob = float(prob)
+            self.state = "speech" if self._speaking else "silence"
 
             if not self._speaking:
                 self._pre.append(data[off:off + frame_bytes])
@@ -138,12 +158,13 @@ class UtteranceSegmenter:
                 continue
 
             self._buf.extend(data[off:off + frame_bytes])
-            if is_speech:
+            forced = self._speech_frames >= self._max_frames
+            if is_speech and not forced:
                 self._silence_run = 0
                 self._speech_frames += 1
             else:
                 self._silence_run += 1
-                if self._silence_run >= self._silence_frames:
+                if forced or self._silence_run >= self._silence_frames:
                     payload = bytes(self._buf)
                     self._speaking = False
                     self._announced = False
@@ -204,6 +225,9 @@ def build_segmenter(cfg: dict | None, detector: SpeechDetector | None = None) ->
             silence_ms=int(c.get("silence_ms", 700)),
             min_speech_ms=int(c.get("min_speech_ms", 300)),
             pre_roll_ms=int(c.get("pre_roll_ms", 320)),
-            threshold=float(c.get("threshold", 0.5)),
+            threshold=float(c.get("threshold", 0.4)),
+            end_threshold=float(c.get("end_threshold", 0.25)),
+            max_utterance_ms=int(c.get("max_utterance_ms", 20000)),
+            energy_override=bool(c.get("energy_override", True)),
         ),
     )

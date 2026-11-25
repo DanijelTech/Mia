@@ -155,6 +155,21 @@ Začasno: `nohup hermes gateway >> ~/.hermes/gateway.log 2>&1 &`.
 
 Preveri: `curl -s -H "Authorization: Bearer $(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)" http://127.0.0.1:8642/health`
 
+**V načinu STALNO se po govoru nič ne zgodi (Mia ne odgovori)** — najprej poglej
+napis pod obročem: `SLIŠIM …` pomeni, da strežnik sliši; `POSLUŠAM` v tišini. Trije
+koraki:
+
+1. **preslednica** (ali klik na obroč) med poslušanjem pošlje trenutno izjavo
+   takoj (`flush`) — to vedno deluje, tudi če VAD ne zazna konca;
+2. če se `SLIŠIM` sploh ne pojavi, strežnik ne sliši: preveri `stt.continuous`
+   v `server.yaml` in poskusi `threshold: 0.3`, `min_rms: 150`;
+3. če se `SLIŠIM` nikoli ne vrne na `POSLUŠAM`, je tišina prekratka/prešumna:
+   dvigni `silence_ms` na 1000 in `end_threshold` na 0.3, ali vklopi
+   `energy_override: true` (privzeto).
+
+V `status` sporočilu ob vklopu piše, kateri VAD teče (`silero` ali `rms`); če piše
+`rms`, Silero ni na voljo in je zaznava energijska (bolj groba).
+
 **HUD javi »glasovni strežnik ni dosegljiv« / »povezava zavrnjena (4401)«** —
 brskalnik je spletni priključek (`/ws`) odprl z izvorom, ki ni bil na seznamu.
 Pri odpiranju po LAN IP (`https://192.168.1.10:8766/hud/`) je izvor

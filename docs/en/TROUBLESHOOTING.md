@@ -47,6 +47,20 @@ If `status --deep` does not mention `api_server`, the gateway does not see
 
 Verify: `curl -s -H "Authorization: Bearer $(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)" http://127.0.0.1:8642/health`
 
+**In STALNO mode nothing happens after I stop talking** — first look at the label
+under the ring: `SLIŠIM …` means the server hears you, `POSLUŠAM` means silence.
+Three steps:
+
+1. **Space** (or clicking the ring) while listening submits the current utterance
+   immediately (`flush`) — always works, even when end-of-speech is missed;
+2. if `SLIŠIM` never appears, the server does not hear you: check
+   `stt.continuous` in `server.yaml`, try `threshold: 0.3`, `min_rms: 150`;
+3. if `SLIŠIM` never returns to `POSLUŠAM`, raise `silence_ms` to 1000 and
+   `end_threshold` to 0.3, or keep `energy_override: true` (default).
+
+The `status` message on start tells which VAD runs (`silero` or `rms`); `rms`
+means Silero was unavailable and detection is energy-based (coarser).
+
 **HUD says "voice server unreachable" / "connection refused (4401)"** — the
 browser opened the WebSocket with an Origin that was not allowlisted. Opening the
 HUD by LAN IP (`https://192.168.1.10:8766/hud/`) sends

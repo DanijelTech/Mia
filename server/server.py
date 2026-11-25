@@ -1330,7 +1330,16 @@ async def _feed_continuous(ws: WebSocket, pipeline: VoicePipelineServer, conn: C
                            chunk: bytes) -> None:
     """Feed the always-on stream through the VAD and start turns automatically."""
     barge = bool(((CFG.get("stt") or {}).get("continuous") or {}).get("barge_in", True))
-    for kind, payload in conn.segmenter.feed(chunk):
+    prev_state = getattr(conn.segmenter, "state", "silence")
+    events = conn.segmenter.feed(chunk)
+    new_state = getattr(conn.segmenter, "state", "silence")
+    if new_state != prev_state:
+        try:
+            await ws.send_json({"type": "vad", "state": new_state,
+                                "prob": round(float(getattr(conn.segmenter, "prob", 0.0)), 2)})
+        except Exception:
+            pass
+    for kind, payload in events:
         busy = conn.turn_task is not None and not conn.turn_task.done()
         if kind == "speech_start":
             if busy:
@@ -1454,6 +1463,20 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                     conn.recording = False
                     conn.timing.end_of_speech_monotonic = time.perf_counter()
                     conn.turn_task = asyncio.create_task(_run_turn(ws, pipeline, conn))
+                elif etype == "flush":
+                    if not conn.continuous or conn.segmenter is None:
+                        await ws.send_json({"type": "error", "message": "flush only in continuous mode"})
+                        continue
+                    started = False
+                    for kind, payload in conn.segmenter.flush():
+                        if kind != "utterance":
+                            continue
+                        if conn.turn_task is not None and not conn.turn_task.done():
+                            await _cancel_active_turn(ws, pipeline, conn)
+                        _start_continuous_turn(ws, pipeline, conn, payload)
+                        started = True
+                    await ws.send_json({"type": "status",
+                                        "message": "utterance submitted" if started else "nothing to submit"})
                 elif etype == "stop_run":
                     await _cancel_active_turn(ws, pipeline, conn)
                     await ws.send_json({"type": "agent_status", "state": "stopped"})

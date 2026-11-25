@@ -506,6 +506,11 @@ function connect(){
       else if(e.state==="stopped"){setState("standby","PRIPRAVLJEN");showStop(false);stopPlayback();addMsg("sys","izvajanje ustavljeno")}
     }
     else if(e.type==="ignored"){ addMsg("sys","preskočeno (reci »Mia«)"); }
+    else if(e.type==="vad"){
+      if(continuous && state==="listening")
+        setState("listening", e.state==="speech" ? "SLIŠIM …" : "POSLUŠAM",
+                 "PRESLEDNICA = POŠLJI TAKOJ");
+    }
     else if(e.type==="error"){ clearLive(); addMsg("sys","napaka: "+e.message); setState("standby","PRIPRAVLJEN"); showStop(false); }
     else if(e.type==="done"){
       currentRun=null; showStop(false);
@@ -617,12 +622,16 @@ async function toggleContinuous(){
   capturing=true; continuous=true;
   $("contBtn").textContent="■ STALNO";
   $("talkBtn").textContent="VKLOPI GLAS"; $("micState").textContent="V ŽIVO";
-  setState("listening","POSLUŠAM","RECI »MIA …« ALI KAR GOVORI");
+  setState("listening","POSLUŠAM","RECI »MIA …« · PRESLEDNICA POŠLJE TAKOJ");
   addMsg("sys","neprestano poslušanje vklopljeno — reci »Mia …«");
 }
 
 async function toggleTalk(){
-  if(continuous){ return toggleContinuous(); }
+  if(continuous){
+    try{ws.send(JSON.stringify({type:"flush"}));}catch{}
+    addMsg("sys","poslano — Mia obdeluje");
+    return;
+  }
   if(!wsReady){addMsg("sys","glasovni strežnik ni dosegljiv");return}
   if(capturing){ // stop talking
     capturing=false;

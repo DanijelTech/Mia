@@ -175,7 +175,9 @@ VOICE LINK panel:
 3. after the reply you can keep talking **without the wake word** for
    `followup_seconds` (20 s by default); afterwards say "Mia" again,
 4. you may speak while she is answering — that **interrupts** her (`barge_in`),
-5. clicking `■ STALNO` (or `VKLOPI GLAS`) turns listening off.
+5. **Space** (or clicking the ring) while listening **submits** the current
+   utterance immediately — use it when the end of speech is not detected,
+6. clicking `■ STALNO` turns listening off (a pending utterance is still processed).
 
 How it works: the browser streams audio continuously and the server segments
 utterances with a **VAD** (Silero when available, otherwise an energy gate),
@@ -189,10 +191,17 @@ stt:
     followup_seconds: 20
     silence_ms: 700
     min_speech_ms: 300
-    threshold: 0.5
+    threshold: 0.4           # start of an utterance
+    end_threshold: 0.25      # end (hysteresis: lower = fewer cuts)
+    max_utterance_ms: 20000  # speech is never swallowed (force-close)
+    energy_override: true    # loud audio counts as speech even if the VAD says no
     min_rms: 320
     barge_in: true           # false = half duplex (Mia cannot hear herself)
 ```
+
+While listening the HUD shows **`SLIŠIM …`** when the server detects speech and
+**`POSLUŠAM`** in silence, so you can see whether you are being heard at all. Every
+VAD transition also emits a `vad` event (with probability) for diagnosis.
 
 Limits: the HUD tab must stay open (the mic lives in the browser), the browser
 needs mic permission, and with a loud speaker set `barge_in: false` if she keeps

@@ -48,8 +48,11 @@ stt:
     followup_seconds: 20     # po odgovoru velja brez budnice
     silence_ms: 700          # toliko tišine zaključi izjavo
     min_speech_ms: 300       # krajše (kašelj) se ignorira
-    threshold: 0.5           # Silero VAD prag
-    min_rms: 320             # rezerva, če Silero ni na voljo
+    threshold: 0.4           # prag za začetek izjave
+    end_threshold: 0.25      # prag za konec (histereza; nižji = manj rezov)
+    max_utterance_ms: 20000  # izjava se nikoli ne "izgubi": po 20 s se zaključi
+    energy_override: true    # glasen zvok šteje kot govor, tudi če VAD reče ne
+    min_rms: 320             # rezervni energijski prag
     barge_in: true           # prekini Mio z govorom; false = pol-duplex (brez odmeva)
   partials: true             # live transcript while speaking
   partial_interval: 1.2      # seconds of new audio between partial passes

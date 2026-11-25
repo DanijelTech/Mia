@@ -187,7 +187,9 @@ POVEZAVA:
 3. po odgovoru lahko nadaljuješ **brez budnice** (`followup_seconds`, privzeto
    20 s); po tem spet reci »Mia«,
 4. govori lahko tudi med njenim odgovorom — to jo **prekine** (`barge_in`),
-5. klik na `■ STALNO` (ali `VKLOPI GLAS`) poslušanje izklopi.
+5. **preslednica** (ali klik na obroč) med poslušanjem **takoj pošlje** trenutno
+   izjavo — uporabi, če Mia ne zazna konca govora sama,
+6. klik na `■ STALNO` poslušanje izklopi (nedokončana izjava se še obdela).
 
 Kako deluje: brskalnik pretaka zvok neprekinjeno, strežnik pa s **VAD** (Silero,
 če je na voljo; sicer energijski prag) sam reže izjave, jih prepisuje in sproža
@@ -202,10 +204,18 @@ stt:
     followup_seconds: 20
     silence_ms: 700          # daljša tišina = počasnejši odziv, manj rezov
     min_speech_ms: 300       # krajše od tega se ignorira
-    threshold: 0.5           # Silero VAD prag
+    threshold: 0.4           # prag za začetek izjave
+    end_threshold: 0.25      # prag za konec (histereza: nižji = manj prerezov)
+    max_utterance_ms: 20000  # izjava se nikoli ne izgubi (po 20 s se zaključi)
+    energy_override: true    # glasen zvok šteje kot govor, tudi če VAD reče ne
     min_rms: 320             # energijski fallback
     barge_in: true           # false = Mia ne sliši sebe (pol-duplex)
 ```
+
+Med poslušanjem HUD izpisuje **`SLIŠIM …`**, ko strežnik zazna govor, in
+**`POSLUŠAM`** v tišini — iz tega vidiš, ali te strežnik sploh sliši. Vsaka
+sprememba stanja VAD pošlje dogodek `vad` (s probabilnostjo), zato je diagnoza
+mogoča brez brskalnikovega konzola.
 
 Omejitve: zavihek s HUD-om mora ostati odprt (mikrofon živi v brskalniku),
 brskalnik mora imeti dovoljenje za mikrofon, in pri glasnem zvočniku vklopi
