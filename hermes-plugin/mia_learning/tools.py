@@ -104,3 +104,13 @@ def skill_tree(args: dict, **kwargs) -> str:
         return json.dumps({"query": query, "matches": matched,
                            "summary": data.get("summary", {})}, ensure_ascii=False)
     return json.dumps(data, ensure_ascii=False)
+
+
+def music_play(args: dict, **kwargs) -> str:
+    payload = {"query": args.get("query") or "",
+               "desktop": bool(args.get("desktop", True))}
+    return json.dumps(_request("POST", "/music/play", payload), ensure_ascii=False)
+
+
+def music_stop(args: dict, **kwargs) -> str:
+    return json.dumps(_request("POST", "/music/stop", {}), ensure_ascii=False)

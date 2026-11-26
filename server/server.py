@@ -225,6 +225,14 @@ def _flat(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^a-zčšžćđ ]+", " ", (text or "").lower())).strip()
 
 
+_WAKE_PREFIX_RE = re.compile(r"^\s*(?:mia|mijo|mija|mio)\b[,\s]*", re.I)
+
+
+def _strip_mia_prefix(text: str) -> str:
+    """Typed HUD chat starts with »Mia, …« just like voice; strip it for intents."""
+    return _WAKE_PREFIX_RE.sub("", text or "", count=1).strip()
+
+
 def _is_enroll_command(text: str) -> bool:
     """'Mia, prepoznaj glas!' — voice-triggered enrollment of the utterance."""
     flat = _flat(text)
@@ -291,6 +299,18 @@ def _music_play_request(text: str) -> str | None:
     return music_play_request(text, _fav_artist_match)
 
 
+def _find_youtube(query: str) -> tuple[str, str] | None:
+    try:
+        r = subprocess.run(
+            ["yt-dlp", f"ytsearch1:{query}", "--get-title", "--get-id",
+             "--no-playlist"],
+            capture_output=True, text=True, timeout=30)
+    except Exception:
+        return None
+    lines = [l.strip() for l in r.stdout.splitlines() if l.strip()]
+    return (lines[0], lines[1]) if len(lines) >= 2 else None
+
+
 def _pick_favorite_artist() -> str:
     try:
         artists = [a.strip() for a in
@@ -354,6 +374,47 @@ def _open_visible_url(url: str) -> bool:
         except Exception:
             pass
     return False
+
+
+async def _music_chat(text: str) -> dict | None:
+    """Typed HUD chat: same deterministic music path as voice."""
+    query = _music_play_request(_strip_mia_prefix(text))
+    if query is None:
+        return None
+    query = query or _pick_favorite_artist()
+    prefer_desktop = any(word in _flat(text) for word in
+                         ("youtube", "jutub", "yt", "brskalnik", "okno"))
+    await _stop_all_media()
+    found = await asyncio.to_thread(_find_youtube, query)
+    if not found:
+        from urllib.parse import quote_plus
+        url = ("https://www.youtube.com/results?search_query="
+               + quote_plus(query))
+        opened = await asyncio.to_thread(_open_visible_url, url)
+        print(f"MUSIC chat fallback -> {url} opened={opened}", flush=True)
+        return {"text": "Odprla sem YouTube iskanje, šefe." if opened
+                else "Nisem našla ničesar, šefe.",
+                "url": url, "opened": opened, "query": query}
+    title, vid = found
+    src = f"https://www.youtube.com/watch?v={vid}"
+    try:
+        with (Path.home() / ".cache" / "mia-history.log").open("a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M')}\t{src}\n")
+    except OSError:
+        pass
+    hud_media = bool((CFG.get("hud") or {}).get("allow_external_media", False))
+    opened = False
+    if prefer_desktop or not hud_media:
+        opened = await asyncio.to_thread(_open_visible_url, src)
+    else:
+        sent = await _summon_media(src, title)
+        opened = sent > 0
+        if not opened:
+            opened = await asyncio.to_thread(_open_visible_url, src)
+    print(f"MUSIC chat playing ({query!r}): {title[:60]} [{vid}] desktop={opened}",
+          flush=True)
+    return {"text": "Evo šefe." if opened else "Našla sem, a nisem mogla odpreti, šefe.",
+            "url": src, "opened": opened, "query": query, "title": title}
 
 
 def _playback_active() -> bool:
@@ -1282,13 +1343,63 @@ async def hud_chat(request: Request) -> JSONResponse:
     conversation = body.get("conversation") or (CFG.get("hermes") or {}).get("conversation", "mia-main")
     if not text:
         return JSONResponse({"error": "empty input"}, status_code=400)
-    out: dict = {"text": "", "tools": [], "run_id": None}
     started = time.time()
+    chat_text = _strip_mia_prefix(text)
+
+    def quick(answer: str, tools: list[dict] | None = None) -> JSONResponse:
+        payload = {"text": answer, "tools": tools or [], "run_id": None}
+        try:
+            payload["episode_id"] = LEARNING.record_chat(
+                conversation, text, answer, tools or [],
+                duration_s=time.time() - started)
+        except Exception:
+            pass
+        return JSONResponse(payload)
+
+    local_time = time_answer(chat_text)
+    if local_time:
+        print(f"TIME answered locally (chat): {local_time!r}", flush=True)
+        return quick(local_time, [{"name": "local_time", "preview": ""}])
+
     try:
-        brief = LEARNING.brief(text)
+        music = await _music_chat(text)
+    except Exception as exc:
+        print(f"MUSIC chat failed: {exc}", flush=True)
+        music = None
+    if music:
+        return quick(music["text"], [{"name": "mia-open",
+                                      "preview": music.get("url", "")}])
+
+    volume = _volume_request(chat_text)
+    if volume is not None:
+        result = await asyncio.to_thread(subprocess.run, ["mia-volume", *volume],
+                                         capture_output=True, text=True, timeout=10)
+        lines = (result.stdout or "").strip().splitlines()
+        last = lines[-1] if lines else ""
+        confirm = (f"Glasnost {last.split(':', 1)[1].strip()}, šefe."
+                   if "glasnost:" in last else "Zvok preklopljen, šefe.")
+        return quick(confirm, [{"name": "mia-volume", "preview": " ".join(volume)}])
+
+    google_mode, google_query = google_request(chat_text)
+    agent_text = text
+    if google_mode == "show" and google_query:
+        url = google_url(google_query)
+        opened = await asyncio.to_thread(_open_visible_url, url)
+        return quick("Odprla sem v brskalniku, šefe." if opened
+                     else "Brskalnika nisem mogla odpreti, šefe.",
+                     [{"name": "mia-open", "preview": url}])
+    if google_mode == "answer" and google_query:
+        agent_text = (
+            "[Navodilo: uporabi spletno iskanje in mi ustno odgovori na "
+            "vprašanje. Ne odpiraj brskalnika in ne prikazuj strani.] "
+            + google_query)
+
+    out: dict = {"text": "", "tools": [], "run_id": None}
+    try:
+        brief = LEARNING.brief(agent_text)
     except Exception:
         brief = ""
-    chat_payload = "\n\n".join(part for part in (brief, text) if part)
+    chat_payload = "\n\n".join(part for part in (brief, agent_text) if part)
 
     def run_sync() -> None:
         timeout = float((CFG.get("hermes") or {}).get("timeout", 240))
@@ -1735,6 +1846,26 @@ async def learning_delete(request: Request) -> JSONResponse:
 @app.get("/api/learning/export")
 async def learning_export() -> JSONResponse:
     return JSONResponse(await asyncio.to_thread(LEARNING.store.export_data))
+
+
+@app.post("/api/music/play")
+async def music_play_endpoint(request: Request) -> JSONResponse:
+    """Play music/YouTube from typed chat or a Hermes tool."""
+    body = await request.json()
+    query = (body.get("query") or "").strip()
+    desktop = bool(body.get("desktop", True))
+    base = "pusti muziko na youtube" if desktop else "pusti muziko"
+    text = f"{base} {query}".strip() if query else base
+    result = await _music_chat(text)
+    if not result:
+        return JSONResponse({"error": "could not resolve music request"}, status_code=400)
+    return JSONResponse(result)
+
+
+@app.post("/api/music/stop")
+async def music_stop_endpoint() -> JSONResponse:
+    await _stop_all_media()
+    return JSONResponse({"ok": True})
 
 
 @app.post("/api/summon")
@@ -2474,18 +2605,7 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             # one song at a time: the new order immediately stops the old one
             await _stop_all_media()
 
-            def _find_on_youtube() -> tuple[str, str] | None:
-                try:
-                    r = subprocess.run(
-                        ["yt-dlp", f"ytsearch1:{query}", "--get-title", "--get-id",
-                         "--no-playlist"],
-                        capture_output=True, text=True, timeout=30)
-                except Exception:
-                    return None
-                lines = [l.strip() for l in r.stdout.splitlines() if l.strip()]
-                return (lines[0], lines[1]) if len(lines) >= 2 else None
-
-            found = await asyncio.to_thread(_find_on_youtube)
+            found = await asyncio.to_thread(_find_youtube, query)
             if not found:
                 from urllib.parse import quote_plus
                 url = ("https://www.youtube.com/results?search_query="

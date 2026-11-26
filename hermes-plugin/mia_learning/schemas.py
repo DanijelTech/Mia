@@ -139,3 +139,30 @@ SKILL_TREE = {
         },
     },
 }
+
+
+MUSIC_PLAY = {
+    "name": "music_play",
+    "description": (
+        "Play music on YouTube in a visible desktop window. ALWAYS use this "
+        "for 'pusti glasbo', 'pusti muziko na youtube', 'predvajaj <artist>', "
+        "playlists or any music request that reached the agent. Pass the "
+        "artist/song/query in `query`; leave it empty for a favourite artist. " + BASE
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Artist, song or search query"},
+            "desktop": {"type": "boolean", "description": "Open a visible browser window (default true)"},
+        },
+    },
+}
+
+MUSIC_STOP = {
+    "name": "music_stop",
+    "description": (
+        "Stop all music: close the YouTube desktop window and dismiss HUD media "
+        "panels. Use for 'ustavi glasbo', 'ugasni muziko', 'dovolj glasbe'. " + BASE
+    ),
+    "parameters": {"type": "object", "properties": {}},
+}

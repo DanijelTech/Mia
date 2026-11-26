@@ -10,3 +10,5 @@ provides_tools:
   - memory_mistake
   - memory_status
   - skill_tree
+  - music_play
+  - music_stop
