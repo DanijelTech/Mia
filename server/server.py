@@ -1167,11 +1167,16 @@ def _ws_allowed(ws: WebSocket) -> bool:
     # exactly that Origin, and the HUD must be able to talk to its own server.
     same_origin = bool(origin_host) and origin_host == request_host
     if not (same_origin or origin_host in ALLOWED_ORIGIN_HOSTS):
+        print(f"WS rejected: origin {origin!r} does not match host {request_host!r}",
+              flush=True)
         return False
     token = hud_token()
     if not token:
         return True
-    return (_supplied_token(ws) == token) or ws.query_params.get("token") == token
+    ok = (_supplied_token(ws) == token) or ws.query_params.get("token") == token
+    if not ok:
+        print(f"WS rejected: bad/missing token (origin={origin!r})", flush=True)
+    return ok
 
 
 # --------------------------------------------------------------- HUD + proxy
@@ -2590,6 +2595,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         return
     await ws.accept()
     WS_CLIENTS.add(ws)
+    print(f"WS client connected from {ws.client}", flush=True)
     pipeline = get_pipeline()
     conn = ConnState(conversation=(CFG.get("hermes") or {}).get("conversation", "mia-main"))
     CONNS.add(conn)
@@ -2714,7 +2720,8 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                 elif conn.recording:
                     conn.audio_chunks.append(message["bytes"])
                     _maybe_schedule_partial(ws, pipeline, conn)
-    except (WebSocketDisconnect, WebSocketDisconnected):
+    except (WebSocketDisconnect, WebSocketDisconnected) as exc:
+        print(f"WS client disconnected (code={getattr(exc, 'code', '?')})", flush=True)
         conn.continuous = False
         conn.calibration = None
         if conn.calibration_task and not conn.calibration_task.done():
