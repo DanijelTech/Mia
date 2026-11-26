@@ -140,11 +140,14 @@ class SpeakerGate:
         return _unit(np.asarray(emb, dtype=np.float32))
 
     def _stage_threshold(self, stage: StageProfile) -> float:
-        # The calibrated stage threshold already reflects how self-similar the
-        # far/noisy samples were. Shift it with the user's base threshold so
-        # raising the setting actually makes verification stricter.
-        shift = self.threshold - 0.30
-        return round(max(0.18, min(0.95, stage.threshold + shift)), 4)
+        # Never let a self-similarity estimate push the live threshold ABOVE
+        # the configured base: ECAPA self-scores across different sentences can
+        # be high, and that used to reject the user after calibration.
+        # Raising the base still works: the stage estimate is lifted with it,
+        # but the base remains the hard ceiling.
+        shift = max(0.0, self.threshold - 0.30)
+        return round(max(0.18, min(self.threshold,
+                                   stage.threshold + shift)), 4)
 
     def verify_detail(self, pcm_int16: np.ndarray) -> dict:
         level = level_db(pcm_int16)

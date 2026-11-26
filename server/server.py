@@ -435,6 +435,7 @@ class TurnTiming:
     skip_learning: bool = False
     speaker_stage: str = ""
     speaker_score: float | None = None
+    speaker_threshold: float | None = None
     speaker_level_db: float | None = None
     tools_used: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
@@ -454,6 +455,7 @@ class TurnTiming:
             "interrupted": self.interrupted,
             "speaker_stage": self.speaker_stage,
             "speaker_score": self.speaker_score,
+            "speaker_threshold": self.speaker_threshold,
             "speaker_level_db": self.speaker_level_db,
             "tools_used": self.tools_used,
             "stt_finalize_seconds": self._delta(self.stt_start_monotonic, self.stt_final_monotonic),
@@ -2248,10 +2250,12 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
                 score = float(detail["score"])
                 timing.speaker_stage = str(detail.get("stage") or "")
                 timing.speaker_score = score
+                timing.speaker_threshold = detail.get("threshold")
                 timing.speaker_level_db = detail.get("level_db")
                 if timing.speaker_stage not in ("none", "too_short"):
                     print(f"SPEAKER match stage={timing.speaker_stage} "
-                          f"score={score:.2f} level={timing.speaker_level_db} dBFS", flush=True)
+                          f"score={score:.2f} threshold={detail.get('threshold')} "
+                          f"level={timing.speaker_level_db} dBFS", flush=True)
             except Exception as exc:
                 # broken profile / missing speechbrain must not kill every turn
                 if not getattr(pipeline, "_gate_error_logged", False):
@@ -2275,6 +2279,9 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
                 if not (override_ok or may_probe):
                     timing.errors.append(f"ignored: speaker score {score:.2f}")
                     print(f"SPEAKER rejected (score={score:.2f}, "
+                          f"threshold={detail.get('threshold')}, "
+                          f"stage={detail.get('stage')}, "
+                          f"level={detail.get('level_db')} dBFS, "
                           f"{len(audio) / 32000:.1f}s) — brez STT", flush=True)
                     await ws.send_json({"type": "ignored", "reason": "speaker"})
                     return

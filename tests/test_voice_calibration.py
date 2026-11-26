@@ -83,6 +83,17 @@ class CalibrationTests(unittest.TestCase):
         self.assertEqual(len(session.samples["blizu"]), 1)
         self.assertEqual(len(session.samples["dalec"]), 1)
 
+    def test_stage_threshold_never_exceeds_base(self):
+        from speaker_gate import StageProfile
+        with tempfile.TemporaryDirectory() as tmp:
+            gate = SpeakerGate(Path(tmp) / "missing.npz", threshold=0.30)
+            stage = StageProfile("dalec", np.zeros(192, dtype=np.float32),
+                                  -40.0, 2.0, 2, 0.90)
+            self.assertLessEqual(gate._stage_threshold(stage), 0.30)
+            gate.threshold = 0.40
+            self.assertLessEqual(gate._stage_threshold(stage), 0.40)
+            self.assertGreaterEqual(gate._stage_threshold(stage), 0.30)
+
     def test_gate_status_without_profile(self):
         with tempfile.TemporaryDirectory() as tmp:
             gate = SpeakerGate(Path(tmp) / "missing.npz")
