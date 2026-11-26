@@ -21,7 +21,7 @@ from typing import Any, Iterable
 
 from . import privacy
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS episodes (
     error TEXT,
     duration_s REAL,
     interrupted INTEGER DEFAULT 0,
+    verified INTEGER DEFAULT 0,
+    verification_status TEXT DEFAULT 'unverified',
+    verification TEXT,
     tags TEXT,
     meta TEXT,
     fingerprint TEXT
@@ -128,6 +131,20 @@ CREATE TABLE IF NOT EXISTS skill_nodes (
     health TEXT,
     updated REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS capabilities (
+    id TEXT PRIMARY KEY,
+    category TEXT,
+    label TEXT,
+    how TEXT,
+    keywords TEXT,
+    status TEXT DEFAULT 'empty',
+    evidence TEXT,
+    notes TEXT,
+    last_checked REAL,
+    last_confirmed REAL,
+    source TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_capabilities_cat ON capabilities(category, status);
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts REAL NOT NULL,
@@ -205,12 +222,24 @@ class Store:
                 self._fts = True
             except sqlite3.Error:
                 self._fts = False
-            row = self._conn.execute(
-                "SELECT value FROM meta WHERE key='schema_version'").fetchone()
-            if row is None:
-                self._conn.execute(
-                    "INSERT INTO meta(key, value) VALUES('schema_version', ?)",
-                    (str(SCHEMA_VERSION),))
+            # Forward migration for databases created before verified learning.
+            columns = {row["name"] for row in self._conn.execute(
+                "PRAGMA table_info(episodes)").fetchall()}
+            for name, ddl in (
+                ("verified", "ALTER TABLE episodes ADD COLUMN verified INTEGER DEFAULT 0"),
+                ("verification_status",
+                 "ALTER TABLE episodes ADD COLUMN verification_status TEXT DEFAULT 'unverified'"),
+                ("verification", "ALTER TABLE episodes ADD COLUMN verification TEXT"),
+            ):
+                if name not in columns:
+                    try:
+                        self._conn.execute(ddl)
+                    except sqlite3.Error:
+                        pass
+            self._conn.execute(
+                "INSERT INTO meta(key, value) VALUES('schema_version', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (str(SCHEMA_VERSION),))
             self._conn.commit()
 
     def close(self) -> None:
@@ -277,16 +306,25 @@ class Store:
         if pcfg.get("redact", True):
             steps = privacy.redact_obj(steps, 500)
             meta = privacy.redact_obj(meta, 500)
+        verification = fields.get("verification") or {}
+        verified = bool(fields.get("verified")) or verification.get("status") == "verified"
+        verification_status = (fields.get("verification_status")
+                               or verification.get("status")
+                               or ("verified" if verified else "unverified"))
         cur = self._execute(
             """INSERT INTO episodes
                (ts, session, source, intent, request, response, tools, steps,
-                outcome, error, duration_s, interrupted, tags, meta, fingerprint)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                outcome, error, duration_s, interrupted, verified,
+                verification_status, verification, tags, meta, fingerprint)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 now, fields.get("session"), fields.get("source") or "unknown",
                 self._safe(fields.get("intent"), 300), request, response,
                 _dumps(tools), _dumps(steps), fields.get("outcome") or "unknown",
                 error, fields.get("duration_s"), 1 if fields.get("interrupted") else 0,
+                1 if verified else 0, verification_status,
+                _dumps(privacy.redact_obj(verification, 500)
+                       if self.privacy_cfg.get("redact", True) else verification),
                 _dumps(tags), _dumps(meta), fields.get("fingerprint"),
             ),
         )
@@ -299,14 +337,17 @@ class Store:
 
     def update_episode(self, episode_id: int, **fields: Any) -> bool:
         allowed = {"outcome", "error", "response", "interrupted", "duration_s",
-                   "steps", "tools", "tags", "meta", "intent"}
+                   "steps", "tools", "tags", "meta", "intent", "verified",
+                   "verification_status", "verification"}
         sets, params = [], []
         for key, value in fields.items():
             if key not in allowed:
                 continue
-            if key in ("steps", "tools", "tags", "meta"):
+            if key in ("steps", "tools", "tags", "meta", "verification"):
                 value = _dumps(privacy.redact_obj(value, 500)
                                if self.privacy_cfg.get("redact", True) else value)
+            elif key == "verified":
+                value = 1 if value else 0
             elif key == "error":
                 value = self._safe(value, 1000)
             elif key == "response":
@@ -344,10 +385,13 @@ class Store:
     def list_episodes(self, limit: int = 50, offset: int = 0,
                       source: str | None = None, outcome: str | None = None,
                       session: str | None = None,
+                      verification_status: str | None = None,
                       since: float | None = None) -> list[dict]:
         sql = "SELECT * FROM episodes WHERE 1=1"
         params: list[Any] = []
-        for column, value in (("source", source), ("outcome", outcome), ("session", session)):
+        for column, value in (("source", source), ("outcome", outcome),
+                              ("session", session),
+                              ("verification_status", verification_status)):
             if value:
                 sql += f" AND {column}=?"
                 params.append(value)
@@ -363,7 +407,10 @@ class Store:
         d = dict(row)
         for key in ("tools", "steps", "tags", "meta"):
             d[key] = _loads(d.get(key), [] if key != "meta" else {})
+        d["verification"] = _loads(d.get("verification"), {})
         d["interrupted"] = bool(d.get("interrupted"))
+        d["verified"] = bool(d.get("verified"))
+        d.setdefault("verification_status", "unverified")
         return d
 
     # ------------------------------------------------------------ feedback
@@ -646,6 +693,46 @@ class Store:
             out.append(d)
         return out
 
+    # -------------------------------------------------------- capabilities
+    def list_capabilities(self, limit: int = 500, category: str | None = None,
+                          status: str | None = None, query: str = "") -> list[dict]:
+        sql = "SELECT * FROM capabilities WHERE 1=1"
+        params: list[Any] = []
+        if category:
+            sql += " AND category=?"
+            params.append(category)
+        if status:
+            sql += " AND status=?"
+            params.append(status)
+        if query:
+            like = f"%{query}%"
+            sql += " AND (label LIKE ? OR how LIKE ? OR keywords LIKE ? OR id LIKE ?)"
+            params.extend([like, like, like, like])
+        sql += " ORDER BY category, id LIMIT ?"
+        params.append(max(1, int(limit)))
+        return [dict(r) for r in self._query(sql, params)]
+
+    def get_capability(self, cap_id: str) -> dict | None:
+        row = self._one("SELECT * FROM capabilities WHERE id=?", (cap_id,))
+        return dict(row) if row else None
+
+    def set_capability(self, cap_id: str, status: str, evidence: str = "",
+                       notes: str | None = None, source: str = "auto") -> bool:
+        now = time.time()
+        existing = self.get_capability(cap_id)
+        if not existing:
+            return False
+        confirmed_at = now if status in ("confirmed", "learned") else existing.get("last_confirmed")
+        self._execute(
+            """UPDATE capabilities SET status=?, evidence=?, notes=COALESCE(?, notes),
+               last_checked=?, last_confirmed=?, source=? WHERE id=?""",
+            (status, self._safe(evidence, 800), notes, now, confirmed_at,
+             source, cap_id),
+        )
+        self.add_event("capability", cap_id, {"status": status,
+                                              "evidence": self._safe(evidence, 200)})
+        return True
+
     # -------------------------------------------------------------- events
     def add_event(self, kind: str, subject: str = "", detail: Any = None) -> int:
         cur = self._execute(
@@ -761,6 +848,9 @@ class Store:
 
         outcomes = {r["outcome"]: int(r["n"]) for r in self._query(
             "SELECT outcome, COUNT(*) AS n FROM episodes GROUP BY outcome")}
+        verification = {r["verification_status"]: int(r["n"]) for r in self._query(
+            "SELECT verification_status, COUNT(*) AS n FROM episodes "
+            "GROUP BY verification_status")}
         last = self._one("SELECT ts FROM episodes ORDER BY id DESC LIMIT 1")
         first = self._one("SELECT ts FROM episodes ORDER BY id ASC LIMIT 1")
         try:
@@ -777,8 +867,13 @@ class Store:
             "habits": count("habits"),
             "facts": count("facts"),
             "skills": count("skill_nodes"),
+            "capabilities": count("capabilities"),
             "events": count("events"),
             "outcomes": outcomes,
+            "verification": verification,
+            "verified_episodes": int(verification.get("verified", 0)
+                                     + verification.get("user_confirmed", 0)),
+            "pending_verification": int(verification.get("unverified", 0)),
             "first_episode_ts": first["ts"] if first else None,
             "last_episode_ts": last["ts"] if last else None,
             "fts": self._fts,
@@ -822,6 +917,7 @@ class Store:
             "anti_patterns": rows("anti_patterns"),
             "habits": rows("habits"),
             "facts": rows("facts"),
+            "capabilities": rows("capabilities"),
             "events": rows("events"),
         }
 
@@ -846,6 +942,18 @@ class Store:
                         imported[table] = imported.get(table, 0) + 1
                     except sqlite3.Error:
                         continue
+            for row in data.get("capabilities") or []:
+                cols = [c for c in row if c != "id"]
+                placeholders = ",".join("?" for _ in cols)
+                updates = ",".join(f"{c}=excluded.{c}" for c in cols)
+                try:
+                    self._conn.execute(
+                        f"INSERT INTO capabilities(id,{','.join(cols)}) "
+                        f"VALUES(?,{placeholders}) ON CONFLICT(id) DO UPDATE SET {updates}",
+                        [row.get("id")] + [row.get(c) for c in cols])
+                    imported["capabilities"] = imported.get("capabilities", 0) + 1
+                except sqlite3.Error:
+                    continue
             for table in ("episodes", "feedback", "events"):
                 for row in data.get(table) or []:
                     cols = [c for c in row if c != "id"]
@@ -894,6 +1002,11 @@ class Store:
                 except ValueError:
                     continue
                 ok = bool(rec.get("ok"))
+                verification = rec.get("verification") or {}
+                verified = bool(rec.get("verified")) or verification.get("status") == "verified"
+                verification_status = (verification.get("status")
+                                       or ("verified" if verified else
+                                           ("failed" if not ok else "unverified")))
                 self.record_episode(
                     ts=rec.get("ts") or time.time(),
                     session=rec.get("session") or "control",
@@ -905,11 +1018,19 @@ class Store:
                     steps=[{"action": rec.get("action"), "args": rec.get("args"),
                             "ok": ok, "rc": rec.get("rc")}],
                     outcome="success" if ok else "failure",
+                    verified=verified,
+                    verification_status=verification_status,
+                    verification=verification,
                     error=rec.get("error") or "",
                     duration_s=(rec.get("ms") or 0) / 1000.0,
                     tags=["control", str(rec.get("action") or "")],
                     meta={"host": rec.get("host"), "cwd": rec.get("cwd")},
                 )
+                try:
+                    from . import capabilities as _caps
+                    _caps.mark_learned(self, str(rec.get("action") or ""), ok)
+                except Exception:
+                    pass
                 count += 1
             new_offset = fh.tell()
         self._execute(

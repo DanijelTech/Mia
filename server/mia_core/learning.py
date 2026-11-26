@@ -15,6 +15,10 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .capabilities import (confirm as confirm_capability,
+                             lines as capability_lines,
+                             refresh as refresh_capabilities,
+                             summary as capability_summary)
 from .config import load_config, repo_root, skills_root as cfg_skills_root
 from .context import brief_preview, build_brief
 from .db import Store
@@ -88,7 +92,10 @@ class LearningCore:
     def record_turn(self, timing: Any, conversation: str, transcript: str,
                     source: str = "voice", response: str | None = None,
                     tools: list[str] | None = None,
-                    extra_meta: dict | None = None) -> int | None:
+                    extra_meta: dict | None = None,
+                    verified: bool = False,
+                    verification_status: str = "unverified",
+                    verification: dict | None = None) -> int | None:
         if not self.enabled or not self.cfg.get("auto_record", True):
             return None
         payload = episode_payload(timing, conversation, transcript, source,
@@ -96,11 +103,17 @@ class LearningCore:
                                   extra_meta=extra_meta)
         if not payload.get("request"):
             return None
+        payload.update({"verified": verified,
+                        "verification_status": verification_status,
+                        "verification": verification or {}})
         return self.record_episode(payload)
 
     def record_chat(self, conversation: str, request: str, response: str,
                     tools: list[dict] | None = None, error: str = "",
-                    duration_s: float | None = None) -> int | None:
+                    duration_s: float | None = None,
+                    verified: bool = False,
+                    verification_status: str = "unverified",
+                    verification: dict | None = None) -> int | None:
         if not self.enabled or not self.cfg.get("auto_record", True):
             return None
         names = [t.get("name", "tool") for t in (tools or []) if isinstance(t, dict)]
@@ -112,11 +125,16 @@ class LearningCore:
         payload["duration_s"] = duration_s
         payload["steps"] = [{"tool": t.get("name"), "preview": t.get("preview", "")}
                             for t in (tools or []) if isinstance(t, dict)]
+        payload.update({"verified": verified,
+                        "verification_status": verification_status,
+                        "verification": verification or {}})
         return self.record_episode(payload)
 
     def record_control(self, action: str, args: list[str] | None = None,
                        ok: bool = True, error: str = "", duration_s: float = 0,
-                       meta: dict | None = None) -> int | None:
+                       meta: dict | None = None, verified: bool = False,
+                       verification_status: str = "unverified",
+                       verification: dict | None = None) -> int | None:
         if not self.enabled:
             return None
         payload = {
@@ -128,6 +146,9 @@ class LearningCore:
             "tools": ["mia-ctl"],
             "steps": [{"action": action, "args": args or [], "ok": ok}],
             "outcome": "success" if ok else "failure",
+            "verified": verified,
+            "verification_status": verification_status,
+            "verification": verification or {},
             "error": error,
             "duration_s": duration_s,
             "tags": ["control", action],
@@ -137,7 +158,9 @@ class LearningCore:
 
     def finish_episode(self, episode_id: int, outcome: str | None = None,
                        response: str | None = None, error: str | None = None,
-                       learn: bool = True) -> dict:
+                       learn: bool = True, verified: bool | None = None,
+                       verification_status: str | None = None,
+                       verification: dict | None = None) -> dict:
         if not self.enabled:
             return {"ok": False, "error": "learning disabled"}
 
@@ -149,6 +172,12 @@ class LearningCore:
                 fields["response"] = response
             if error is not None:
                 fields["error"] = error
+            if verified is not None:
+                fields["verified"] = bool(verified)
+            if verification_status:
+                fields["verification_status"] = verification_status
+            if verification is not None:
+                fields["verification"] = verification
             self.store.update_episode(episode_id, **fields)
             episode = self.store.get_episode(episode_id)
             learned = learn_from_episode(self.store, episode, self.cfg) if (learn and episode) else {}
@@ -158,6 +187,16 @@ class LearningCore:
 
     def episodes(self, limit: int = 50, **kwargs: Any) -> list[dict]:
         return self._safe([], lambda: self.store.list_episodes(limit=limit, **kwargs))
+
+    def pending(self, limit: int = 20) -> list[dict]:
+        def run() -> list[dict]:
+            audit = self.cfg.get("audit_path") or ""
+            if audit:
+                from .config import expand_path
+                self.store.ingest_audit(expand_path(audit))
+            return self.store.list_episodes(
+                limit=limit, verification_status="unverified")
+        return self._safe([], run)
 
     def events(self, limit: int = 100) -> list[dict]:
         return self._safe([], lambda: self.store.list_events(limit=limit))
@@ -241,6 +280,26 @@ class LearningCore:
     def facts(self, limit: int = 100, kind: str | None = None) -> list[dict]:
         return self._safe([], lambda: self.store.list_facts(limit, kind))
 
+    def capabilities(self, refresh: bool = False, query: str = "",
+                     category: str | None = None,
+                     status: str | None = None) -> list[dict]:
+        if refresh:
+            self._safe({}, lambda: refresh_capabilities(self.store, self.cfg))
+        return self._safe([], lambda: self.store.list_capabilities(
+            limit=500, category=category, status=status, query=query))
+
+    def confirm_capability(self, cap_id: str, status: str = "confirmed",
+                           notes: str = "", evidence: str = "") -> bool:
+        return self._safe(False, lambda: confirm_capability(
+            self.store, cap_id, status, notes, evidence))
+
+    def capability_summary(self) -> dict:
+        return self._safe({"total": 0, "confirmed": 0, "percent": 0},
+                          lambda: capability_summary(self.store))
+
+    def capability_lines(self, query: str = "", limit: int = 8) -> list[str]:
+        return self._safe([], lambda: capability_lines(self.store, query, limit))
+
     def match(self, request: str) -> dict:
         def run() -> dict:
             return {
@@ -292,7 +351,7 @@ class LearningCore:
             f"DELETE FROM {table} WHERE {column}=?", (key_or_id,)).rowcount > 0)
 
     # ------------------------------------------------------------------ jobs
-    def mine(self, ingest_audit: bool = True) -> dict:
+    def mine(self, ingest_audit: bool = True, extra: dict | None = None) -> dict:
         def run() -> dict:
             result = mine_habits(self.store, self.cfg, apply=True)
             if ingest_audit:
@@ -302,6 +361,8 @@ class LearningCore:
                     path = expand_path(audit)
                     result["audit_records"] = self.store.ingest_audit(path)
             result["skills"] = self.refresh_skills()
+            result["capabilities"] = refresh_capabilities(self.store, self.cfg,
+                                                          extra=extra)
             self.store.meta_set("last_mine_ts", time.time())
             return result
 
@@ -364,6 +425,7 @@ class LearningCore:
                 "enabled": self.enabled,
                 "db": stats,
                 "skills": tree.get("summary", {}),
+                "capabilities": capability_summary(self.store),
                 "last_mine_ts": float(self.store.meta_get("last_mine_ts", "0") or 0),
                 "audit_path": str(self.cfg.get("audit_path") or ""),
                 "context_max_chars": int((self.cfg.get("context") or {})

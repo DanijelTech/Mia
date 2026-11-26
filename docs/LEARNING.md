@@ -51,7 +51,30 @@ Tega NE ponavljaj:
 - Če je predolgo, se najprej odrežejo manj pomembni razdelki (veščine).
 - Blok je determinističen in razložljiv; ni skritih embeddingov.
 
-### 3. Uporabnikov odziv
+### 3. Samo preverjeni uspehi so resnica
+
+Vsaka epizoda ima `verified` in `verification_status`:
+
+- `verified` — `mia-ctl` je preveril post-condition (okno izginilo, glasnost
+  se ujema, datoteka obstaja, proces je mrtev, storitev aktivna …),
+- `user_confirmed` — uporabnik je kliknil ✓ v HUD kartici ali rekel »tako je«,
+- `unverified` — zgleda uspešno, a ni dokazano,
+- `user_rejected` / `failed` — uporabnik ali post-condition je rekel ne.
+
+**Recept nastane samo iz `verified` ali `user_confirmed`.** Nepreverjen uspeh
+se shrani kot kandidat, ne kot resnica. To je namerno: Mia se uči le iz
+preverljivih korakov in se zato vsakič manj moti.
+
+V HUD-u se po opravilu s spremembo prikaže kartica **»JE BILO PRAVILNO?«** z
+✓/✗. Kartica je tudi v panelu **ZA POTRDITEV** in na strani ZNANJE → DNEVNIK
+(filter »za potrditev«). Ročno:
+
+```bash
+mia-learn verify --episode 42 --verdict positive --note "tako je"
+mia-learn verify --episode 42 --verdict negative --note "raje Chromu"
+```
+
+### 4. Uporabnikov odziv
 
 Kratke fraze strežnik ujame **pred** Hermesom in jih uporabi na zadnji epizodi:
 
@@ -93,6 +116,23 @@ zaupanje = (uspehi + 1) / (uspehi + neuspehi + 2) × nasičenje
 - Samodejno iz neuspešnih epizod; ročno z `mia-learn mistakes --add`.
 - Kasnejši uspeh posodobi rešitev z delujočimi koraki.
 - V briefu največ 3 najbolj relevantne.
+
+## Seznam zmogljivosti
+
+Mia ima bogat seznam ~80 zmogljivosti (okna, aplikacije, vnos, posnetki,
+odložišče, zvok, zasloni, viri, procesi, storitve, datoteke, brskalnik,
+učenje). Vsaka ima status `confirmed` / `learned` / `detected` / `empty` /
+`failed` / `unsupported`, ukaz in način preverjanja.
+
+```bash
+mia-learn capabilities --refresh
+mia-learn capabilities --category desktop
+mia-learn capabilities --confirm files.search --notes "testirano"
+mia-learn capabilities --fail desktop.input.type --notes "Wayland brez wtype"
+```
+
+V HUD-u: panel **ZMOGLJIVOSTI** → **ODPRI SEZNAM**. Podrobnosti:
+[CAPABILITIES.md](CAPABILITIES.md).
 
 ## Ukazi
 
@@ -180,6 +220,7 @@ learning:
     max_recipes: 2
     max_mistakes: 3
     max_facts: 5
+  verify_prompts: true             # HUD kartica »je bilo pravilno?«
   retention:
     episodes_days: 400
     max_episodes: 200000

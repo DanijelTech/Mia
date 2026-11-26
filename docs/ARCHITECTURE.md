@@ -50,6 +50,27 @@ Drevo veščin (`skills/`) je eksplicitno: `mia-companion` je koren, otroci
 `mia-productivity`, `mia-diagnostics`) pa lastijo posamezna področja.
 `mia-skill validate` preveri imena, starše in `references/`.
 
+## Kalibracija, stroga budnica in preverjanje
+
+- `server/speaker_gate.py` hrani oddaljenostne odtise (bližina/sredina/daleč)
+  z ravnjo dBFS in lastnim pragom. Preverjanje vzame en odtis, ga primerja z
+  vsemi centroidi in uporabi najboljši zadetek.
+- `server/calibration.py` je state machine za vodeno kalibracijo; HUD pošilja
+  PCM prek istega WebSocketa. Profil se shrani v
+  `server/voices/speaker_profile.npz` in se pobere brez restarta.
+- `strict_wake: true` pomeni, da se vsaka izjava mora začeti z »Mia«; v
+  strict načinu se follow-up okno ne uporablja.
+- Vsaka epizoda ima `verified` in `verification_status`. Samo `verified` ali
+  `user_confirmed` epizode ustvarijo recept; nepreverjen uspeh ostane kandidat.
+- HUD kartica **JE BILO PRAVILNO?** in `/api/learning/pending` sta povratna
+  zanka; `/api/learning/verify` zapiše ✓/✗.
+- `server/mia_core/capabilities.py` je seznam ~80 zmogljivosti s statusi
+  potrjeno/naučeno/zaznano/prazno/nepodprto; HUD stran
+  `/hud/capabilities.html` in `mia-learn capabilities` sta vmesnika.
+- `server/hud/settings.html` + `/api/settings` upravljata strogo budnico,
+  prag, follow-up, zahtevo po profilu, preverjanje, učenje in dolžino briefa;
+  shrani se v `server/logs/settings.json` in velja takoj.
+
 ## Nadzor računalnika
 
 `mia-ctl` (v `skills/mia-companion/bin/`) je edini priporočeni vmesnik za
@@ -75,6 +96,15 @@ Odjemalec → strežnik (JSON + binarno):
 krog, zabeleži zadnjo izgovorjeno poved in naslednjemu vnosu doda opombo o
 prekinitvi, da se agentov spomin ujema s tem, kar si slišal.
 
+Kalibracija uporablja iste binarne kose, a v drugem načinu:
+
+```
+{"type":"calibration_start"}          → {"type":"calibration_state", stage, prompt, …}
+<binarni PCM kosi>                    → {"type":"calibration_state", …} / calibration_done
+{"type":"calibration_cancel"}         → {"type":"calibration_state", active:false}
+{"type":"calibration_status"}         → {"type":"calibration_status", status:{…}}
+```
+
 Strežnik → odjemalec:
 
 ```
@@ -91,6 +121,12 @@ approval_request{data,run_id} · error · done{timing}
 | `/hud/` | HUD (statičen, ena datoteka) |
 | `/api/hermes/{path}` | **allowlist** proxy do Hermes API, vstavi bearer ključ (GET: health, capabilities, skills, toolsets, jobs, sessions; POST: samo v1/responses) |
 | `/api/chat` | tipkani krog klepeta v skupni glasovni seji |
+| `/api/voice/calibration` | stanje oddaljenostnega profila + postaje |
+| `/api/settings` | branje/pisanje živih nastavitev (budnica, prag, učenje …) |
+| `/api/capabilities` | seznam zmogljivosti (potrjeno/naučeno/prazno) |
+| `/api/capabilities/refresh`, `/confirm` | detekcija in potrditev |
+| `/api/learning/pending` | epizode, ki čakajo na ✓/✗ |
+| `/api/learning/verify` | potrditev/zavrnitev epizode |
 | `/api/learning/status` | stanje spomina, baze in drevesa veščin |
 | `/api/learning/tree` | drevo veščin (flat + nested + health) |
 | `/api/learning/brief` | točen brief, ki bi ga model dobil za zahtevo |

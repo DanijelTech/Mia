@@ -46,10 +46,10 @@ stt:
   # Neprestano poslušanje (gumb STALNO): VAD razdeli tok v izjave,
   # budnica »Mia« odpre pogovor, followup okno dovoli nadaljevanje brez nje.
   continuous:
-    wake_words: ["mia", "mijo", "mija", "mio", "mja", "nia", "nja", "meja"]
-    followup_seconds: 0      # 0 = vsaka izjava mora ZAČETI z »Mia« (strogo,
-                             # priporočeno v hrupni sobi); npr. 20 = po odgovoru
-                             # lahko nadaljuješ brez budnice
+    wake_words: ["mia", "mijo", "mija", "mio"]
+    strict_wake: true        # vsaka izjava se MORA začeti z »Mia« — brez izjem
+    followup_seconds: 0      # v strict načinu se ne uporablja; obdržano za
+                             # združljivost (npr. 20 = follow-up brez budnice)
     silence_ms: 700          # toliko tišine zaključi izjavo
     min_speech_ms: 450       # krajše (kašelj, pok, šum) se ignorira
     threshold: 0.5           # prag za začetek izjave (višji = manj šuma)
@@ -62,8 +62,15 @@ stt:
                              # prekinitev z govorom med Mijinim govorjenjem)
     speaker_gate:            # glasovna kalibracija — Mia uboga samo vpisan glas
       enabled: true          # aktiven šele, ko obstaja profil:
-                             # python3 server/scripts/enroll_voice.py
+                             # python3 server/scripts/calibrate_voice.py
       threshold: 0.30        # kosinusna podobnost odtisa; dvig = strožje
+      require_profile: false # true = brez profila Mia ne obdeluje govora
+      calibration:           # vodena kalibracija iz HUD-a (bližina/sredina/daleč)
+        required: true       # HUD ob zagonu ponudi kalibracijo, če je ni
+        stages:
+          - {id: blizu,   label: "BLIZU mikrofona (0,5 m)",   seconds: 4, samples: 2}
+          - {id: srednje, label: "SREDNJE (2–3 m)",           seconds: 4, samples: 2}
+          - {id: dalec,   label: "DALEČ (5–6 m)",             seconds: 5, samples: 2}
       wake_override: true    # ob predvajanju medijev (mia-open okno živo) izrecna
                              # budnica prevzame turn — sicer glasbe ne moreš ustaviti
       probe_on_reject_seconds: 0   # 0 = zavrnjen glas se NE pošlje v STT (TV in
@@ -198,6 +205,7 @@ learning:
   skills_root: null                 # null = <repo>/skills
   auto_record: true                 # vsak sprejeti krog se zabeleži
   auto_feedback: true               # »to je bilo prav / ni prav«
+  verify_prompts: true              # HUD kartica »JE BILO PRAVILNO?« ✓/✗
   auto_mine_interval_seconds: 900   # izkop navad + uvoz audita + indeks veščin
   context:
     enabled: true                   # [MIA SPOMIN …] pred vsakim krogom

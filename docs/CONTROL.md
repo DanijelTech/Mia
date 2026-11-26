@@ -138,6 +138,31 @@ mia-ctl files reveal ~/Documents/pogodba.pdf
 Iskanje je omejeno na `allowed_roots` in nikoli ne vstopa v `deny_paths`
 (`~/.ssh`, `~/.hermes`, …).
 
+### Zasloni, viri, zvok
+
+```bash
+mia-ctl displays list        # monitorji, ločljivosti, fokus
+mia-ctl resources            # CPU/RAM/disk/GPU + najbolj obremenjeni procesi
+mia-ctl audio devices        # izhodne in vhodne zvočne naprave
+```
+
+### Preverjanje uspeha
+
+Vsak rezultat vsebuje `verification`:
+
+```json
+{"status":"verified","method":"volume_readback",
+ "evidence":{"got":40,"expected":40}}
+```
+
+- `verified` — post-condition je uspel (okno izginilo, glasnost se ujema,
+  datoteka obstaja, proces mrtev, storitev aktivna …).
+- `failed` — post-condition ni uspel.
+- `unknown` — varnega post-conditiona ni (tipkanje, klikanje, napajanje).
+
+Samo `verified` dejanja (ali uporabnikovo ✓) postanejo zaupanja vredni
+recepti. Podrobnosti: [CAPABILITIES.md](CAPABILITIES.md).
+
 ### Omrežje in sistem
 
 ```bash

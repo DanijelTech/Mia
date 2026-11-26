@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MIA // ZMOGLJIVOSTI</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+:root{--bg:#050b14;--panel:#081523cc;--line:#0e2c40;--cyan:#00e5ff;--cyan-dim:#0a7f96;
+  --teal:#19f0d8;--amber:#ffb300;--red:#ff4d5e;--txt:#9fd8e8;--txt-dim:#4d7d92}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:radial-gradient(ellipse at 50% 0%,#0a1a2c 0%,var(--bg) 60%);color:var(--txt);
+  font-family:'Rajdhani',sans-serif;padding:14px 18px 30px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line);
+  background:var(--panel);padding:10px 14px;clip-path:polygon(0 0,100% 0,100% 70%,calc(100% - 14px) 100%,14px 100%,0 70%)}
+header h1{font-family:'Orbitron';font-size:15px;letter-spacing:6px;color:var(--cyan)}
+header .sub{font-size:11px;letter-spacing:2px;color:var(--txt-dim)}
+.btns{display:flex;gap:6px;flex-wrap:wrap}
+button{background:#0a2435;color:var(--cyan);border:1px solid var(--cyan-dim);padding:6px 10px;
+  font-family:'Orbitron';font-size:9.5px;letter-spacing:1.2px;cursor:pointer}
+button:hover{background:#0e3448}
+button.danger{color:var(--red);border-color:#5c1f27}
+button.ghost{color:var(--txt-dim);border-color:var(--line)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:12px 0}
+.stat{border:1px solid var(--line);background:var(--panel);padding:10px 12px}
+.stat b{display:block;font-family:'Orbitron';font-size:19px;color:var(--teal)}
+.stat span{font-size:11px;letter-spacing:1.5px;color:var(--txt-dim)}
+.bar{height:7px;background:#06101c;border:1px solid var(--line);margin-top:6px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan-dim),var(--teal))}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+input,select{background:#06101c;border:1px solid var(--line);color:#cfeefb;padding:7px 9px;
+  font-family:'Rajdhani';font-size:13px;outline:none}
+input:focus,select:focus{border-color:var(--cyan-dim)}
+#search{flex:1;min-width:220px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{text-align:left;padding:6px 7px;border-bottom:1px solid #0b2233;vertical-align:top}
+th{font-family:'Orbitron';font-size:9.5px;letter-spacing:1.5px;color:var(--cyan);font-weight:400}
+tr:hover td{background:#081523}
+.cat td{background:#071826;font-family:'Orbitron';font-size:10px;letter-spacing:2px;color:var(--teal)}
+.chip{display:inline-block;font-size:9.5px;padding:2px 6px;border:1px solid var(--line);white-space:nowrap}
+.chip.confirmed{color:var(--teal);border-color:#0d6b63;background:#041c1a}
+.chip.learned{color:var(--cyan);border-color:#0a5b6b;background:#041a22}
+.chip.detected{color:var(--amber);border-color:#6b5310;background:#1a1404}
+.chip.failed{color:var(--red);border-color:#6b1a22;background:#1a0407}
+.chip.unsupported{color:var(--txt-dim);border-color:#263a46}
+.chip.empty{color:var(--txt-dim);border-color:#263a46;background:#06101c}
+.how{font-family:ui-monospace,monospace;font-size:11.5px;color:#bfe9f7}
+.ev{font-size:11px;color:var(--txt-dim);max-width:320px;word-break:break-word}
+.note{width:180px;background:#040c15;border:1px solid var(--line);color:#cfeefb;font-size:11.5px;padding:4px 6px}
+.actions{display:flex;gap:4px;flex-wrap:wrap}
+.hint{font-size:11.5px;color:var(--txt-dim);margin:6px 0 10px}
+@media(max-width:900px){.ev,.note{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>ZMOGLJIVOSTI</h1>
+    <div class="sub">OKLJUKANE · POTRJENE · NAUČENE · PRAZNE · NEPODPRTE</div></div>
+  <div class="btns">
+    <button id="refreshBtn">OSVEŽI DETEKCIJO</button>
+    <button id="closeBtn" class="ghost">✕ ZAPRI</button>
+  </div>
+</header>
+
+<div class="stats">
+  <div class="stat"><b id="sTotal">—</b><span>SKUPAJ</span></div>
+  <div class="stat"><b id="sConfirmed">—</b><span>POTRJENE/NAUČENE</span></div>
+  <div class="stat"><b id="sDetected">—</b><span>ZAZNANE</span></div>
+  <div class="stat"><b id="sEmpty">—</b><span>PRAZNE</span></div>
+  <div class="stat"><b id="sUnsupported">—</b><span>NEPODPRTE</span></div>
+  <div class="stat"><b id="sPct">—</b><span>POKRITOST</span><div class="bar"><i id="pctBar" style="width:0%"></i></div></div>
+</div>
+
+<div class="controls">
+  <input id="search" placeholder="išči zmogljivost, ukaz, ključno besedo …">
+  <select id="cat"><option value="">vse kategorije</option></select>
+  <select id="status">
+    <option value="">vsi statusi</option>
+    <option value="confirmed">potrjene</option>
+    <option value="learned">naučene</option>
+    <option value="detected">zaznane</option>
+    <option value="empty">prazne</option>
+    <option value="failed">napake</option>
+    <option value="unsupported">nepodprte</option>
+  </select>
+</div>
+<div class="hint">Klikni ✓, ko si preveril, da zmogljivost res deluje. Mia se uči tudi sama iz uspešnih dejanj (●). Prazna polja so priložnost za kalibracijo ali namestitev orodja.</div>
+
+<table>
+  <thead><tr><th>STATUS</th><th>ZMOGLJIVOST</th><th>KAKO</th><th>DOKAZ</th><th>OPOMBA</th><th></th></tr></thead>
+  <tbody id="rows"><tr><td colspan="6">nalaganje …</td></tr></tbody>
+</table>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const statusLabel={confirmed:"POTRJENO",learned:"NAUČENO",detected:"ZAZNANO",empty:"PRAZNO",failed:"NAPAKA",unsupported:"NEPODPRTO"};
+const statusMark={confirmed:"✓",learned:"●",detected:"○",empty:"·",failed:"✗",unsupported:"—"};
+let ALL=[];
+
+async function get(url){const r=await fetch(url);if(!r.ok)throw new Error(r.status);return r.json()}
+async function post(url,body){const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});return r.json()}
+
+function render(){
+  const q=($("search").value||"").toLowerCase();
+  const cat=$("cat").value, st=$("status").value;
+  const rows=ALL.filter(r=>{
+    if(cat&&r.category!==cat)return false;
+    if(st&&r.status!==st)return false;
+    if(q&&!(`${r.id} ${r.label} ${r.how} ${r.keywords||""} ${r.evidence||""}`.toLowerCase().includes(q)))return false;
+    return true;
+  });
+  let html="", current="";
+  for(const r of rows){
+    if(r.category!==current){current=r.category;html+=`<tr class="cat"><td colspan="6">${esc(current.toUpperCase())}</td></tr>`}
+    html+=`<tr data-id="${esc(r.id)}">
+      <td><span class="chip ${esc(r.status)}">${statusMark[r.status]||"·"} ${statusLabel[r.status]||esc(r.status)}</span></td>
+      <td><b>${esc(r.label)}</b><div class="hint" style="margin:2px 0 0">${esc(r.id)}</div></td>
+      <td class="how">${esc(r.how)}</td>
+      <td class="ev">${esc(r.evidence||"—")}</td>
+      <td><input class="note" data-id="${esc(r.id)}" value="${esc(r.notes||"")}" placeholder="opomba …"></td>
+      <td><div class="actions">
+        <button data-act="confirmed" data-id="${esc(r.id)}" title="potrdi">✓</button>
+        <button class="danger" data-act="failed" data-id="${esc(r.id)}" title="ne deluje">✗</button>
+        <button class="ghost" data-act="empty" data-id="${esc(r.id)}" title="počisti">·</button>
+      </div></td></tr>`;
+  }
+  $("rows").innerHTML=html||`<tr><td colspan="6">ni zadetkov</td></tr>`;
+  document.querySelectorAll("button[data-act]").forEach(b=>b.onclick=()=>confirmCap(b.dataset.id,b.dataset.act));
+  document.querySelectorAll("input.note").forEach(i=>i.onchange=()=>saveNote(i.dataset.id,i.value));
+}
+
+async function load(refresh=false){
+  try{
+    const j=await get("/api/capabilities"+(refresh?"?refresh=1":""));
+    ALL=j.capabilities||[];
+    const s=j.summary||{}; const bs=s.by_status||{};
+    $("sTotal").textContent=s.total??ALL.length;
+    $("sConfirmed").textContent=s.confirmed??0;
+    $("sDetected").textContent=bs.detected??0;
+    $("sEmpty").textContent=bs.empty??0;
+    $("sUnsupported").textContent=bs.unsupported??0;
+    $("sPct").textContent=(s.percent??0)+"%";
+    $("pctBar").style.width=(s.percent??0)+"%";
+    const cats=[...new Set(ALL.map(r=>r.category))].sort();
+    const sel=$("cat"); const cur=sel.value;
+    sel.innerHTML='<option value="">vse kategorije</option>'+cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("");
+    sel.value=cur;
+    render();
+  }catch(e){$("rows").innerHTML=`<tr><td colspan="6">napaka: ${esc(e.message)}</td></tr>`}
+}
+async function confirmCap(id,status){
+  await post("/api/capabilities/confirm",{id,status,notes:document.querySelector(`input.note[data-id="${CSS.escape(id)}"]`)?.value||""});
+  load();
+}
+async function saveNote(id,notes){
+  const row=ALL.find(r=>r.id===id); if(!row)return;
+  await post("/api/capabilities/confirm",{id,status:row.status,notes});
+  row.notes=notes;
+}
+$("refreshBtn").onclick=async()=>{ $("refreshBtn").textContent="…"; await post("/api/capabilities/refresh"); await load(); $("refreshBtn").textContent="OSVEŽI DETEKCIJO"; };
+$("search").oninput=render; $("cat").onchange=render; $("status").onchange=render;
+$("closeBtn").onclick=()=>{try{window.parent.document.getElementById("viewerClose").click()}catch{window.close()}};
+load(true);
+</script>
+</body>
+</html>

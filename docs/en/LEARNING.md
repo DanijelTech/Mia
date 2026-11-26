@@ -22,9 +22,13 @@ observe → record → mine → recall → act → evaluate → update
 2. **Context injection** — before each turn the server prepends a bounded
    `[MIA SPOMIN …]` block with relevant habits, recipes, anti-patterns and
    preferences. Default limit: 1500 characters.
-3. **Feedback** — short phrases (»tako je«, »ni prav«, »zapomni si postopek«)
+3. **Verified success only** — an episode is `verified` (a `mia-ctl`
+   post-condition passed), `user_confirmed` (HUD ✓ or “tako je”),
+   `unverified`, `user_rejected` or `failed`. Only verified/confirmed episodes
+   become recipes; unverified successes stay candidates.
+4. **Feedback** — short phrases (»tako je«, »ni prav«, »zapomni si postopek«)
    are handled deterministically on the previous episode. Longer corrections
-   reach the agent, which must act and call `mia-learn feedback`.
+   reach the agent, which must act and call `mia-learn feedback` / `verify`.
 
 ## Habits, recipes, anti-patterns
 
@@ -37,6 +41,12 @@ observe → record → mine → recall → act → evaluate → update
 - **Anti-pattern**: what failed, why, and the fix. Created automatically from
   failures and manually with `mia-learn mistakes --add`.
 
+## Capability checklist
+
+The HUD **ZMOGLJIVOSTI** page and `mia-learn capabilities` list ~80 concrete
+abilities with `confirmed` / `learned` / `detected` / `empty` / `failed` /
+`unsupported` statuses. Details: [CAPABILITIES.md](CAPABILITIES.md).
+
 ## Commands
 
 ```bash
@@ -48,6 +58,9 @@ mia-learn habits
 mia-learn recipes
 mia-learn mistakes
 mia-learn facts
+mia-learn capabilities --refresh
+mia-learn capabilities --confirm files.search --notes "tested"
+mia-learn verify --episode 42 --verdict positive --note "tako je"
 mia-learn remember --note "why this works"
 mia-learn feedback --verdict negative --note "prefer Chrome"
 mia-learn mine

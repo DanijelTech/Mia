@@ -52,6 +52,14 @@ lokalnim TTS: 5–10 sekund.
   preverjen besednjak za okna, aplikacije, tipkanje/klikanje, posnetke zaslona,
   odložišče, medije, glasnost, svetlost, napajanje, procese, storitve in
   datoteke (X11, Wayland, macOS, Windows). Vsako dejanje gre v revizijo.
+- **Kalibracija po oddaljenosti** — Mia ob zagonu zahteva, da ji rečeš nekaj
+  od blizu, s sredine sobe in od daleč; shrani ločen glasovni odtis za vsako
+  razdaljo in te prepozna kjerkoli v hiši.
+- **Stroga budnica** — vsaka izjava se mora začeti z »Mia«; govor, TV, gostje
+  in šum se zavržejo že pred prepisom, ko je profil kalibriran.
+- **Samo preverjeni uspehi** — recept nastane le iz preverjenega post-conditiona
+  (`mia-ctl` `verification.status=verified`) ali iz tvojega ✓ v HUD kartici
+  »JE BILO PRAVILNO?«. Nepreverjen uspeh ostane kandidat.
 - **Trajen spomin in drevo znanja** — vsak krog se zabeleži v lokalno SQLite
   bazo; iz tega nastanejo navade, recepti in napake, ki se ne smejo ponoviti.
   Pred vsakim krogom se v model vbrizga omejen `[MIA SPOMIN …]` brief.
@@ -61,6 +69,13 @@ lokalnim TTS: 5–10 sekund.
 - **Granularno drevo veščin** — `mia-companion` (persona) + `mia-desktop`,
   `mia-learning`, `mia-music`, `mia-browser`, `mia-productivity`,
   `mia-diagnostics`; validator preveri imena, starše in reference.
+- **Seznam zmogljivosti** — ~80 konkretnih sposobnosti (okna, aplikacije, vnos,
+  posnetki, odložišče, zvok, zasloni, viri, procesi, storitve, datoteke,
+  Google, učenje) s statusi potrjeno/naučeno/zaznano/prazno/nepodprto.
+- **Google: poišči-in-povej vs prikaži** — »na Googlu poišči in povej mi«
+  odgovori ustno v ozadju; »prikaži mi v Googlu« odpre tvoj brskalnik.
+- **HUD NASTAVITVE** — stroga budnica, prag govorca, follow-up, zahtevaj
+  profil, preverjanje, učenje, dolžina briefa, kalibracija in sistemski pregled.
 - **Aktivnost agenta v živo** — vidiš klice orodij s predogledi ukazov
 - **Kartice za odobritev** — nevarne ukaze agent ustavi in počaka na DOVOLI/ZAVRNI
 - **Vgrajene nadzorne plošče** — Hermesov kanban, nadzorna plošča in klepet se
@@ -252,6 +267,10 @@ macOS-a (TCC pri zunanjih diskih in poti do logov).
 | Okna na namizju | »odpri mi Google / \<stran\>« in »zapri ga« (mia-open/mia-close) |
 | Nadzor računalnika | `mia-ctl …` — okna, aplikacije, vnos, posnetki, odložišče, napajanje |
 | Spomin in znanje | panel SPOMIN IN ZNANJE → ODPRI ZNANJE · `mia-learn …` |
+| Kalibracija glasu | HUD NASTAVITVE → KALIBRIRAJ · `server/scripts/calibrate_voice.py` |
+| Zmogljivosti | panel ZMOGLJIVOSTI → ODPRI SEZNAM · `mia-learn capabilities` |
+| Potrditev opravila | HUD kartica »JE BILO PRAVILNO?« ✓/✗ · `mia-learn verify` |
+| Google | »poišči in povej« = ustno · »prikaži« = brskalnik |
 | Tipkani klepet | vnosno polje na dnu (ista seja kot glas) |
 | Kanban / plošče | panel POGLEDI → kanban, nadzorna plošča, klepet |
 | Pritisni-in-govori | alternativa: klikni obroč (ali preslednica) · govori · klikni znova |
@@ -266,7 +285,11 @@ server/continuous.py  VAD segmentacija, budnica (wake gate) za neprestano poslu�
 server/speaker_gate.py  prepoznava govornika (ECAPA-TDNN odtisi, SpeechBrain)
 server/tts.py    lokalni TTS pogoni: piper, http (Gepard/Maya1), command, elevenlabs
 server/mia_core/ učenje in znanje (stdlib-only): SQLite, navade, recepti, napake,
-                 drevo veščin, kontekstni brief, CLI (mia-learn)
+                 drevo veščin, zmogljivosti, kontekstni brief, CLI (mia-learn)
+server/speaker_gate.py  oddaljenostni glasovni odtisi (bližina/sredina/daleč)
+server/calibration.py   vodena kalibracija prek HUD WebSocketa
+server/hud/settings.html      NASTAVITVE (budnica, prag, učenje, kalibracija)
+server/hud/capabilities.html  ZMOGLJIVOSTI (potrjeno/naučeno/prazno)
 server/scripts/  mia-start/stop/health + enroll_voice.py (glasovna kalibracija)
                  + gepard_tts.py (TTS storitev s per-request višino tona)
 client/          opcijski Windows/Linux odjemalec za pritisk na tipko (z zaznavo budnice)
@@ -279,7 +302,8 @@ skills/mia-companion/bin/  mia-open, mia-close, mia-volume, mia-artists,
                  mia-learn, mia-skill, mia-ctl (revidiran nadzor računalnika)
 tests/           unittest suite za mia_core, mia-ctl in drevo veščin
 launchd/         predloge za samodejni zagon na macOS (pripombe o TCC in FD limitih)
-docs/            slovenska dokumentacija: SETUP, ARCHITECTURE, LEARNING, CONTROL, TROUBLESHOOTING
+docs/            slovenska dokumentacija: SETUP, ARCHITECTURE, LEARNING, CONTROL,
+                 CALIBRATION, CAPABILITIES, TROUBLESHOOTING
 docs/en/         ista dokumentacija v angleščini
 install.sh       namestitev (brez venv, root ali uporabnik) + manifest
 start-mia.sh     zbudi cel sklad (stack: llama → Hermes → dashboard → Mia + TTS), odpre HUD

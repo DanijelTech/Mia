@@ -89,7 +89,14 @@ class StoreTests(TempStoreMixin, unittest.TestCase):
         self.assertEqual(stats["episodes"], 1)
         self.assertEqual(stats["recipes"], 0)  # raw Store does not learn
         from mia_core.recipes import learn_from_episode
-        learn_from_episode(self.store, episode)
+        # unverified success must NOT become a trusted recipe
+        self.assertFalse(learn_from_episode(self.store, episode)["learned"])
+        self.assertEqual(self.store.stats()["recipes"], 0)
+        self.store.update_episode(ep_id, verified=1, verification_status="verified",
+                                  verification={"status": "verified",
+                                                "method": "test"})
+        episode = self.store.get_episode(ep_id)
+        self.assertTrue(learn_from_episode(self.store, episode)["learned"])
         self.assertEqual(self.store.stats()["recipes"], 1)
         self.assertIn("success", stats["outcomes"])
 
@@ -169,6 +176,15 @@ class RecipeTests(TempStoreMixin, unittest.TestCase):
             "odpri mi google in poisci vreme"))
         self.assertTrue(recipe["steps"])
         self.assertEqual(recipe["steps"][0]["action"], "mia-ctl")
+
+    def test_failed_verification_creates_mistake(self):
+        from mia_core.recipes import learn_from_episode
+        ep_id = self.episode()
+        self.store.update_episode(ep_id, verification_status="failed", verified=0)
+        episode = self.store.get_episode(ep_id)
+        result = learn_from_episode(self.store, episode)
+        self.assertTrue(result["learned"])
+        self.assertEqual(result["kind"], "mistake")
 
     def test_anti_pattern_match(self):
         self.store.upsert_anti_pattern(

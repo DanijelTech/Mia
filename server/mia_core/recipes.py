@@ -138,9 +138,22 @@ def learn_from_episode(store: Store, episode: dict, cfg: dict | None = None) -> 
     meta = episode.get("meta") or {}
     request = episode.get("request") or episode.get("intent") or ""
     outcome = (episode.get("outcome") or "unknown").lower()
+    verification_status = (episode.get("verification_status") or "").lower()
+    if verification_status == "failed" and outcome == "success":
+        outcome = "failure"
+        episode["outcome"] = "failure"
+        episode["error"] = (episode.get("error")
+                            or "post-condition verification failed")
     should_learn = bool(steps or tools or meta.get("remember"))
+    verified = (bool(episode.get("verified"))
+                or (episode.get("verification_status") or "") in ("verified", "user_confirmed")
+                or bool(meta.get("user_confirmed")))
     result: dict[str, Any] = {"learned": False}
-    if outcome == "success" and should_learn:
+    if outcome == "success" and should_learn and not verified:
+        result = {"learned": False, "reason": "unverified",
+                  "candidate": True,
+                  "message": "procedure is stored but not trusted until verified or confirmed"}
+    elif outcome == "success" and should_learn:
         key = recipe_key(request)
         rec_id = store.upsert_recipe(
             key=key,
@@ -195,8 +208,14 @@ def record_feedback(store: Store, episode_id: int, verdict: str,
     request = episode.get("request") or episode.get("intent") or ""
     rec_key = recipe_key(request)
     if positive:
-        store.update_episode(episode_id, outcome="success")
+        store.update_episode(episode_id, outcome="success", verified=1,
+                             verification_status="user_confirmed",
+                             verification={"status": "user_confirmed",
+                                           "method": "user_feedback",
+                                           "note": note})
         episode["outcome"] = "success"
+        episode["verified"] = True
+        episode["verification_status"] = "user_confirmed"
         if note:
             store.update_episode(episode_id, meta={**(episode.get("meta") or {}),
                                                    "recipe_note": note, "remember": True})
@@ -206,10 +225,16 @@ def record_feedback(store: Store, episode_id: int, verdict: str,
         store.add_event("feedback_positive", str(episode_id), {"note": note})
         return {"ok": True, "verdict": "positive", "learned": learned,
                 "recipe_key": rec_key}
-    store.update_episode(episode_id, outcome="failure",
+    store.update_episode(episode_id, outcome="failure", verified=0,
+                         verification_status="user_rejected",
+                         verification={"status": "user_rejected",
+                                       "method": "user_feedback",
+                                       "note": note},
                          error=note or episode.get("error") or "user correction")
     episode["outcome"] = "failure"
     episode["error"] = note or episode.get("error") or "user correction"
+    episode["verified"] = False
+    episode["verification_status"] = "user_rejected"
     if note:
         episode["meta"] = {**(episode.get("meta") or {}), "recipe_note": note}
     learned = learn_from_episode(store, episode, cfg)
@@ -229,8 +254,14 @@ def remember_as_recipe(store: Store, episode_id: int, note: str = "") -> dict:
     meta["remember"] = True
     if note:
         meta["recipe_note"] = note
-    store.update_episode(episode_id, meta=meta)
+    store.update_episode(episode_id, meta=meta, verified=1,
+                         verification_status="user_confirmed",
+                         verification={"status": "user_confirmed",
+                                       "method": "remember_command",
+                                       "note": note})
     episode["meta"] = meta
+    episode["verified"] = True
+    episode["verification_status"] = "user_confirmed"
     if (episode.get("outcome") or "") not in ("success", "failure"):
         episode["outcome"] = "success"
         store.update_episode(episode_id, outcome="success")

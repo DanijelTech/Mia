@@ -200,11 +200,18 @@ class UtteranceSegmenter:
 
 
 class WakeGate:
-    """Require 'Mia' to start a conversation, then allow a follow-up window."""
+    """Require 'Mia' to start every turn.
 
-    def __init__(self, words: list[str] | None = None, followup_seconds: float = 20.0):
+    `strict=True` removes the follow-up window entirely: even a sentence said
+    two seconds after Mia's reply must start with the wake word. This is the
+    production default for a house with TVs, guests and noise.
+    """
+
+    def __init__(self, words: list[str] | None = None, followup_seconds: float = 20.0,
+                 strict: bool = False):
         self.words = [_ascii(w).strip() for w in (words or []) if str(w).strip()]
         self.followup = float(followup_seconds)
+        self.strict = bool(strict)
 
     def _strip_wake(self, text: str) -> str:
         flat = _ascii(text)
@@ -232,6 +239,8 @@ class WakeGate:
         # turn. Set `followup_seconds: 0` to require it on every single turn.
         if self.starts_with_wake(transcript):
             return True, self._strip_wake(transcript)
+        if self.strict:
+            return False, transcript
         if (self.followup > 0 and last_reply_at is not None
                 and (now - last_reply_at) <= self.followup):
             return True, transcript

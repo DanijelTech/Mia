@@ -130,6 +130,44 @@ def extract_entities(text: str) -> list[dict]:
     return entities
 
 
+_GOOGLE_SHOW = ("prikazi", "prikaži", "pokazi", "pokaži", "odpri", "show",
+                "display", "v brskalniku", "na zaslonu", "brskalnik")
+_GOOGLE_ANSWER = ("povej", "odgovori", "razlozi", "razloži", "koliko", "kaj",
+                  "kdo", "kdaj", "kje", "zakaj", "kako", "what", "who", "when",
+                  "where", "why", "how", "tell")
+_GOOGLE_CLEAN = (
+    "na googlu", "v googlu", "google", "googlu", "poisci", "poišči", "najdi",
+    "search", "in", "ter", "pa", "mi", "prosim", "povej", "odgovori",
+    "razlozi", "razloži", "prikazi", "prikaži", "pokazi", "pokaži", "odpri",
+    "v brskalniku", "na zaslonu", "brskalnik", "splet", "web", "na", "v",
+)
+
+
+def google_request(text: str) -> tuple[str | None, str]:
+    """Split Google requests into 'answer' (background) and 'show' (browser).
+
+    Returns (mode, query) where mode is "answer" or "show"; (None, "") when the
+    utterance is not a Google request.
+    """
+    flat = _flat(text)
+    if "google" not in flat and "googlu" not in flat:
+        return None, ""
+    show = any(word in flat for word in _GOOGLE_SHOW)
+    mode = "show" if show else "answer"
+    query = flat
+    for phrase in sorted(_GOOGLE_CLEAN, key=len, reverse=True):
+        query = re.sub(rf"\b{re.escape(phrase)}\b", " ", query)
+    query = re.sub(r"\s+", " ", query).strip()
+    if not query:
+        query = flat.replace("google", " ").replace("googlu", " ").strip()
+    return mode, query
+
+
+def google_url(query: str) -> str:
+    import urllib.parse
+    return "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
+
+
 def outcome_from_turn(response: str, errors: list[str] | None = None,
                       interrupted: bool = False) -> str:
     errors = errors or []
@@ -173,7 +211,10 @@ def episode_payload(timing: Any, conversation: str, transcript: str,
             "run_id": get("run_id") or "",
             "stt_model": get("stt_model") or "",
             "llm_model": get("llm_model") or "",
-            "tts_model": get("tts_model") or ""}
+            "tts_model": get("tts_model") or "",
+            "speaker_stage": get("speaker_stage") or "",
+            "speaker_score": get("speaker_score"),
+            "speaker_level_db": get("speaker_level_db")}
     meta.update(extra_meta or {})
     return {
         "ts": time.time(),

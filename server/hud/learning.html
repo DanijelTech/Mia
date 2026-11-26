@@ -152,6 +152,7 @@ tr:hover td{background:#081523}
   <div class="searchbar">
     <select id="epSource"><option value="">vsi viri</option><option value="voice">glas</option><option value="chat">klepet</option><option value="control">nadzor</option><option value="cli">cli</option></select>
     <select id="epOutcome"><option value="">vsi izidi</option><option value="success">uspeh</option><option value="failure">napaka</option><option value="partial">prekinjeno</option></select>
+    <select id="epVerify"><option value="">vsa preverjanja</option><option value="unverified">za potrditev</option><option value="verified">preverjeno</option><option value="user_confirmed">potrdil uporabnik</option><option value="user_rejected">zavrnjeno</option><option value="failed">spodletelo</option></select>
     <button id="epBtn">OSVEŽI</button>
   </div>
   <div id="episodesBox">nalaganje …</div>
@@ -230,7 +231,7 @@ $("searchBtn").onclick=async()=>{
 $("searchQ").addEventListener("keydown",e=>{if(e.key==="Enter")$("searchBtn").click()});
 $("briefQ").addEventListener("keydown",e=>{if(e.key==="Enter")$("briefBtn").click()});
 $("epBtn").onclick=loadEpisodes;
-$("epSource").onchange=loadEpisodes; $("epOutcome").onchange=loadEpisodes;
+$("epSource").onchange=loadEpisodes; $("epOutcome").onchange=loadEpisodes; $("epVerify").onchange=loadEpisodes;
 
 $("factBtn").onclick=async()=>{
   const key=$("factKey").value.trim(), value=$("factVal").value.trim();
@@ -340,23 +341,26 @@ async function loadMistakes(){
 
 async function loadEpisodes(){
   try{
-    const src=$("epSource").value, out=$("epOutcome").value;
+    const src=$("epSource").value, out=$("epOutcome").value, ver=$("epVerify").value;
     let q="/api/learning/episodes?limit=60";
     if(src)q+="&source="+encodeURIComponent(src);
     if(out)q+="&outcome="+encodeURIComponent(out);
+    if(ver)q+="&verification_status="+encodeURIComponent(ver);
     const r=await get(q);
     const mark={success:"✓",failure:"✗",partial:"~",unknown:"·"};
-    $("episodesBox").innerHTML=`<table><thead><tr><th>#</th><th>ČAS</th><th>VIR</th><th>ZAHTEVA</th><th>IZID</th><th></th></tr></thead><tbody>`+
+    const vmark={verified:"✓",user_confirmed:"✓",unverified:"?",failed:"✗",user_rejected:"✗"};
+    $("episodesBox").innerHTML=`<table><thead><tr><th>#</th><th>ČAS</th><th>VIR</th><th>ZAHTEVA</th><th>IZID</th><th>PREVERJENO</th><th></th></tr></thead><tbody>`+
       (r.episodes||[]).map(e=>`<tr><td>${esc(e.id)}</td><td class="dim">${esc(when(e.ts))}</td><td>${esc(e.source)}</td>
       <td>${esc((e.request||"").slice(0,110))}${e.error?`<div class="err" style="font-size:11px">${esc(String(e.error).slice(0,120))}</div>`:""}</td>
       <td class="${e.outcome==="failure"?"err":e.outcome==="success"?"ok":"warn"}">${mark[e.outcome]||"·"} ${esc(e.outcome)}</td>
+      <td class="${e.verification_status==="verified"||e.verification_status==="user_confirmed"?"ok":e.verification_status==="failed"||e.verification_status==="user_rejected"?"err":"warn"}">${vmark[e.verification_status]||"?"} ${esc(e.verification_status||"unverified")}</td>
       <td class="btns"><button onclick="fb(${e.id},'positive')" title="to je bilo prav">✓</button><button class="danger" onclick="fb(${e.id},'negative')" title="ni prav">✗</button></td></tr>`).join("")+
       `</tbody></table>`;
   }catch(e){$("episodesBox").textContent="napaka: "+e.message}
 }
 
 async function fb(id,verdict){
-  await post("/api/learning/feedback",{episode_id:id,verdict,note:"HUD"});
+  await post("/api/learning/verify",{episode_id:id,verdict,note:"HUD"});
   loadEpisodes(); loadStats();
 }
 

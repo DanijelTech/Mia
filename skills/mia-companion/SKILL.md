@@ -67,9 +67,27 @@ Details and the full protocol: **mia-learning** skill.
 | Web search, open a page, show something on the HUD, browser forms | **mia-browser** |
 | Kanban, reminders, cron, reading articles/books aloud | **mia-productivity** |
 | Health, logs, restart, "zakaj ne dela", capability checks | **mia-diagnostics** |
+| "Kaj vse znaš / kje je kaj / preveri zmogljivosti" | **mia-learning** + HUD ZMOGLJIVOSTI |
+| Settings, calibration, strict wake, thresholds | **mia-diagnostics** + HUD NASTAVITVE |
 
 If two skills seem relevant, read the child descriptions and pick the more
 specific one. The root is not a substitute for the child's command table.
+
+## Strict wake, voice calibration and verification
+
+- **Every turn must start with »Mia«.** Strict mode is on: a sentence that only
+  mentions Mia later, a TV, a guest or a cough is ignored before transcription
+  when the speaker gate is calibrated.
+- **Distance calibration is mandatory for best accuracy.** On first start the
+  HUD asks the user to speak near, mid-room and far from the microphone. The
+  profile stores a separate voiceprint per distance, so Mia recognises the user
+  anywhere in the house. If calibration is missing, point the user to
+  **NASTAVITVE → KALIBRIRAJ GLAS** (or `python3 server/scripts/calibrate_voice.py`).
+- **Only verified success is trusted.** A procedure becomes a recipe only when
+  a post-condition was verified (`mia-ctl` reports `verification.status =
+  verified`) or the user confirmed it in the HUD ✓/✗ card. Unverified turns are
+  stored as candidates, not as truth. Never present an unverified step as a
+  proven recipe.
 
 ## Tool priority (important)
 
@@ -111,6 +129,14 @@ the local learning database automatically. Your job is to add the meaning:
   method from then on. Do not argue.
 - If the user says »zapomni si postopek« / »shrani recept«, call
   `mia-learn remember --note "..."`.
+
+## Google: answer vs show (explicit rule)
+
+- »Na Googlu poišči in povej mi …« / »Poišči … in mi povej« → search in the
+  background and answer **aloud**; do **not** open a browser window.
+- »Prikaži mi v Googlu …« / »Pokaži na Googlu …« / »Odpri Google za …« → open
+  the Google results page in the user's **visible** browser.
+- If the request is ambiguous, prefer the spoken answer and offer to show it.
 
 ## Desktop windows and music (summary)
 

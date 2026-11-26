@@ -69,7 +69,19 @@ mia-learn facts --set "person.ana" "sestra, rojstni dan 12. maj"
 Keys are short and stable (`area.subject`). Values are one line. Never store
 secrets, passwords, tokens or private keys.
 
-### 2. Save a recipe when the *how* matters
+### 2. Trust only verified success
+
+A recipe is created **only** when the episode is verified:
+
+- `mia-ctl` post-condition says `verification.status = "verified"` (window
+  closed, volume read back, file exists, process gone, service active, …), or
+- the user pressed ✓ on the HUD confirmation card (or said »tako je«).
+
+A successful-looking but unverified turn is a **candidate**, not truth. Do not
+present it as a proven recipe. When a verification card is waiting, ask the
+user to confirm or reject it — that is the most valuable training signal.
+
+### 3. Save a recipe when the *how* matters
 
 If a task succeeded through a non-obvious sequence, force the recipe:
 
@@ -88,7 +100,7 @@ mia-learn record \
   --meta '{"entities":[{"kind":"artist","value":"Baja Mali Knindza"}]}'
 ```
 
-### 3. Record a mistake explicitly when the user explains it
+### 4. Record a mistake explicitly when the user explains it
 
 Automatic failure capture knows *that* it failed; only you know *why*:
 
@@ -98,7 +110,7 @@ mia-learn mistakes --add "okno se ne zapre s pkill" \
   --fix "uporabi mia-close <domain>" --severity high
 ```
 
-### 4. Apply feedback
+### 5. Apply feedback
 
 Short phrases are intercepted by the server and applied to the previous
 episode. For longer corrections that reach you:
@@ -108,7 +120,7 @@ mia-learn feedback --verdict negative --note "raje odpri v Chromu, ne v Firefoxu
 mia-learn feedback --verdict positive --note "tako je prav"
 ```
 
-### 5. Inspect before answering "se spomniš?"
+### 6. Inspect before answering "se spomniš?"
 
 ```bash
 mia-learn brief "kje sem pustil pogodbo"     # what the agent would see
@@ -134,6 +146,9 @@ mia-learn habits --limit 20                  # inferred routines
 | `mia-learn habits` | inferred preferences and routines |
 | `mia-learn habits --pin KEY` | pin a habit so decay never removes it |
 | `mia-learn facts` | known preferences and system facts |
+| `mia-learn capabilities --refresh` | what this machine can do (confirmed/learned/empty) |
+| `mia-learn capabilities --confirm ID --notes "..."` | confirm a capability works |
+| `mia-learn capabilities --fail ID` | mark a capability as broken |
 | `mia-learn remember --note "..."` | force the last episode into a recipe |
 | `mia-learn feedback --verdict negative --note "..."` | correct the last episode |
 | `mia-learn mine` | run habit mining + audit ingest now |
@@ -179,6 +194,22 @@ Add `--json` for machine-readable output.
    messages.
 6. **Explainability.** When you use a recipe, you may say »to sem že delala
    tako«. Do not expose raw internal scores.
+
+## Capability checklist
+
+The HUD page **ZMOGLJIVOSTI** and `mia-learn capabilities` list ~80 concrete
+abilities (volume, windows, displays, resources, processes, services, files,
+Google answer/show, verification, …). Each has a status:
+
+- `confirmed` / `learned` — safe to rely on,
+- `detected` — the tool/backend exists but Mia has not used it yet,
+- `empty` — not checked or not learned,
+- `failed` — last use/check failed,
+- `unsupported` — missing helper, with a hint.
+
+Use the confirmed ones when answering »kaj vse znaš« or planning a task. When
+you use a new ability successfully, the audit loop marks it learned; the user
+can confirm it explicitly in the HUD.
 
 ## Storage
 

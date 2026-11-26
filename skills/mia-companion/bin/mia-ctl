@@ -273,7 +273,8 @@ def _audit_args(args: argparse.Namespace) -> list[str]:
 
 
 def audit(action: str, args: list[str], ok: bool, rc: int, ms: float,
-          error: str = "", summary: str = "", extra: dict | None = None) -> None:
+          error: str = "", summary: str = "", extra: dict | None = None,
+          verified: bool = False, verification: dict | None = None) -> None:
     if not POLICY.get("audit", True):
         return
     try:
@@ -293,6 +294,8 @@ def audit(action: str, args: list[str], ok: bool, rc: int, ms: float,
             "ms": round(ms, 1),
             "error": redact(error, 500),
             "summary": redact(summary, 300),
+            "verified": bool(verified),
+            "verification": verification or {},
             "host": socket.gethostname(),
             "user": _user(),
             "cwd": os.getcwd(),
@@ -1339,6 +1342,102 @@ def net_status() -> dict:
     return info
 
 
+# ----------------------------------------------------------------- displays
+def displays_list() -> list[dict]:
+    kind = desktop()
+    if kind == "x11" and which("xrandr"):
+        rc, out, _ = sh(["xrandr", "--listmonitors"], check=False)
+        rows = []
+        if rc == 0:
+            for line in out.splitlines()[1:]:
+                parts = line.split()
+                if len(parts) >= 4:
+                    rows.append({"id": parts[1], "name": parts[-1],
+                                 "geometry": parts[2], "primary": "*" in parts[1],
+                                 "backend": "xrandr"})
+        if rows:
+            return rows
+    if kind == "sway":
+        data = sh_json(["swaymsg", "-t", "get_outputs", "-r"])
+        return [{"id": o.get("name"), "name": o.get("name"),
+                 "active": bool(o.get("active")), "focused": bool(o.get("focused")),
+                 "width": (o.get("current_mode") or {}).get("width"),
+                 "height": (o.get("current_mode") or {}).get("height"),
+                 "refresh": (o.get("current_mode") or {}).get("refresh"),
+                 "backend": "sway"} for o in data or []]
+    if kind == "hyprland":
+        data = sh_json(["hyprctl", "monitors", "-j"])
+        return [{"id": m.get("name"), "name": m.get("name"),
+                 "width": m.get("width"), "height": m.get("height"),
+                 "refresh": m.get("refreshRate"), "focused": bool(m.get("focused")),
+                 "backend": "hyprland"} for m in data or []]
+    if kind in ("wayland",) and which("wlr-randr"):
+        data = sh_json(["wlr-randr", "--json"])
+        return [{"id": m.get("name"), "name": m.get("name"),
+                 "enabled": m.get("enabled"), "width": (m.get("current_mode") or {}).get("width"),
+                 "height": (m.get("current_mode") or {}).get("height"),
+                 "backend": "wlr-randr"} for m in data or []]
+    if kind == "macos":
+        data = sh_json(["system_profiler", "SPDisplaysDataType", "-json"])
+        rows = []
+        for gpu in (data.get("SPDisplaysDataType") or []):
+            for disp in (gpu.get("spdisplays_ndrvs") or []):
+                rows.append({"id": disp.get("_name"), "name": disp.get("_name"),
+                             "resolution": disp.get("_spdisplays_resolution") or
+                             disp.get("spdisplays_resolution"),
+                             "backend": "system_profiler"})
+        return rows
+    if kind == "windows":
+        ps = ("Get-CimInstance Win32_DesktopMonitor | "
+              "Select-Object Name,ScreenWidth,ScreenHeight | ConvertTo-Json -Compress")
+        data = sh_json(["powershell", "-NoProfile", "-Command", ps])
+        if isinstance(data, dict):
+            data = [data]
+        return [{"id": d.get("Name"), "name": d.get("Name"),
+                 "width": d.get("ScreenWidth"), "height": d.get("ScreenHeight"),
+                 "backend": "windows"} for d in data or []]
+    raise Unsupported("no display backend (xrandr/wlr-randr/swaymsg/hyprctl)")
+
+
+# ---------------------------------------------------------------- resources
+def resources() -> dict:
+    info = sysinfo()
+    try:
+        info["loadavg"] = list(os.getloadavg())
+    except (OSError, AttributeError):
+        pass
+    info["top_processes"] = process_list(5)
+    return info
+
+
+# ------------------------------------------------------------ audio devices
+def audio_devices() -> dict:
+    kind = desktop()
+    if which("pactl"):
+        result: dict[str, Any] = {"backend": "pactl", "sinks": [], "sources": []}
+        for key, cmd in (("sinks", ["pactl", "list", "short", "sinks"]),
+                         ("sources", ["pactl", "list", "short", "sources"])):
+            rc, out, _ = sh(cmd, check=False)
+            if rc == 0:
+                for line in out.splitlines():
+                    parts = line.split("	")
+                    if len(parts) >= 2:
+                        result[key].append({"id": parts[0], "name": parts[1],
+                                            "state": parts[2] if len(parts) > 2 else ""})
+        return result
+    if which("wpctl"):
+        rc, out, _ = sh(["wpctl", "status"], check=False)
+        return {"backend": "wpctl", "output": out.strip()[:4000]}
+    if kind == "macos":
+        data = sh_json(["system_profiler", "SPAudioDataType", "-json"])
+        return {"backend": "system_profiler", "data": data}
+    if kind == "windows":
+        ps = "Get-CimInstance Win32_SoundDevice | Select-Object Name,Status | ConvertTo-Json -Compress"
+        data = sh_json(["powershell", "-NoProfile", "-Command", ps])
+        return {"backend": "windows", "devices": data}
+    raise Unsupported("no audio device backend (pactl/wpctl)")
+
+
 # ----------------------------------------------------------------- sysinfo
 def _meminfo() -> dict:
     try:
@@ -1468,6 +1567,130 @@ def capabilities() -> dict:
             "power": desktop() != "headless",
         },
     }
+
+
+# ------------------------------------------------------------- verification
+def _percent(text: str) -> int | None:
+    match = re.search(r"(\d+)%", text or "")
+    return int(match.group(1)) if match else None
+
+
+def _active_window_text() -> str:
+    kind = desktop()
+    try:
+        if kind == "x11" and which("xdotool"):
+            rc, out, _ = sh(["xdotool", "getactivewindow", "getwindowname"], check=False)
+            return out.strip() if rc == 0 else ""
+        if kind == "sway":
+            tree = sh_json(["swaymsg", "-t", "get_tree", "-r"])
+            for node in _sway_nodes(tree if isinstance(tree, dict) else {}):
+                if node.get("focused"):
+                    return f"{node.get('name', '')} {node.get('app_id', '')}".strip()
+        if kind == "hyprland":
+            data = sh_json(["hyprctl", "activewindow", "-j"])
+            return f"{data.get('title', '')} {data.get('class', '')}".strip()
+    except Exception:
+        pass
+    return ""
+
+
+def verify_result(action: str, args: argparse.Namespace, data: Any) -> dict:
+    """Post-condition check. Only `verified` evidence promotes a recipe."""
+    try:
+        if action == "screenshot":
+            path = Path(str((data or {}).get("path", "")))
+            ok = path.exists() and path.stat().st_size > 0
+            return {"status": "verified" if ok else "failed",
+                    "method": "file_exists", "evidence": str(path)}
+        if action == "files search":
+            count = len(data or [])
+            return {"status": "verified", "method": "search_executed",
+                    "evidence": {"matches": count}}
+        if action == "clipboard set":
+            expected = args.text
+            if getattr(args, "stdin", False) or expected is None:
+                return {"status": "unknown", "method": "clipboard_compare",
+                        "evidence": "stdin"}
+            got = clipboard_get().get("text", "")
+            return {"status": "verified" if got == expected else "failed",
+                    "method": "clipboard_compare", "evidence": {"chars": len(got)}}
+        if action in ("volume set", "volume up", "volume down", "volume mute"):
+            status = volume_action("status")
+            text = json.dumps(status, ensure_ascii=False)
+            if action == "volume set":
+                got = _percent(text)
+                expected = args.value
+                ok = got is not None and expected is not None and abs(got - expected) <= 3
+                return {"status": "verified" if ok else "failed",
+                        "method": "volume_readback", "evidence": {"got": got,
+                                                                  "expected": expected}}
+            if action == "volume mute":
+                return {"status": "verified", "method": "volume_mute_state",
+                        "evidence": text[:160]}
+            return {"status": "verified" if "output" in status else "unknown",
+                    "method": "volume_readback", "evidence": text[:160]}
+        if action in ("windows focus", "windows close", "windows minimize",
+                      "windows maximize", "windows restore"):
+            ref = getattr(args, "ref", "")
+            if action == "windows focus":
+                active = _active_window_text().lower()
+                ok = bool(active) and (ref.lower() in active or not ref)
+                return {"status": "verified" if ok else "unknown",
+                        "method": "active_window", "evidence": active[:160]}
+            try:
+                _find_window(ref)
+                present = True
+            except CtlError:
+                present = False
+            if action == "windows close":
+                return {"status": "verified" if not present else "failed",
+                        "method": "window_absent", "evidence": ref}
+            return {"status": "verified" if present else "failed",
+                    "method": "window_present", "evidence": ref}
+        if action == "process kill":
+            pid = args.pid
+            alive = False
+            try:
+                os.kill(pid, 0)
+                alive = True
+            except ProcessLookupError:
+                alive = False
+            except PermissionError:
+                alive = True
+            return {"status": "verified" if not alive else "failed",
+                    "method": "process_gone", "evidence": {"pid": pid}}
+        if action in ("service start", "service stop", "service restart"):
+            unit = args.unit
+            state = service_action("is-active", unit, getattr(args, "system", False))
+            active = bool(state.get("active"))
+            expected = action != "service stop"
+            ok = active == expected
+            return {"status": "verified" if ok else "failed",
+                    "method": "systemctl_is_active",
+                    "evidence": {"unit": unit, "active": active}}
+        if action == "brightness set":
+            status = brightness_action("status")
+            return {"status": "verified" if status else "unknown",
+                    "method": "brightness_readback", "evidence": str(status)[:160]}
+        if action == "apps launch":
+            name = getattr(args, "name", "").lower()
+            time.sleep(0.6)
+            found = any(name in str(w.get("app", "")).lower()
+                        or name in str(w.get("title", "")).lower()
+                        for w in windows_list())
+            return {"status": "verified" if found else "unknown",
+                    "method": "window_appears", "evidence": name}
+        if action in ("type", "key", "click", "move", "scroll", "open",
+                      "notify", "media play-pause", "media next", "media previous",
+                      "media play", "media pause", "media stop", "power lock",
+                      "power suspend", "power reboot", "power shutdown"):
+            return {"status": "unknown", "method": "no_post_condition",
+                    "evidence": action}
+        return {"status": "unknown", "method": "not_implemented",
+                "evidence": action}
+    except Exception as exc:
+        return {"status": "unknown", "method": "verify_error",
+                "evidence": f"{type(exc).__name__}: {exc}"}
 
 
 # -------------------------------------------------------------------- CLI
@@ -1600,6 +1823,14 @@ def build_parser() -> argparse.ArgumentParser:
     nt2 = sub.add_parser("net", help="network status")
     nt2.add_argument("action", choices=["status"], nargs="?", default="status")
 
+    dp = sub.add_parser("displays", help="list monitors and resolutions")
+    dpa = dp.add_subparsers(dest="action")
+    dpa.add_parser("list")
+    sub.add_parser("resources", help="CPU/RAM/disk/GPU and top processes")
+    au = sub.add_parser("audio", help="list audio devices")
+    aua = au.add_subparsers(dest="action")
+    aua.add_parser("devices")
+
     au = sub.add_parser("audit", help="inspect the control audit log")
     aua = au.add_subparsers(dest="action")
     at = aua.add_parser("tail")
@@ -1634,7 +1865,8 @@ def _summarize(action: str, data: Any) -> str:
         return f"screenshot: {data.get('path')}"
     if action == "clipboard get":
         return data.get("text", "")
-    if action in ("doctor", "capabilities", "sysinfo", "net status", "policy show"):
+    if action in ("doctor", "capabilities", "sysinfo", "net status", "policy show",
+                  "displays list", "resources", "audio devices"):
         return json.dumps(data, ensure_ascii=False, indent=2, default=str)
     if action == "audit tail":
         return "\n".join(json.dumps(x, ensure_ascii=False) for x in data or [])
@@ -1652,6 +1884,7 @@ _READ_ONLY = {
     "audit tail", "windows list", "apps list", "process list", "process find",
     "files search", "files recent", "clipboard get", "media status",
     "volume status", "brightness status", "service status", "service is-active",
+    "displays list", "resources", "audio devices",
 }
 
 
@@ -1739,6 +1972,12 @@ def dispatch(args: argparse.Namespace) -> Any:
         raise CtlError(f"unknown files action: {action}")
     if cmd == "net":
         return net_status()
+    if cmd == "displays":
+        return displays_list()
+    if cmd == "resources":
+        return resources()
+    if cmd == "audio":
+        return audio_devices()
     if cmd == "audit":
         limit = getattr(args, "limit", 20)
         if not AUDIT_PATH.exists():
@@ -1784,9 +2023,14 @@ def main(argv: list[str] | None = None) -> int:
     started = time.perf_counter()
     try:
         data = dispatch(args)
+        verification = verify_result(action, args, data)
+        verified = verification.get("status") == "verified"
+        if isinstance(data, dict):
+            data["verification"] = verification
         elapsed = (time.perf_counter() - started) * 1000
         summary = _summarize(action, data)
-        audit(action, raw, True, 0, elapsed, summary=summary)
+        audit(action, raw, True, 0, elapsed, summary=summary,
+              verified=verified, verification=verification)
         if not QUIET:
             emit(True, action, data, summary=summary)
         return 0

@@ -626,6 +626,19 @@ sudo apt install wtype ydotool grim wl-clipboard playerctl brightnessctl
 brew install cliclick
 ```
 
+Distance voice calibration is part of the same flow: the HUD offers
+**KALIBRACIJA GLASU PO ODDALJENOSTI** (near/mid/far), or run:
+
+```bash
+python3 server/scripts/calibrate_voice.py
+python3 server/scripts/calibrate_voice.py --samples 3
+```
+
+**NASTAVITVE** controls strict wake, speaker threshold, require-profile,
+verification cards, learning and brief length; **ZMOGLJIVOSTI** is the
+confirmed/learned/empty checklist. Details:
+[CALIBRATION.md](CALIBRATION.md), [CAPABILITIES.md](CAPABILITIES.md).
+
 Full command vocabulary: [CONTROL.md](CONTROL.md). Learning, habits, recipes
 and the tree: [LEARNING.md](LEARNING.md).
 

@@ -124,6 +124,12 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--note", default="")
     f.add_argument("--conversation", default="mia-main")
 
+    v = sub.add_parser("verify", help="confirm/reject one episode (verified learning)")
+    v.add_argument("--episode", type=int, required=True)
+    v.add_argument("--verdict", default="positive",
+                   choices=["positive", "negative", "ok", "prav", "fail"])
+    v.add_argument("--note", default="")
+
     rm = sub.add_parser("remember", help="force-save the last/selected episode as a recipe")
     rm.add_argument("--episode", type=int)
     rm.add_argument("--note", default="")
@@ -172,6 +178,15 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--fix", default="")
     m.add_argument("--severity", default="medium")
     m.add_argument("--delete")
+
+    cap = sub.add_parser("capabilities", help="inspect/confirm the capability checklist")
+    cap.add_argument("--refresh", action="store_true")
+    cap.add_argument("--category")
+    cap.add_argument("--status")
+    cap.add_argument("--query", default="")
+    cap.add_argument("--confirm", metavar="ID")
+    cap.add_argument("--fail", metavar="ID")
+    cap.add_argument("--notes", default="")
 
     fa = sub.add_parser("facts", help="list/set/get/delete facts")
     fa.add_argument("--list", action="store_true")
@@ -248,6 +263,10 @@ def main(argv: list[str] | None = None) -> int:
                 result = core.feedback(args.episode, args.verdict, args.note)
             else:
                 result = core.feedback_last(args.conversation, args.verdict, args.note)
+            _print(result, as_json)
+            return 0 if result.get("ok") else 1
+        if cmd == "verify":
+            result = core.feedback(args.episode, args.verdict, args.note)
             _print(result, as_json)
             return 0 if result.get("ok") else 1
         if cmd == "remember":
@@ -330,6 +349,7 @@ def main(argv: list[str] | None = None) -> int:
                 "tree": validate_tree(skills_root(cfg)),
                 "config": {k: cfg.get(k) for k in ("enabled", "db_path", "audit_path",
                                                     "skills_root", "auto_record")},
+                "capabilities": core.capability_summary(),
                 "tools": {name: bool(shutil.which(name)) for name in (
                     "xdotool", "wmctrl", "grim", "gnome-screenshot", "scrot",
                     "wl-copy", "xclip", "notify-send", "playerctl", "pactl",
@@ -404,6 +424,31 @@ def main(argv: list[str] | None = None) -> int:
                     print(_mistake_line(mistake))
                 if not mistakes:
                     print("(ni zabeleženih napak)")
+            return 0
+        if cmd == "capabilities":
+            if args.confirm or args.fail:
+                cap_id = args.confirm or args.fail
+                status = "confirmed" if args.confirm else "failed"
+                ok = core.confirm_capability(cap_id, status, args.notes)
+                _print({"ok": bool(ok), "id": cap_id, "status": status}, as_json)
+                return 0 if ok else 1
+            rows = core.capabilities(refresh=args.refresh, query=args.query,
+                                     category=args.category, status=args.status)
+            if as_json:
+                _print({"capabilities": rows, "summary": core.capability_summary()}, True)
+            else:
+                current = ""
+                for row in rows:
+                    if row["category"] != current:
+                        current = row["category"]
+                        print(f"\n[{current.upper()}]")
+                    mark = {"confirmed": "✓", "learned": "●", "detected": "○",
+                            "failed": "✗", "unsupported": "—", "empty": "·"}.get(
+                        row["status"], "·")
+                    print(f" {mark} {row['id']:<30} {row['label']:<38} {row['how']}")
+                summary = core.capability_summary()
+                print(f"\n{summary.get('confirmed', 0)}/{summary.get('total', 0)} "
+                      f"potrjenih ({summary.get('percent', 0)}%)")
             return 0
         if cmd == "facts":
             if args.set:

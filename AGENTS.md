@@ -10,7 +10,12 @@ The current major addition is the **learning/knowledge core** and the
 **audited computer-control CLI**:
 
 - `server/mia_core/` — stdlib-only Python package: SQLite memory, episodes,
-  habits, recipes, anti-patterns, skill tree, context brief, `mia-learn` CLI.
+  habits, recipes, anti-patterns, skill tree, capability checklist, context
+  brief, `mia-learn` CLI.
+- `server/speaker_gate.py` — distance-aware ECAPA profiles (near/mid/far);
+  `server/calibration.py` — guided HUD calibration state machine.
+- `server/hud/settings.html` — live settings; `server/hud/capabilities.html` —
+  confirmed/learned/empty checklist.
 - `skills/` — granular skill tree (`mia-companion` root + 6 children), each
   with `SKILL.md` front matter and `references/`.
 - `skills/mia-companion/bin/mia-ctl` — cross-platform, policy-checked, audited
@@ -34,6 +39,8 @@ python3 -c "import sys; sys.path.insert(0,'server'); import mia_core; print(mia_
 ./skills/mia-companion/bin/mia-learn brief "odpri google"
 ./skills/mia-companion/bin/mia-skill validate
 ./skills/mia-companion/bin/mia-ctl doctor --json
+./skills/mia-companion/bin/mia-learn capabilities --refresh
+python3 server/scripts/calibrate_voice.py --help
 
 # installer / runtime
 ./install.sh --yes
@@ -78,6 +85,9 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   tree, integration helpers, CLI.
 - `tests/test_mia_ctl.py` — headless subprocess tests: policy, audit, dry-run,
   files, protected PIDs, service allowlist, power confirmation.
+- `tests/test_capabilities.py` — catalog, detection, confirmation, learned.
+- `tests/test_voice_calibration.py` — strict wake, calibration state machine,
+  Google answer/show split (numpy-dependent tests skip if numpy is absent).
 - Keep tests hermetic: use `tempfile`, set `HOME`/`XDG_*` for `mia-ctl`.
 
 ## Known pitfalls (hard-won)
@@ -95,6 +105,12 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   allowed to remove only `~/.hermes/skills/mia-*`, never other Hermes data.
 - The HUD `openView()` treats paths starting with `/hud/` as local pages;
   everything else goes through the dashboard TLS proxy on :9443.
+- Strict wake defaults to true; `followup_seconds` is ignored in strict mode.
+- Only verified episodes (or user-confirmed) become recipes. Do not relax this
+  without a deliberate migration.
+- `server/logs/settings.json` is runtime state; do not commit it.
+- Capabilities live in `server/mia_core/capabilities.py`; adding an item means
+  also wiring `mark_learned()` if it has a `mia-ctl` action.
 - Never commit `server/config/server.yaml`, `server/logs/`, `server/voices/`,
   `server/certs/` or `.env` files (see `.gitignore`).
 

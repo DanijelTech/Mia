@@ -27,6 +27,19 @@ Three visible surfaces:
 If `hud_display` fails for any reason (import error, 401, timeout), fall back
 **once** to `new_tab(url)`. Do not retry `hud_display` in a loop.
 
+## Google: answer vs show (strict distinction)
+
+The user cares about this distinction:
+
+- »Na Googlu poišči in povej mi …« / »Poišči … in mi povej« → **search in the
+  background and answer aloud**. Do not open a browser window. The voice server
+  turns this into a directive that forces `web_search` + spoken answer.
+- »Prikaži mi v Googlu …« / »Pokaži na Googlu …« / »Odpri Google za …« → open
+  the Google results page in the user's **visible** browser (`mia-open` /
+  `mia-ctl open`). Do not answer from memory instead of showing it.
+- Ambiguous »poišči na Googlu …« → answer aloud by default and offer to show
+  the page.
+
 ## Search and answer
 
 - Quick facts, news, weather, prices: `web_search`, then `web_extract` on the

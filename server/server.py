@@ -49,10 +49,13 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from RealtimeSTT import AudioToTextRecorder
 
+from calibration import CalibrationSession, DEFAULT_STAGES
 from continuous import WakeGate, build_segmenter, starts_with_exact_wake
 from speaker_gate import SpeakerGate
 from tts import build_backend
-from mia_core.integration import detect_feedback, detect_remember
+from mia_core.integration import (detect_feedback, detect_remember,
+                                  google_request, google_url)
+from mia_core import capabilities as capability_core
 from mia_core.learning import get_core
 
 try:
@@ -345,6 +348,28 @@ async def _summon_media(src: str, title: str, media: str = "video",
     return sent
 
 
+def _open_visible_url(url: str) -> bool:
+    """Open a URL in the user's real browser (never the invisible one)."""
+    import os as _os
+    candidates = [["mia-open", url], ["xdg-open", url], ["open", url]]
+    for argv in candidates:
+        try:
+            result = subprocess.run(argv, capture_output=True, timeout=30)
+            if result.returncode == 0:
+                return True
+        except FileNotFoundError:
+            continue
+        except Exception:
+            continue
+    if _os.name == "nt":
+        try:
+            _os.startfile(url)  # type: ignore[attr-defined]
+            return True
+        except Exception:
+            pass
+    return False
+
+
 def _playback_active() -> bool:
     """Is media likely playing? Either a Mia-opened desktop window (registry)
     is still alive, or a holographic panel is up on the HUD. Loud playback
@@ -398,6 +423,9 @@ class TurnTiming:
     run_id: str = ""
     interrupted: bool = False
     skip_learning: bool = False
+    speaker_stage: str = ""
+    speaker_score: float | None = None
+    speaker_level_db: float | None = None
     tools_used: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -414,6 +442,9 @@ class TurnTiming:
             "voice_id": self.voice_id,
             "run_id": self.run_id,
             "interrupted": self.interrupted,
+            "speaker_stage": self.speaker_stage,
+            "speaker_score": self.speaker_score,
+            "speaker_level_db": self.speaker_level_db,
             "tools_used": self.tools_used,
             "stt_finalize_seconds": self._delta(self.stt_start_monotonic, self.stt_final_monotonic),
             "llm_time_to_first_token_seconds": self._delta(self.llm_start_monotonic, self.llm_first_token_monotonic),
@@ -580,6 +611,7 @@ class VoicePipelineServer:
                 threshold=float(gate_cfg.get("threshold", 0.30)),
                 min_seconds=float(gate_cfg.get("min_seconds", 1.0)),
                 model=gate_cfg.get("model") or "speechbrain/spkrec-ecapa-voxceleb",
+                require_profile=bool(gate_cfg.get("require_profile", False)),
             )
             state = "enrolled" if self.speaker_gate.enrolled else "waiting for enrollment"
             print(f"Speaker gate: on ({state}, threshold {self.speaker_gate.threshold})", flush=True)
@@ -964,6 +996,43 @@ try:
 except Exception:
     VOICE_SETTINGS = {"pitch_semitones": 0.0}
 
+SETTINGS_PATH = ROOT / "logs" / "settings.json"
+DEFAULT_SETTINGS = {
+    "strict_wake": True,
+    "followup_seconds": 0,
+    "speaker_threshold": 0.30,
+    "require_profile": False,
+    "verify_prompts": True,
+    "learning_enabled": True,
+    "context_max_chars": 1500,
+    "calibration_required": True,
+}
+# Seed the defaults from server.yaml so a fresh install keeps the user's
+# explicit config (especially learning.enabled: false) instead of overriding it.
+try:
+    _cont = ((CFG.get("stt") or {}).get("continuous") or {})
+    _gate = _cont.get("speaker_gate") or {}
+    _cal = _gate.get("calibration") or {}
+    _learning = CFG.get("learning") or {}
+    DEFAULT_SETTINGS.update({
+        "strict_wake": bool(_cont.get("strict_wake", True)),
+        "followup_seconds": int(_cont.get("followup_seconds", 0) or 0),
+        "speaker_threshold": float(_gate.get("threshold", 0.30)),
+        "require_profile": bool(_gate.get("require_profile", False)),
+        "verify_prompts": bool(_learning.get("verify_prompts", True)),
+        "learning_enabled": bool(_learning.get("enabled", True)),
+        "context_max_chars": int(((_learning.get("context") or {})
+                                  .get("max_chars", 1500))),
+        "calibration_required": bool(_cal.get("required", True)),
+    })
+except Exception:
+    pass
+try:
+    SETTINGS = {**DEFAULT_SETTINGS,
+                **json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))}
+except Exception:
+    SETTINGS = dict(DEFAULT_SETTINGS)
+
 
 _PIPELINE_LOCK = threading.Lock()
 
@@ -1021,7 +1090,7 @@ async def start_learning_loop() -> None:
     async def warm() -> None:
         try:
             await asyncio.to_thread(LEARNING.system_facts)
-            await asyncio.to_thread(LEARNING.mine)
+            await asyncio.to_thread(LEARNING.mine, True, _capability_extra())
         except Exception as exc:
             print(f"learning warm skipped: {exc}", flush=True)
 
@@ -1029,7 +1098,7 @@ async def start_learning_loop() -> None:
         await asyncio.sleep(30)
         while True:
             try:
-                await asyncio.to_thread(LEARNING.mine)
+                await asyncio.to_thread(LEARNING.mine, True, _capability_extra())
                 await asyncio.to_thread(LEARNING.prune)
             except Exception as exc:
                 print(f"learning loop error: {exc}", flush=True)
@@ -1181,8 +1250,9 @@ async def hud_chat(request: Request) -> JSONResponse:
     try:
         await asyncio.to_thread(run_sync)
         try:
-            LEARNING.record_chat(conversation, text, out["text"], out["tools"],
-                                 duration_s=time.time() - started)
+            out["episode_id"] = LEARNING.record_chat(
+                conversation, text, out["text"], out["tools"],
+                duration_s=time.time() - started)
         except Exception as exc:
             print(f"learning record_chat skipped: {exc}", flush=True)
         return JSONResponse(out)
@@ -1287,8 +1357,122 @@ async def usage() -> JSONResponse:
 
 
 WS_CLIENTS: set = set()
+CONNS: set = set()
+
+
+def _coerce_setting(key: str, value):
+    if key in ("strict_wake", "require_profile", "verify_prompts",
+               "learning_enabled", "calibration_required"):
+        return bool(value)
+    if key == "followup_seconds":
+        return max(0, min(60, int(value)))
+    if key == "speaker_threshold":
+        return max(0.15, min(0.90, float(value)))
+    if key == "context_max_chars":
+        return max(300, min(4000, int(value)))
+    return value
+
+
+def apply_settings() -> None:
+    """Push the HUD settings into the live config and existing connections."""
+    cont = CFG.setdefault("stt", {}).setdefault("continuous", {})
+    cont["strict_wake"] = bool(SETTINGS["strict_wake"])
+    cont["followup_seconds"] = int(SETTINGS["followup_seconds"])
+    gate_cfg = cont.setdefault("speaker_gate", {})
+    gate_cfg["threshold"] = float(SETTINGS["speaker_threshold"])
+    gate_cfg["require_profile"] = bool(SETTINGS["require_profile"])
+    gate_cfg.setdefault("calibration", {})["required"] = bool(
+        SETTINGS["calibration_required"])
+    LEARNING.enabled = bool(SETTINGS["learning_enabled"])
+    LEARNING.cfg["verify_prompts"] = bool(SETTINGS["verify_prompts"])
+    LEARNING.cfg.setdefault("context", {})["max_chars"] = int(
+        SETTINGS["context_max_chars"])
+    gate = PIPELINE.speaker_gate if PIPELINE else None
+    if gate is not None:
+        gate.threshold = float(SETTINGS["speaker_threshold"])
+        gate.require_profile = bool(SETTINGS["require_profile"])
+    for conn in list(CONNS):
+        if conn.wake is not None:
+            conn.wake.strict = bool(SETTINGS["strict_wake"])
+            conn.wake.followup = int(SETTINGS["followup_seconds"])
+
+
+apply_settings()
 ACTIVE_PANELS: set = set()   # src of every holographic panel currently up
 LAST_SUMMON: dict = {}       # last media shown — for "odpri predvajanje v brskalniku"
+
+
+@app.get("/api/voice/calibration")
+async def voice_calibration() -> JSONResponse:
+    """Distance-calibration status for the HUD."""
+    try:
+        gate = get_pipeline().speaker_gate
+    except Exception:
+        gate = None
+    return JSONResponse({
+        "gate": gate.status() if gate else {"enrolled": False},
+        "stages": _calibration_stages(),
+        "required": bool(_calibration_cfg().get("required", True)),
+    })
+
+
+# ----------------------------------------------------------- capabilities API
+def _capability_extra() -> dict:
+    try:
+        gate = get_pipeline().speaker_gate
+        status = gate.status() if gate else {"enrolled": False}
+    except Exception:
+        status = {"enrolled": False}
+    return {
+        "voice.speaker_gate": {
+            "status": "confirmed" if status.get("enrolled") else "empty",
+            "evidence": status.get("profile", ""),
+        },
+        "voice.distance_calibration": {
+            "status": "confirmed" if status.get("distance_enrolled") else "empty",
+            "evidence": ", ".join(s["name"] for s in status.get("stages", [])) or
+                        "run HUD calibration",
+        },
+        "voice.wake": {"status": "detected",
+                       "evidence": "strict_wake=%s" % bool(
+                           ((CFG.get("stt") or {}).get("continuous") or {})
+                           .get("strict_wake", True))},
+    }
+
+
+@app.get("/api/capabilities")
+async def capabilities_list(request: Request) -> JSONResponse:
+    if request.query_params.get("refresh") in ("1", "true", "yes"):
+        await asyncio.to_thread(capability_core.refresh, LEARNING.store,
+                                LEARNING.cfg, _capability_extra())
+    rows = await asyncio.to_thread(
+        LEARNING.capabilities, False,
+        request.query_params.get("query", ""),
+        request.query_params.get("category") or None,
+        request.query_params.get("status") or None)
+    return JSONResponse({"capabilities": rows,
+                         "summary": await asyncio.to_thread(LEARNING.capability_summary)})
+
+
+@app.post("/api/capabilities/refresh")
+async def capabilities_refresh() -> JSONResponse:
+    await asyncio.to_thread(capability_core.refresh, LEARNING.store,
+                            LEARNING.cfg, _capability_extra())
+    return JSONResponse({"ok": True,
+                         "summary": await asyncio.to_thread(LEARNING.capability_summary)})
+
+
+@app.post("/api/capabilities/confirm")
+async def capabilities_confirm(request: Request) -> JSONResponse:
+    body = await request.json()
+    cap_id = (body.get("id") or "").strip()
+    if not cap_id:
+        return JSONResponse({"error": "id required"}, status_code=400)
+    ok = await asyncio.to_thread(
+        LEARNING.confirm_capability, cap_id,
+        body.get("status") or "confirmed", body.get("notes") or "",
+        body.get("evidence") or "")
+    return JSONResponse({"ok": bool(ok), "id": cap_id})
 
 
 # --------------------------------------------------------------- learning API
@@ -1353,14 +1537,35 @@ async def learning_episodes(request: Request) -> JSONResponse:
     limit = _as_int(request.query_params.get("limit"), 50)
     source = request.query_params.get("source") or None
     outcome = request.query_params.get("outcome") or None
+    verification_status = request.query_params.get("verification_status") or None
     return JSONResponse({"episodes": await asyncio.to_thread(
-        LEARNING.episodes, limit, source=source, outcome=outcome)})
+        LEARNING.episodes, limit, source=source, outcome=outcome,
+        verification_status=verification_status)})
+
+
+@app.get("/api/learning/pending")
+async def learning_pending(request: Request) -> JSONResponse:
+    limit = _as_int(request.query_params.get("limit"), 20)
+    return JSONResponse({"episodes": await asyncio.to_thread(LEARNING.pending, limit)})
 
 
 @app.get("/api/learning/events")
 async def learning_events(request: Request) -> JSONResponse:
     limit = _as_int(request.query_params.get("limit"), 100)
     return JSONResponse({"events": await asyncio.to_thread(LEARNING.events, limit)})
+
+
+@app.post("/api/learning/verify")
+async def learning_verify(request: Request) -> JSONResponse:
+    """Explicit verified-learning verdict from the HUD card."""
+    body = await request.json()
+    episode_id = _as_int(body.get("episode_id"))
+    verdict = (body.get("verdict") or "positive").lower()
+    if not episode_id:
+        return JSONResponse({"error": "episode_id required"}, status_code=400)
+    result = await asyncio.to_thread(
+        LEARNING.feedback, episode_id, verdict, body.get("note") or "")
+    return JSONResponse(result)
 
 
 @app.post("/api/learning/feedback")
@@ -1434,7 +1639,8 @@ async def learning_set_fact(request: Request) -> JSONResponse:
 
 @app.post("/api/learning/mine")
 async def learning_mine() -> JSONResponse:
-    return JSONResponse(await asyncio.to_thread(LEARNING.mine))
+    return JSONResponse(await asyncio.to_thread(LEARNING.mine, True,
+                                                _capability_extra()))
 
 
 @app.post("/api/learning/sysinfo")
@@ -1508,6 +1714,44 @@ async def set_voice_pitch(request: Request) -> JSONResponse:
     return JSONResponse({"pitch_semitones": VOICE_SETTINGS["pitch_semitones"]})
 
 
+@app.get("/api/settings")
+async def get_settings() -> JSONResponse:
+    try:
+        gate = get_pipeline().speaker_gate
+    except Exception:
+        gate = None
+    return JSONResponse({
+        "settings": SETTINGS,
+        "defaults": DEFAULT_SETTINGS,
+        "calibration": gate.status() if gate else {"enrolled": False},
+        "learning": await asyncio.to_thread(LEARNING.status),
+        "capabilities": await asyncio.to_thread(LEARNING.capability_summary),
+    })
+
+
+@app.post("/api/settings")
+async def update_settings(request: Request) -> JSONResponse:
+    body = await request.json()
+    updated = {}
+    for key, value in (body or {}).items():
+        if key not in DEFAULT_SETTINGS:
+            continue
+        try:
+            SETTINGS[key] = _coerce_setting(key, value)
+            updated[key] = SETTINGS[key]
+        except (TypeError, ValueError):
+            continue
+    if updated:
+        try:
+            SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+            SETTINGS_PATH.write_text(json.dumps(SETTINGS, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+        apply_settings()
+        print(f"SETTINGS updated: {updated}", flush=True)
+    return JSONResponse({"ok": True, "settings": SETTINGS, "updated": updated})
+
+
 @app.get("/api/hud-config")
 async def hud_config() -> JSONResponse:
     """HUD behaviour switches: external media, UI language, TTS provider."""
@@ -1579,6 +1823,48 @@ def _local_gpu() -> dict:
         return {}
 
 
+def _local_desktop_info() -> dict:
+    """Cheap desktop facts for the settings page (never blocks long)."""
+    import platform
+    info = {
+        "os": f"{platform.system()} {platform.release()}",
+        "desktop": os.environ.get("XDG_CURRENT_DESKTOP") or
+                   os.environ.get("XDG_SESSION_TYPE") or "",
+        "display": os.environ.get("DISPLAY") or "",
+    }
+    try:
+        if shutil.which("xrandr"):
+            result = subprocess.run(["xrandr", "--listmonitors"],
+                                    capture_output=True, text=True, timeout=2)
+            if result.returncode == 0:
+                info["displays"] = max(0, len(result.stdout.splitlines()) - 1)
+        elif shutil.which("swaymsg"):
+            result = subprocess.run(["swaymsg", "-t", "get_outputs", "-r"],
+                                    capture_output=True, text=True, timeout=2)
+            if result.returncode == 0:
+                info["displays"] = result.stdout.count('"name"')
+        elif shutil.which("hyprctl"):
+            result = subprocess.run(["hyprctl", "monitors", "-j"],
+                                    capture_output=True, text=True, timeout=2)
+            if result.returncode == 0:
+                info["displays"] = result.stdout.count('"name"')
+    except Exception:
+        pass
+    try:
+        if shutil.which("pactl"):
+            source = subprocess.run(["pactl", "get-default-source"],
+                                    capture_output=True, text=True, timeout=2)
+            sink = subprocess.run(["pactl", "get-default-sink"],
+                                  capture_output=True, text=True, timeout=2)
+            if source.returncode == 0:
+                info["microphone"] = source.stdout.strip()
+            if sink.returncode == 0:
+                info["audio"] = sink.stdout.strip()
+    except Exception:
+        pass
+    return info
+
+
 @app.get("/api/machines")
 async def machines() -> JSONResponse:
     """Local (Mac) stats + configured remote workers.
@@ -1595,6 +1881,7 @@ async def machines() -> JSONResponse:
             "disk": psutil.disk_usage(str(ROOT)).percent,
         })
     mac.update(_local_gpu())
+    mac.update(_local_desktop_info())
     result.append(mac)
 
     def poll_worker(w: dict) -> dict:
@@ -1749,6 +2036,8 @@ class ConnState:
     audio_stats_at: float = 0.0
     pending_utterance: bytes | None = None  # said while a turn was busy — runs next
     last_rejected_stt_at: float = 0.0       # debounce for override STT on foreign voices
+    calibration: CalibrationSession | None = None
+    calibration_task: asyncio.Task | None = None
 
 
 async def _speak_and_finish(ws: WebSocket, pipeline: VoicePipelineServer,
@@ -1760,6 +2049,104 @@ async def _speak_and_finish(ws: WebSocket, pipeline: VoicePipelineServer,
     timing.total_done_monotonic = time.perf_counter()
     await ws.send_json({"type": "done", "turn_id": timing.turn_id, "timing": timing.summary()})
     conn.last_reply_at = time.time()
+
+
+def _calibration_cfg() -> dict:
+    return ((((CFG.get("stt") or {}).get("continuous") or {})
+             .get("speaker_gate") or {}).get("calibration") or {})
+
+
+def _calibration_stages() -> list[dict]:
+    configured = _calibration_cfg().get("stages") or []
+    defaults = {s["id"]: s for s in DEFAULT_STAGES}
+    stages = []
+    for item in configured or DEFAULT_STAGES:
+        stage = dict(defaults.get(str(item.get("id")), {}))
+        stage.update(item)
+        if stage.get("id"):
+            stages.append(stage)
+    return stages or DEFAULT_STAGES
+
+
+async def _speak_calibration(ws: WebSocket, pipeline: VoicePipelineServer,
+                             conn: ConnState, text: str) -> None:
+    if not text:
+        return
+    timing = TurnTiming(turn_id=pipeline.next_turn_id())
+    conn.spoken_sentences = [text]
+    try:
+        await pipeline._send_tts_sentence(ws, text, timing, conn)
+    except Exception as exc:
+        print(f"calibration TTS skipped: {exc}", flush=True)
+    finally:
+        conn.is_speaking = False
+
+
+async def _calibration_start(ws: WebSocket, pipeline: VoicePipelineServer,
+                             conn: ConnState) -> None:
+    await _cancel_active_turn(ws, pipeline, conn)
+    conn.calibration = CalibrationSession(stages=_calibration_stages())
+    conn.recording = True
+    conn.continuous = False
+    conn.segmenter = None
+    conn.audio_chunks = []
+    payload = conn.calibration.payload()
+    await ws.send_json({"type": "calibration_state", **payload})
+    await _speak_calibration(ws, pipeline, conn, payload.get("prompt", ""))
+
+
+async def _calibration_process(ws: WebSocket, pipeline: VoicePipelineServer,
+                               conn: ConnState, sample) -> None:
+    session = conn.calibration
+    if session is None:
+        return
+    from speaker_gate import level_db
+    level = level_db(sample)
+    if level < -55.0:
+        state = session.retry_current()
+        session.busy = False
+        await ws.send_json({"type": "calibration_state", **state})
+        await _speak_calibration(ws, pipeline, conn,
+                                 "Prenizko je. Stopi bliže ali govori glasneje.")
+        return
+    state = session.accept_sample(sample)
+    if state.get("done"):
+        conn.calibration = None
+        conn.recording = False
+        try:
+            result = await asyncio.to_thread(session.finish, pipeline.speaker_gate)
+            await ws.send_json({"type": "calibration_done", **result})
+            await _speak_calibration(
+                ws, pipeline, conn,
+                "Kalibracija je shranjena. Zdaj te prepoznam tudi od daleč.")
+        except Exception as exc:
+            print(f"calibration failed: {exc}", flush=True)
+            await ws.send_json({"type": "calibration_error", "error": str(exc)})
+            await _speak_calibration(ws, pipeline, conn,
+                                     "Kalibracija ni uspela. Poskusi znova.")
+        finally:
+            conn.is_speaking = False
+            try:
+                await ws.send_json({"type": "status", "message": "calibration finished"})
+            except Exception:
+                pass
+        return
+    session.busy = False
+    await ws.send_json({"type": "calibration_state", **state})
+    await _speak_calibration(ws, pipeline, conn, state.get("prompt", ""))
+
+
+async def _calibration_audio(ws: WebSocket, pipeline: VoicePipelineServer,
+                             conn: ConnState, chunk: bytes) -> None:
+    session = conn.calibration
+    if session is None or session.finished or session.busy:
+        return
+    if not session.add_audio(chunk):
+        return
+    sample = session.take_sample()
+    session.busy = True
+    conn.calibration_task = asyncio.create_task(
+        _calibration_process(ws, pipeline, conn, sample))
 
 
 async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnState,
@@ -1778,12 +2165,28 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
         gate = pipeline.speaker_gate
         gate_cfg = (((pipeline.cfg.get("stt") or {}).get("continuous") or {})
                     .get("speaker_gate") or {})
+        if gate is not None and gate.require_profile and not gate.enrolled:
+            timing.errors.append("ignored: speaker profile required")
+            try:
+                await ws.send_json({"type": "calibration_required",
+                                    "reason": "no_profile"})
+            except Exception:
+                pass
+            return
         speaker_ok, score = True, None
         override_ok = False
         if wake is not None and gate is not None and gate.enrolled:
             try:
-                speaker_ok, score = await asyncio.to_thread(
-                    gate.verify, np.frombuffer(audio, dtype=np.int16))
+                detail = await asyncio.to_thread(
+                    gate.verify_detail, np.frombuffer(audio, dtype=np.int16))
+                speaker_ok = bool(detail["accept"])
+                score = float(detail["score"])
+                timing.speaker_stage = str(detail.get("stage") or "")
+                timing.speaker_score = score
+                timing.speaker_level_db = detail.get("level_db")
+                if timing.speaker_stage not in ("none", "too_short"):
+                    print(f"SPEAKER match stage={timing.speaker_stage} "
+                          f"score={score:.2f} level={timing.speaker_level_db} dBFS", flush=True)
             except Exception as exc:
                 # broken profile / missing speechbrain must not kill every turn
                 if not getattr(pipeline, "_gate_error_logged", False):
@@ -1889,6 +2292,26 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
                 return
             print(f"LEARNING remember ignored (no previous episode): {result}", flush=True)
 
+        google_mode, google_query = google_request(stripped)
+        agent_transcript = transcript
+        if google_mode and google_query:
+            if google_mode == "show":
+                url = google_url(google_query)
+                opened = await asyncio.to_thread(_open_visible_url, url)
+                timing.tools_used.append("mia-open")
+                print(f"GOOGLE show: {google_query!r} -> {url} opened={opened}", flush=True)
+                await _speak_and_finish(
+                    ws, pipeline, conn, timing,
+                    "Odprla sem v brskalniku, šefe." if opened
+                    else "Brskalnika nisem mogla odpreti, šefe.")
+                return
+            agent_transcript = (
+                "[Navodilo: uporabi spletno iskanje in mi ustno odgovori na "
+                "vprašanje. Ne odpiraj brskalnika in ne prikazuj strani.] "
+                + google_query)
+            timing.tools_used.append("web_search")
+            print(f"GOOGLE answer: {google_query!r}", flush=True)
+
         vol_args = _volume_request(stripped) if said_wake else None
         if vol_args is not None:
             r = await asyncio.to_thread(subprocess.run, ["mia-volume", *vol_args],
@@ -1968,11 +2391,11 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             if conn.interrupt_note:
                 transcript_sent = (
                     f"[note: your previous spoken reply was cut off by the user after you said: "
-                    f"\"{conn.interrupt_note}\"]\n{transcript}"
+                    f"\"{conn.interrupt_note}\"]\n{agent_transcript}"
                 )
                 conn.interrupt_note = None
             else:
-                transcript_sent = transcript
+                transcript_sent = agent_transcript
             conn.spoken_sentences = []
             await pipeline.stream_response_audio(ws, transcript_sent, timing, conn)
             timing.total_done_monotonic = time.perf_counter()
@@ -1996,8 +2419,21 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
         try:
             if (timing.transcript and not timing.skip_learning
                     and not any(str(e).startswith("ignored:") for e in timing.errors)):
-                LEARNING.record_turn(timing, conn.conversation, timing.transcript,
-                                     source="voice")
+                episode_id = LEARNING.record_turn(
+                    timing, conn.conversation, timing.transcript, source="voice")
+                verify_prompts = bool(LEARNING.cfg.get("verify_prompts", True))
+                if (episode_id and verify_prompts and timing.tools_used
+                        and not timing.interrupted):
+                    try:
+                        await ws.send_json({
+                            "type": "verify_request",
+                            "episode_id": episode_id,
+                            "request": timing.transcript[:240],
+                            "response": (timing.response_text or "")[:240],
+                            "tools": timing.tools_used[:8],
+                        })
+                    except Exception:
+                        pass
         except Exception as exc:
             print(f"learning record_turn skipped: {exc}", flush=True)
         conn.timing = None
@@ -2134,6 +2570,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     WS_CLIENTS.add(ws)
     pipeline = get_pipeline()
     conn = ConnState(conversation=(CFG.get("hermes") or {}).get("conversation", "mia-main"))
+    CONNS.add(conn)
     await ws.send_json({"type": "status", "message": "Hermes voice server connected."})
     try:
         while True:
@@ -2153,13 +2590,25 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                         conn.continuous = True
                         conn.segmenter = build_segmenter(cont_cfg)
                         conn.wake = WakeGate(cont_cfg.get("wake_words"),
-                                             float(cont_cfg.get("followup_seconds", 20)))
+                                             float(cont_cfg.get("followup_seconds", 0)),
+                                             strict=bool(cont_cfg.get("strict_wake", True)))
                         await ws.send_json({
                             "type": "status",
                             "message": "continuous listening",
                             "vad": getattr(conn.segmenter.detector, "kind", "?"),
                             "wake_words": conn.wake.words,
+                            "strict_wake": conn.wake.strict,
                         })
+                        gate = pipeline.speaker_gate
+                        calibration = _calibration_cfg()
+                        if (gate is not None and calibration.get("required", True)
+                                and not gate.distance_enrolled):
+                            await ws.send_json({
+                                "type": "calibration_required",
+                                "reason": "no_distance_profile",
+                                "enrolled": gate.enrolled,
+                                "status": gate.status(),
+                            })
                         continue
                     conn.continuous = False
                     conn.segmenter = None
@@ -2203,6 +2652,20 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                                         "message": "utterance submitted" if started else "nothing to submit"})
                 elif etype == "panel_closed":
                     ACTIVE_PANELS.discard(str(event.get("src") or ""))
+                elif etype == "calibration_start":
+                    await _calibration_start(ws, pipeline, conn)
+                elif etype == "calibration_cancel":
+                    if conn.calibration_task and not conn.calibration_task.done():
+                        conn.calibration_task.cancel()
+                    conn.calibration = None
+                    conn.recording = False
+                    conn.is_speaking = False
+                    await ws.send_json({"type": "calibration_state", "active": False,
+                                        "cancelled": True})
+                elif etype == "calibration_status":
+                    gate = pipeline.speaker_gate
+                    await ws.send_json({"type": "calibration_status",
+                                        "status": gate.status() if gate else {"enrolled": False}})
                 elif etype == "stop_run":
                     await _cancel_active_turn(ws, pipeline, conn)
                     await ws.send_json({"type": "agent_status", "state": "stopped"})
@@ -2222,13 +2685,18 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                 else:
                     await ws.send_json({"type": "error", "message": f"Unknown event type: {etype}"})
             elif "bytes" in message and message["bytes"] is not None:
-                if conn.continuous and conn.segmenter is not None:
+                if conn.calibration is not None:
+                    await _calibration_audio(ws, pipeline, conn, message["bytes"])
+                elif conn.continuous and conn.segmenter is not None:
                     await _feed_continuous(ws, pipeline, conn, message["bytes"])
                 elif conn.recording:
                     conn.audio_chunks.append(message["bytes"])
                     _maybe_schedule_partial(ws, pipeline, conn)
     except (WebSocketDisconnect, WebSocketDisconnected):
         conn.continuous = False
+        conn.calibration = None
+        if conn.calibration_task and not conn.calibration_task.done():
+            conn.calibration_task.cancel()
         if conn.turn_task and not conn.turn_task.done():
             conn.turn_task.cancel()
         print("Client disconnected", flush=True)
@@ -2243,6 +2711,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         print("Client disconnected", flush=True)
     finally:
         WS_CLIENTS.discard(ws)
+        CONNS.discard(conn)
 
 
 def main() -> int:

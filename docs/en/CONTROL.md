@@ -67,6 +67,27 @@ mia-ctl audit tail --limit 20
 mia-ctl policy show
 ```
 
+## Displays, resources, audio
+
+```bash
+mia-ctl displays list
+mia-ctl resources
+mia-ctl audio devices
+```
+
+## Verification
+
+Every result carries `verification`:
+
+```json
+{"status":"verified","method":"volume_readback",
+ "evidence":{"got":40,"expected":40}}
+```
+
+`verified` = a real post-condition passed; `failed` = it did not; `unknown` =
+no safe post-condition (typing, clicking, power). Only verified actions (or a
+user ✓ in the HUD) become trusted recipes.
+
 ## Policy
 
 `~/.config/mia/control.json`:

@@ -51,6 +51,14 @@ trip with a fast local TTS: 5–10 seconds.
   vocabulary for windows, apps, typing/clicking, screenshots, clipboard, media,
   volume, brightness, power, processes, services and files (X11, Wayland,
   macOS, Windows). Every action is audited.
+- **Distance voice calibration** — on first start Mia asks you to speak near,
+  mid-room and far from the microphone; she stores a separate voiceprint per
+  distance and recognises you anywhere in the house.
+- **Strict wake** — every turn must start with “Mia”; speech, TV, guests and
+  noise are rejected before transcription once the profile is calibrated.
+- **Verified success only** — a recipe is created only from a verified
+  post-condition (`mia-ctl verification.status=verified`) or your ✓ in the HUD
+  “was this right?” card. Unverified success stays a candidate.
 - **Durable memory and a knowledge tree** — every turn is stored in a local
   SQLite database; habits, recipes and anti-patterns are derived from it. A
   bounded `[MIA SPOMIN …]` brief is injected before every turn.
@@ -59,6 +67,15 @@ trip with a fast local TTS: 5–10 seconds.
 - **Granular skill tree** — `mia-companion` (persona) plus `mia-desktop`,
   `mia-learning`, `mia-music`, `mia-browser`, `mia-productivity`,
   `mia-diagnostics`; a validator checks names, parents and references.
+- **Capability checklist** — ~80 concrete abilities (windows, apps, input,
+  screenshots, clipboard, audio, displays, resources, processes, services,
+  files, Google, learning) with confirmed/learned/detected/empty/unsupported
+  statuses.
+- **Google answer vs show** — “search on Google and tell me” answers aloud in
+  the background; “show me on Google” opens your browser.
+- **HUD settings** — strict wake, speaker threshold, follow-up, require
+  profile, verification cards, learning, brief length, calibration and system
+  overview.
 - **Live agent activity** — watch tool calls happen with command previews
 - **Approval cards** — dangerous commands pause for your ALLOW/DENY
 - **Embedded dashboards** — kanban, the Hermes dashboard and chat pop up in
@@ -262,6 +279,10 @@ evening.
 | Desktop windows | "open Google / \<page\>" and "close it" (mia-open/mia-close) |
 | Computer control | `mia-ctl …` — windows, apps, input, screenshots, clipboard, power |
 | Memory and knowledge | SPOMIN IN ZNANJE panel → ODPRI ZNANJE · `mia-learn …` |
+| Voice calibration | HUD NASTAVITVE → KALIBRIRAJ · `server/scripts/calibrate_voice.py` |
+| Capabilities | ZMOGLJIVOSTI panel → ODPRI SEZNAM · `mia-learn capabilities` |
+| Verify an action | HUD “JE BILO PRAVILNO?” ✓/✗ · `mia-learn verify` |
+| Google | “search and tell me” = spoken · “show me” = browser |
 | Typed chat | input bar at the bottom (same conversation as voice) |
 | Kanban / dashboards | VIEWS panel → kanban, dashboard, chat |
 | Push-to-talk | alternative: click the ring (or Space) · speak · click again |
@@ -276,7 +297,11 @@ server/continuous.py  VAD segmentation + wake gate for always-on listening
 server/speaker_gate.py  speaker verification (ECAPA-TDNN voiceprints, SpeechBrain)
 server/tts.py    local TTS backends: piper, http (Gepard/Maya1), command, elevenlabs
 server/mia_core/ learning and knowledge (stdlib-only): SQLite, habits, recipes,
-                 anti-patterns, skill tree, context brief, mia-learn CLI
+                 anti-patterns, skill tree, capabilities, context brief, mia-learn CLI
+server/speaker_gate.py  distance-aware voiceprints (near/mid/far)
+server/calibration.py   guided calibration over the HUD WebSocket
+server/hud/settings.html      SETTINGS (wake, threshold, learning, calibration)
+server/hud/capabilities.html  CAPABILITIES (confirmed/learned/empty)
 server/scripts/  mia-start/stop/health + enroll_voice.py (voice calibration)
                  + gepard_tts.py (TTS service with per-request pitch)
 client/          optional Windows/Linux push-to-talk Python client (wake word capable)
@@ -290,6 +315,7 @@ skills/mia-companion/bin/  mia-open, mia-close, mia-volume, mia-artists,
 tests/           unittest suite for mia_core, mia-ctl and the skill tree
 launchd/         macOS auto-start templates with hard-won TCC + FD-limit notes
 docs/            Slovenian docs; docs/en/ the English copies
+                 (SETUP, ARCHITECTURE, LEARNING, CONTROL, CALIBRATION, CAPABILITIES)
 install.sh       install (no venv, root or user) + manifest
 start-mia.sh     boots the whole stack (stack: llama → Hermes → dashboard → Mia + TTS), opens HUD
 stop-mia.sh      stops everything and frees RAM/VRAM; status, --restart, --free-ports

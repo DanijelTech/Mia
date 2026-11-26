@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MIA // NASTAVITVE</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+:root{--bg:#050b14;--panel:#081523cc;--line:#0e2c40;--cyan:#00e5ff;--cyan-dim:#0a7f96;
+  --teal:#19f0d8;--amber:#ffb300;--red:#ff4d5e;--txt:#9fd8e8;--txt-dim:#4d7d92}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:radial-gradient(ellipse at 50% 0%,#0a1a2c 0%,var(--bg) 60%);color:var(--txt);
+  font-family:'Rajdhani',sans-serif;padding:14px 18px 30px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line);
+  background:var(--panel);padding:10px 14px;clip-path:polygon(0 0,100% 0,100% 70%,calc(100% - 14px) 100%,14px 100%,0 70%)}
+header h1{font-family:'Orbitron';font-size:15px;letter-spacing:6px;color:var(--cyan)}
+header .sub{font-size:11px;letter-spacing:2px;color:var(--txt-dim)}
+.btns{display:flex;gap:6px;flex-wrap:wrap}
+button{background:#0a2435;color:var(--cyan);border:1px solid var(--cyan-dim);padding:7px 11px;
+  font-family:'Orbitron';font-size:10px;letter-spacing:1.2px;cursor:pointer}
+button:hover{background:#0e3448}
+button.danger{color:var(--red);border-color:#5c1f27}
+button.ghost{color:var(--txt-dim);border-color:var(--line)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+@media(max-width:850px){.grid{grid-template-columns:1fr}}
+.card{border:1px solid var(--line);background:var(--panel);padding:12px 14px;
+  clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px))}
+.card h2{font-family:'Orbitron';font-size:11px;letter-spacing:3px;color:var(--cyan);
+  border-bottom:1px solid var(--line);padding-bottom:6px;margin-bottom:9px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:5px 0;font-size:14px}
+.row small{display:block;color:var(--txt-dim);font-size:11px;line-height:1.2}
+input[type=range]{width:180px;accent-color:var(--cyan)}
+input[type=number],input[type=text]{background:#06101c;border:1px solid var(--line);color:#cfeefb;
+  padding:5px 7px;font-family:'Rajdhani';font-size:13px;width:90px}
+.switch{position:relative;width:44px;height:22px;flex:0 0 auto}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;inset:0;background:#06101c;border:1px solid var(--line);cursor:pointer;border-radius:2px}
+.slider:before{content:"";position:absolute;height:14px;width:14px;left:3px;top:3px;background:var(--txt-dim);transition:.18s}
+.switch input:checked + .slider{border-color:var(--cyan-dim);background:#041a22}
+.switch input:checked + .slider:before{transform:translateX(21px);background:var(--teal);box-shadow:0 0 8px var(--teal)}
+.hint{font-size:11.5px;color:var(--txt-dim);margin:5px 0}
+.kv{display:flex;justify-content:space-between;font-size:13px;padding:2px 0}
+.kv b{color:var(--teal)}
+.bar{height:6px;background:#06101c;border:1px solid var(--line);margin-top:6px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan-dim),var(--teal))}
+.ok{color:var(--teal)} .warn{color:var(--amber)} .err{color:var(--red)}
+#saved{position:fixed;right:16px;bottom:16px;padding:8px 14px;border:1px solid var(--teal);
+  background:#04181af2;color:var(--teal);font-family:'Orbitron';font-size:10px;letter-spacing:2px;
+  display:none;z-index:10}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>NASTAVITVE</h1><div class="sub">GLAS · BUDNICA · UČENJE · PREVERJANJE · SISTEM</div></div>
+  <div class="btns">
+    <button id="saveBtn">SHRANI</button>
+    <button id="closeBtn" class="ghost">✕ ZAPRI</button>
+  </div>
+</header>
+
+<div class="grid">
+  <div class="card">
+    <h2>GLAS IN BUDNICA</h2>
+    <div class="row"><span>Stroga budnica »Mia«<small>vsaka izjava se mora začeti z »Mia«</small></span>
+      <label class="switch"><input type="checkbox" id="strict_wake"><span class="slider"></span></label></div>
+    <div class="row"><span>Follow-up okno (s)<small>0 = strogo; v strict načinu se ne uporablja</small></span>
+      <input type="number" id="followup_seconds" min="0" max="60"></div>
+    <div class="row"><span>Prag govorca<small>višji = strožje, nižji = bolj dovzeten</small></span>
+      <input type="range" id="speaker_threshold" min="0.15" max="0.90" step="0.01"></div>
+    <div class="kv"><span>Prag</span><b id="thresholdVal">—</b></div>
+    <div class="row"><span>Zahtevaj profil<small>brez kalibracije Mia ne obdeluje govora</small></span>
+      <label class="switch"><input type="checkbox" id="require_profile"><span class="slider"></span></label></div>
+    <div class="row"><span>Zahtevaj kalibracijo<small>HUD ob zagonu ponudi kalibracijo</small></span>
+      <label class="switch"><input type="checkbox" id="calibration_required"><span class="slider"></span></label></div>
+    <div class="hint" id="calibStatus">—</div>
+    <div class="btns"><button id="calibBtn">KALIBRIRAJ GLAS</button></div>
+  </div>
+
+  <div class="card">
+    <h2>UČENJE IN PREVERJANJE</h2>
+    <div class="row"><span>Učenje vklopljeno<small>epizode, navade, recepti, napake</small></span>
+      <label class="switch"><input type="checkbox" id="learning_enabled"><span class="slider"></span></label></div>
+    <div class="row"><span>Kartice za potrditev<small>po opravilu vprašaj »je bilo prav?«</small></span>
+      <label class="switch"><input type="checkbox" id="verify_prompts"><span class="slider"></span></label></div>
+    <div class="row"><span>Dolžina spominskega briefa<small>znaki, ki se vbrizgajo pred krog</small></span>
+      <input type="number" id="context_max_chars" min="300" max="4000" step="100"></div>
+    <div class="kv"><span>Epizode</span><b id="lEpisodes">—</b></div>
+    <div class="kv"><span>Recepti</span><b id="lRecipes">—</b></div>
+    <div class="kv"><span>Za potrditev</span><b id="lPending">—</b></div>
+    <div class="kv"><span>Zmogljivosti</span><b id="lCaps">—</b></div>
+    <div class="btns" style="margin-top:8px">
+      <button onclick="parentOpen('ZNANJE','/hud/learning.html')">ODPRI ZNANJE</button>
+      <button onclick="parentOpen('ZMOGLJIVOSTI','/hud/capabilities.html')">ODPRI ZMOGLJIVOSTI</button>
+      <button id="mineBtn">OSVEŽI SPOMIN</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>ZMOGLJIVOSTI</h2>
+    <div class="kv"><span>Potrjene/naučene</span><b id="capConfirmed">—</b></div>
+    <div class="kv"><span>Zaznane</span><b id="capDetected">—</b></div>
+    <div class="kv"><span>Prazne</span><b id="capEmpty">—</b></div>
+    <div class="kv"><span>Nepodprte</span><b id="capUnsupported">—</b></div>
+    <div class="bar"><i id="capBar" style="width:0%"></i></div>
+    <div class="hint">Seznam vsebuje okna, aplikacije, vnos, posnetke, odložišče, zvok, zaslone, vire, procese, storitve, datoteke, brskalnik in učenje.</div>
+    <div class="btns"><button id="capRefresh">ZNOVA ZAZNAJ</button></div>
+  </div>
+
+  <div class="card">
+    <h2>SISTEM</h2>
+    <div class="kv"><span>Gostitelj</span><b id="sysHost">—</b></div>
+    <div class="kv"><span>OS</span><b id="sysOs">—</b></div>
+    <div class="kv"><span>Namizje</span><b id="sysDesktop">—</b></div>
+    <div class="kv"><span>Zasloni</span><b id="sysDisplays">—</b></div>
+    <div class="kv"><span>Mikrofon</span><b id="sysMic">—</b></div>
+    <div class="kv"><span>Zvočniki</span><b id="sysAudio">—</b></div>
+    <div class="btns" style="margin-top:8px"><button id="sysRefresh">OSVEŽI SISTEM</button></div>
+  </div>
+</div>
+
+<div id="saved">SHRANJENO</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let S={};
+async function get(u){const r=await fetch(u);if(!r.ok)throw new Error(r.status);return r.json()}
+async function post(u,b){const r=await fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b||{})});return r.json()}
+function parentOpen(name,path){try{window.parent.openView(name,path)}catch{}}
+function saved(){const s=$("saved");s.style.display="block";setTimeout(()=>s.style.display="none",1200)}
+
+function fill(){
+  $("strict_wake").checked=!!S.strict_wake;
+  $("followup_seconds").value=S.followup_seconds??0;
+  $("speaker_threshold").value=S.speaker_threshold??0.30;
+  $("thresholdVal").textContent=(+S.speaker_threshold||0.30).toFixed(2);
+  $("require_profile").checked=!!S.require_profile;
+  $("calibration_required").checked=!!S.calibration_required;
+  $("learning_enabled").checked=!!S.learning_enabled;
+  $("verify_prompts").checked=!!S.verify_prompts;
+  $("context_max_chars").value=S.context_max_chars??1500;
+}
+function collect(){
+  return {
+    strict_wake:$("strict_wake").checked,
+    followup_seconds:+$("followup_seconds").value,
+    speaker_threshold:+$("speaker_threshold").value,
+    require_profile:$("require_profile").checked,
+    calibration_required:$("calibration_required").checked,
+    learning_enabled:$("learning_enabled").checked,
+    verify_prompts:$("verify_prompts").checked,
+    context_max_chars:+$("context_max_chars").value,
+  };
+}
+async function load(){
+  try{
+    const j=await get("/api/settings"); S=j.settings||{}; fill();
+    const c=j.calibration||{}; const stages=c.stages||[];
+    $("calibStatus").innerHTML=c.distance_enrolled
+      ? `<span class="ok">✓ kalibrirano po oddaljenosti</span> (${stages.map(s=>esc(s.name)).join(", ")})`
+      : (c.enrolled?`<span class="warn">obstaja profil brez oddaljenosti</span>`:`<span class="err">ni profila — klikni KALIBRIRAJ</span>`);
+    const l=j.learning||{}, db=l.db||{}, sk=l.skills||{}, cap=j.capabilities||{};
+    $("lEpisodes").textContent=db.episodes??"—"; $("lRecipes").textContent=db.recipes??"—";
+    $("lPending").textContent=db.pending_verification??"—";
+    $("lCaps").textContent=(cap.confirmed??0)+"/"+(cap.total??0);
+  }catch(e){$("calibStatus").textContent="napaka: "+e.message}
+  loadCaps(); loadSystem();
+}
+async function loadCaps(){
+  try{const j=await get("/api/capabilities?refresh=1");const s=j.summary||{},bs=s.by_status||{};
+    $("capConfirmed").textContent=s.confirmed??"—";$("capDetected").textContent=bs.detected??"—";
+    $("capEmpty").textContent=bs.empty??"—";$("capUnsupported").textContent=bs.unsupported??"—";
+    $("capBar").style.width=(s.percent??0)+"%";
+  }catch{}
+}
+async function loadSystem(){
+  try{const j=await get("/api/machines");const m=(j.machines||[])[0]||{};
+    $("sysHost").textContent=m.name||"—"; $("sysOs").textContent=m.os||"—";
+    $("sysDesktop").textContent=m.desktop||"—"; $("sysDisplays").textContent=m.displays??"—";
+    $("sysMic").textContent=m.microphone||"—"; $("sysAudio").textContent=m.audio||"—";
+  }catch{}
+}
+async function save(){
+  try{const j=await post("/api/settings",collect()); S=j.settings||S; fill(); saved();}catch{}
+}
+["strict_wake","followup_seconds","speaker_threshold","require_profile","calibration_required",
+ "learning_enabled","verify_prompts","context_max_chars"].forEach(id=>{
+  const el=$(id); if(!el)return;
+  el.addEventListener(el.type==="range"?"input":"change",()=>{
+    if(id==="speaker_threshold")$("thresholdVal").textContent=(+el.value).toFixed(2);
+    save();
+  });
+});
+$("speaker_threshold").addEventListener("input",()=>$("thresholdVal").textContent=(+$("speaker_threshold").value).toFixed(2));
+$("saveBtn").onclick=save;
+$("calibBtn").onclick=()=>{
+  try{
+    window.parent.startCalibration();
+    window.parent.document.getElementById("viewerClose").click();
+  }catch{alert("Kalibracijo zaženi iz glavnega HUD-a (gumb ZAČNI KALIBRACIJO).")}
+};
+$("mineBtn").onclick=async()=>{$("mineBtn").textContent="…";try{await post("/api/learning/mine")}catch{};await load();$("mineBtn").textContent="OSVEŽI SPOMIN"};
+$("capRefresh").onclick=async()=>{$("capRefresh").textContent="…";try{await post("/api/capabilities/refresh")}catch{};await loadCaps();$("capRefresh").textContent="ZNOVA ZAZNAJ"};
+$("sysRefresh").onclick=loadSystem;
+$("closeBtn").onclick=()=>{try{window.parent.document.getElementById("viewerClose").click()}catch{window.close()}};
+load();
+</script>
+</body>
+</html>

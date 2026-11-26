@@ -686,6 +686,27 @@ sudo apt install wtype ydotool grim wl-clipboard playerctl brightnessctl
 brew install cliclick
 ```
 
+**Kalibracija glasu po oddaljenosti** (obvezen korak za natančnost): HUD ob
+zagonu ponudi **KALIBRACIJA GLASU PO ODDALJENOSTI**; govoriš blizu, s sredine
+sobe in od daleč. Terminalna različica:
+
+```bash
+python3 server/scripts/calibrate_voice.py
+python3 server/scripts/calibrate_voice.py --samples 3   # več posnetkov = boljša oddaljenost
+```
+
+Profil se shrani v `server/voices/speaker_profile.npz` in se pobere brez
+restarta. Podrobnosti: [CALIBRATION.md](CALIBRATION.md).
+
+**HUD NASTAVITVE** (panel NASTAVITVE → ODPRI NASTAVITVE): stroga budnica,
+follow-up, prag govorca, zahteva po profilu, preverjanje, učenje, dolžina
+spominskega briefa, kalibracija in sistemski pregled. Shrani se v
+`server/logs/settings.json` in velja takoj.
+
+**ZMOGLJIVOSTI** (panel ZMOGLJIVOSTI → ODPRI SEZNAM): ~80 postavk s statusi
+potrjeno/naučeno/zaznano/prazno/nepodprto, z ukazom in opombo. Podrobnosti:
+[CAPABILITIES.md](CAPABILITIES.md).
+
 Podrobnosti in celoten ukazni slovar: [CONTROL.md](CONTROL.md). Učenje,
 navade, recepti in drevo: [LEARNING.md](LEARNING.md).
 

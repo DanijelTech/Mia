@@ -23,6 +23,19 @@ mia-ctl service status mia-tts
 server/scripts/mia-health.sh     # stack health (Hermes, TTS, voice)
 ```
 
+Also check the new surfaces:
+
+```bash
+mia-learn capabilities --refresh      # what this machine can actually do
+mia-ctl displays list                 # monitors and resolutions
+mia-ctl resources                     # CPU/RAM/disk/GPU + top processes
+mia-ctl audio devices                 # sinks and sources
+```
+
+The HUD **NASTAVITVE** page controls strict wake, the speaker threshold, the
+require-profile switch, verification cards, learning and the memory-brief
+length. The **ZMOGLJIVOSTI** page is the confirmed/learned/empty checklist.
+
 Then read only the relevant log:
 
 ```bash
@@ -43,6 +56,9 @@ tail -n 50 ~/.local/state/mia/control-audit.jsonl
 | `mia-ctl` exits 3 | helper missing | install the package named in the error (xdotool, wmctrl, grim, …) |
 | `mia-ctl` exits 4 | policy denial | edit `~/.config/mia/control.json`, do not bypass with shell |
 | Memory empty | learning disabled / DB unwritable | `mia-learn status`; check `learning.enabled` and `~/.local/state/mia` permissions |
+| Recipes never appear | nothing is verified yet | confirm HUD ✓/✗ cards; `mia-learn capabilities --refresh` |
+| Mia ignores you | strict wake or speaker profile | check **NASTAVITVE**; calibrate; say »Mia, …« |
+| Wrong voice accepted | threshold too low / no profile | calibrate distance profile, raise threshold |
 | Recipes never match | too few episodes / threshold | `mia-learn mine`; inspect `mia-learn brief "…"` |
 | Skill tree errors | missing reference/parent | `mia-skill validate`, fix the reported file |
 

@@ -60,6 +60,18 @@ actions on the machine. Every call checks the policy
 `~/.local/state/mia/control-audit.jsonl`. The audit is ingested into the
 learning store, so control actions become part of habits and recipes.
 
+## Calibration, settings and verification
+
+- The HUD can start a guided distance calibration over the same WebSocket:
+  `calibration_start` → `calibration_state` (near/mid/far prompts) →
+  `calibration_done`. The server stores per-distance centroids and levels.
+- `/api/settings` reads/writes strict wake, follow-up, speaker threshold,
+  require-profile, verification prompts, learning and brief length; changes
+  are applied live and persisted in `server/logs/settings.json`.
+- `/api/capabilities` exposes the confirmed/learned/detected/empty checklist.
+- `/api/learning/pending` feeds the HUD ✓/✗ cards; `/api/learning/verify`
+  records the verdict and promotes only confirmed procedures to recipes.
+
 ## WebSocket protocol (voice clients)
 
 Client → server (JSON + binary):

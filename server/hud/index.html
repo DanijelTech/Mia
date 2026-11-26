@@ -90,6 +90,14 @@ button.btn.amber{color:var(--amber); border-color:#7a5a1a; background:#241c0a}
 .appr h3{font-family:'Orbitron'; font-size:11px; letter-spacing:3px; color:var(--amber); margin-bottom:6px}
 .appr pre{font-size:12px; color:#ffd98a; white-space:pre-wrap; word-break:break-all; max-height:90px; overflow-y:auto; margin-bottom:9px}
 .appr .row{display:flex; gap:10px}
+#verifyQueue{position:fixed;right:14px;bottom:44px;z-index:30;width:min(430px,92vw);display:flex;flex-direction:column;gap:8px}
+.verify{border:1px solid var(--teal);background:#04181af2;padding:10px 12px;
+  box-shadow:0 0 18px #19f0d833;clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px))}
+.verify h3{font-family:'Orbitron';font-size:10px;letter-spacing:2px;color:var(--teal);margin-bottom:5px}
+.verify .vreq{font-size:13.5px;color:#cfeefb;margin-bottom:3px}
+.verify .vresp{font-size:12.5px;color:var(--txt-dim);margin-bottom:4px;max-height:52px;overflow:hidden}
+.verify .vmeta{font-size:10.5px;color:var(--cyan-dim);margin-bottom:7px}
+.verify .row{display:flex;gap:8px}
 .msg.live{opacity:.65; font-style:italic}
 /* ---- pop-up viewer (kanban / dashboard) ---- */
 #viewer{position:fixed; inset:0; z-index:40; display:none; align-items:center; justify-content:center;
@@ -231,6 +239,19 @@ footer{
 }
 .bar{height:3px; background:#0a2435; margin-top:3px}
 .bar i{display:block; height:100%; background:linear-gradient(90deg,var(--cyan-dim),var(--cyan)); width:0%; transition:width .4s}
+
+/* ---------------- calibration overlay ---------------- */
+#calibOverlay{position:fixed;inset:0;z-index:120;display:none;align-items:center;justify-content:center;
+  background:rgba(2,5,9,.82);backdrop-filter:blur(4px)}
+#calibOverlay.open{display:flex}
+#calibBox{width:min(560px,92vw);border:1px solid var(--cyan-dim);background:#06111df2;padding:22px 24px;
+  box-shadow:0 0 40px #00e5ff33;clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,16px 100%,0 calc(100% - 16px))}
+#calibBox h3{font-family:'Orbitron';font-size:13px;letter-spacing:4px;color:var(--cyan);margin-bottom:10px}
+#calibStage{font-family:'Orbitron';font-size:11px;letter-spacing:2px;color:var(--teal);margin-bottom:8px}
+#calibPrompt{font-size:17px;line-height:1.4;color:#cfeefb;margin-bottom:12px}
+#calibMeta{font-size:12px;color:var(--txt-dim);margin-top:8px}
+#calibBox .bar{height:7px;margin-top:12px}
+#calibBox .row{display:flex;gap:8px;margin-top:16px}
 </style>
 </head>
 <body>
@@ -349,12 +370,34 @@ footer{
     <div class="panel"><h2><span>AVTOMATIZACIJE</span><span class="num">10</span></h2>
       <div id="jobsList"><div>— ni nalog —</div></div>
     </div>
+    <div class="panel"><h2><span>ZMOGLJIVOSTI</span><span class="num">12</span></h2>
+      <div class="kv"><span>Potrjene/naučene</span><b id="capConfirmed">—</b></div>
+      <div class="kv"><span>Zaznane</span><b id="capDetected">—</b></div>
+      <div class="kv"><span>Prazne</span><b id="capEmpty">—</b></div>
+      <div class="kv"><span>Nepodprte</span><b id="capUnsupported">—</b></div>
+      <div class="bar"><i id="capBar" style="width:0%"></i></div>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button class="btn" style="flex:1" onclick="openView('ZMOGLJIVOSTI','/hud/capabilities.html')">ODPRI SEZNAM</button>
+        <button class="btn" id="capRefreshBtn" title="znova zaznaj orodja">OSVEŽI</button>
+      </div>
+    </div>
+    <div class="panel"><h2><span>NASTAVITVE</span><span class="num">13</span></h2>
+      <div class="kv"><span>Stroga budnica</span><b id="setStrict">—</b></div>
+      <div class="kv"><span>Prag govorca</span><b id="setThreshold">—</b></div>
+      <div class="kv"><span>Preverjanje</span><b id="setVerify">—</b></div>
+      <div class="kv"><span>Kalibracija</span><b id="setCalib">—</b></div>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button class="btn" style="flex:1" onclick="openView('NASTAVITVE','/hud/settings.html')">ODPRI NASTAVITVE</button>
+        <button class="btn" id="setCalibBtn" title="kalibriraj glas po oddaljenosti">KALIBRIRAJ</button>
+      </div>
+    </div>
     <div class="panel"><h2><span>SPOMIN IN ZNANJE</span><span class="num">11</span></h2>
       <div class="kv"><span>Epizode</span><b id="lEpisodes">—</b></div>
       <div class="kv"><span>Recepti</span><b id="lRecipes">—</b></div>
       <div class="kv"><span>Napake</span><b id="lMistakes">—</b></div>
       <div class="kv"><span>Navade</span><b id="lHabits">—</b></div>
       <div class="kv"><span>Veščine</span><b id="lSkills">—</b></div>
+      <div class="kv"><span>Za potrditev</span><b id="lPending">—</b></div>
       <div id="lTop" style="font-size:12.5px;max-height:86px;overflow-y:auto;margin-top:4px;color:var(--txt-dim)">—</div>
       <div style="display:flex;gap:6px;margin-top:6px">
         <button class="btn" style="flex:1" onclick="openView('ZNANJE','/hud/learning.html')">ODPRI ZNANJE</button>
@@ -364,6 +407,22 @@ footer{
   </div>
 
   <div id="holoStage"></div>
+
+  <div id="calibOverlay">
+    <div id="calibBox">
+      <h3>KALIBRACIJA GLASU PO ODDALJENOSTI</h3>
+      <div id="calibStage">—</div>
+      <div id="calibPrompt">Mia se mora naučiti tvoj glas od blizu, s sredine sobe in od daleč.</div>
+      <div class="bar"><i id="calibBar" style="width:0%"></i></div>
+      <div id="calibMeta">—</div>
+      <div class="row">
+        <button class="btn" id="calibStart">ZAČNI KALIBRACIJO</button>
+        <button class="btn danger" id="calibCancel">PREKINI</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="verifyQueue"></div>
 
   <div id="viewer">
     <div id="viewerBox">
@@ -508,6 +567,96 @@ function showApproval(e){
   addActivity("approval requested");
 }
 
+/* ============================== calibration ======================== */
+let calibActive=false, calibTimer=null;
+function showCalib(show){ $("calibOverlay").classList.toggle("open",!!show); }
+function calibPromptUI(e){
+  $("calibStage").textContent=(e.label||e.stage||"—").toUpperCase();
+  $("calibPrompt").textContent=e.prompt||"";
+  const pct=e.target_bytes?Math.min(100,Math.round((e.captured_bytes||0)/e.target_bytes*100)):0;
+  $("calibBar").style.width=pct+"%";
+  $("calibMeta").textContent=`posnetek ${e.index||"?"} / ${e.total||"?"} · ${e.seconds||"?"} s · ${pct}%`;
+  $("calibStart").style.display="none";
+  $("calibCancel").style.display="";
+  calibActive=true; showCalib(true);
+  if(calibTimer)clearInterval(calibTimer);
+  const secs=Number(e.seconds||0), started=Date.now();
+  if(secs>0)calibTimer=setInterval(()=>{
+    if(!calibActive){clearInterval(calibTimer);calibTimer=null;return}
+    const p=Math.min(100,Math.round((Date.now()-started)/(secs*1000)*100));
+    $("calibBar").style.width=p+"%";
+    $("calibMeta").textContent=`posnetek ${e.index||"?"} / ${e.total||"?"} · ${secs} s · ${p}%`;
+  },100);
+  setState("listening","KALIBRACIJA","GOVORI, KO SE PRIKAŽE BESEDILO");
+}
+async function startCalibration(){
+  if(!wsReady){addMsg("sys","glasovni strežnik ni dosegljiv");return}
+  try{await initMic()}catch(err){addMsg("sys","mikrofon blokiran: "+err.message);return}
+  if(continuous){ try{ws.send(JSON.stringify({type:"stop"}))}catch{}; continuous=false; }
+  stopPlayback();
+  capturing=true;
+  ws.send(JSON.stringify({type:"calibration_start"}));
+  calibActive=true;
+  showCalib(true);
+  $("calibStart").style.display="none";
+  $("calibCancel").style.display="";
+  $("calibStage").textContent="PRIPRAVLJAM …";
+  $("calibPrompt").textContent="Počakaj na navodilo.";
+  $("calibMeta").textContent="Mia bo govorila; ti ponavljaj za njo.";
+}
+function cancelCalibration(){
+  try{ws.send(JSON.stringify({type:"calibration_cancel"}))}catch{}
+  calibActive=false; capturing=false;
+  if(calibTimer){clearInterval(calibTimer);calibTimer=null}
+  showCalib(false);
+  setState("standby","PRIPRAVLJEN");
+  setTimeout(()=>maybeAutoListen(),600);
+}
+async function checkCalibration(){
+  try{
+    const c=await (await fetch("/api/voice/calibration")).json();
+    const gate=c.gate||{};
+    if(c.required && !gate.distance_enrolled){
+      calibPromptUI({label:"GLAS ŠE NI KALIBRIRAN",prompt:"Klikni ZAČNI KALIBRACIJO. Mia te bo vodila skozi tri oddaljenosti in si tvoj glas trajno zapomnila.",index:0,total:0,seconds:0,captured_bytes:0,target_bytes:1});
+      $("calibStart").style.display="";
+      $("calibCancel").style.display="";
+      $("calibMeta").textContent=gate.enrolled?"obstaja stari profil brez oddaljenosti":"profila še ni";
+    }
+  }catch{}
+}
+if($("calibStart"))$("calibStart").onclick=startCalibration;
+if($("calibCancel"))$("calibCancel").onclick=cancelCalibration;
+
+/* ============================== verification ======================= */
+const verifySeen=new Set();
+function showVerify(e){
+  const id=String(e.episode_id||e.id||"");
+  if(!id||verifySeen.has(id))return;
+  verifySeen.add(id);
+  const card=document.createElement("div"); card.className="verify"; card.dataset.id=id;
+  const tools=(e.tools||[]).map(t=>typeof t==="string"?t:(t.name||"")).filter(Boolean).join(" · ");
+  card.innerHTML=`<h3>✓ JE BILO PRAVILNO?</h3>
+    <div class="vreq">${esc(e.request||"")}</div>
+    <div class="vresp">${esc(e.response||"")}</div>
+    <div class="vmeta">${esc(tools||"brez orodij")}</div>
+    <div class="row"><button class="btn">PRAVILNO</button><button class="btn danger">NAPAKA</button></div>`;
+  const [okB,badB]=card.querySelectorAll("button");
+  const send=async verdict=>{
+    try{await fetch("/api/learning/verify",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({episode_id:Number(id),verdict,note:"HUD potrditev"})});}catch{}
+    card.remove(); refreshLearning(); refreshVerifyQueue();
+  };
+  okB.onclick=()=>send("positive"); badB.onclick=()=>send("negative");
+  $("verifyQueue").appendChild(card);
+}
+async function refreshVerifyQueue(){
+  try{
+    const j=await (await fetch("/api/learning/pending?limit=6")).json();
+    (j.episodes||[]).forEach(e=>showVerify(e));
+    const n=(j.episodes||[]).length;
+    if($("lPending"))$("lPending").textContent=n;
+  }catch{}
+}
 /* ============================== websocket ========================== */
 function wsUrl(){return (location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws"}
 function connect(){
@@ -527,6 +676,29 @@ function connect(){
     else if(e.type==="partial_transcript"){ showLive(e.text); }
     else if(e.type==="transcript"){ clearLive(); if(e.text)addMsg("you",e.text); }
     else if(e.type==="run_started"){ currentRun=e.run_id; showStop(true); }
+    else if(e.type==="verify_request"){ showVerify(e); }
+    else if(e.type==="calibration_required"){ checkCalibration(); }
+    else if(e.type==="calibration_state"){
+      if(e.active===false){ calibActive=false; capturing=false; showCalib(false); setState("standby","PRIPRAVLJEN"); }
+      else calibPromptUI(e);
+    }
+    else if(e.type==="calibration_done"){
+      calibActive=false; capturing=false;
+      if(calibTimer){clearInterval(calibTimer);calibTimer=null}
+      $("calibStage").textContent="KALIBRACIJA SHRANJENA";
+      $("calibPrompt").textContent="Tvoj glas je shranjen za bližino, sredino in daljavo.";
+      $("calibMeta").textContent=Object.entries(e.samples||{}).map(([k,v])=>`${k}: ${v}`).join(" · ");
+      $("calibBar").style.width="100%";
+      $("calibCancel").style.display="none";
+      setTimeout(()=>{showCalib(false); if(!continuous)startContinuous(true);},1800);
+    }
+    else if(e.type==="calibration_error"){
+      calibActive=false; capturing=false;
+      $("calibStage").textContent="NAPAKA";
+      $("calibPrompt").textContent=e.error||"Kalibracija ni uspela.";
+      $("calibStart").style.display=""; $("calibCancel").style.display="";
+      setState("standby","PRIPRAVLJEN");
+    }
     else if(e.type==="approval_request"){ showApproval(e); }
     else if(e.type==="agent_status"){
       if(e.state==="thinking"){setState("thinking","OBDELUJEM");showStop(true)}
@@ -672,7 +844,7 @@ setInterval(()=>{
 },1500);
 
 function maybeAutoListen(){
-  if(!autoListen||continuous||!wsReady)return;
+  if(!autoListen||continuous||!wsReady||calibActive)return;
   setTimeout(()=>{ if(wsReady&&autoListen&&!continuous)startContinuous(true); },400);
 }
 
@@ -697,6 +869,7 @@ async function startContinuous(auto){
 }
 
 async function toggleContinuous(){
+  if(calibActive){addMsg("sys","najprej dokončaj ali prekini kalibracijo");return}
   if(!wsReady){addMsg("sys","glasovni strežnik ni dosegljiv");return}
   if(continuous){
     autoListen=false;  // manual off wins over auto-rearm until the user re-enables it
@@ -779,6 +952,7 @@ async function sendChat(){
     if(!r.ok)throw new Error(j.error||r.status);
     (j.tools||[]).forEach(t=>addActivity("",t.name,t.preview));
     addMsg("mia",j.text||"(brez odgovora)");
+    if(j.episode_id)showVerify({episode_id:j.episode_id,request:text,response:j.text,tools:(j.tools||[]).map(t=>t.name)});
     if(/^\/(new|reset|clear)\b/i.test(text)){     // slash reset → also clear the visible feed
       setTimeout(()=>{feed.innerHTML="";addMsg("sys","pogovor ponastavljen");},800);
     }
@@ -864,6 +1038,36 @@ async function refreshUsage(){
     }
   }catch{}
 }
+async function refreshSettings(){
+  try{
+    const j=await (await fetch("/api/settings")).json();
+    const st=j.settings||{}, c=j.calibration||{};
+    $("setStrict").textContent=st.strict_wake?"VKLOPLJENA":"IZKLOPLJENA";
+    $("setThreshold").textContent=(+st.speaker_threshold||0.30).toFixed(2);
+    $("setVerify").textContent=st.verify_prompts?"VKLOPLJENO":"IZKLOPLJENO";
+    $("setCalib").textContent=c.distance_enrolled?"✓ oddaljenost":(c.enrolled?"samo profil":"ni profila");
+    $("setCalib").className=c.distance_enrolled?"ok":(c.enrolled?"warn":"err");
+  }catch{}
+}
+if($("setCalibBtn"))$("setCalibBtn").onclick=startCalibration;
+
+async function refreshCapabilities(){
+  try{
+    const j=await (await fetch("/api/capabilities?refresh=1")).json();
+    const s=j.summary||{}, bs=s.by_status||{};
+    $("capConfirmed").textContent=s.confirmed??"—";
+    $("capDetected").textContent=bs.detected??"—";
+    $("capEmpty").textContent=bs.empty??"—";
+    $("capUnsupported").textContent=bs.unsupported??"—";
+    $("capBar").style.width=(s.percent??0)+"%";
+  }catch{}
+}
+if($("capRefreshBtn"))$("capRefreshBtn").onclick=async()=>{
+  $("capRefreshBtn").textContent="…";
+  try{await fetch("/api/capabilities/refresh",{method:"POST"});}catch{}
+  await refreshCapabilities(); $("capRefreshBtn").textContent="OSVEŽI";
+};
+
 async function refreshLearning(){
   try{
     const s=await (await fetch("/api/learning/status")).json();
@@ -873,6 +1077,7 @@ async function refreshLearning(){
     $("lMistakes").textContent=db.mistakes??"—";
     $("lHabits").textContent=db.habits??"—";
     $("lSkills").textContent=sk.skills??"—";
+    $("lPending").textContent=db.pending_verification??"—";
     const h=await (await fetch("/api/learning/habits?limit=3&min_confidence=0.3")).json();
     const rows=(h.habits||[]).slice(0,3).map(x=>`<div>▸ ${esc(x.subject)}</div>`).join("");
     $("lTop").innerHTML=rows||"<div>— še ni dovolj dokazov —</div>";
@@ -885,10 +1090,10 @@ if($("lMineBtn"))$("lMineBtn").onclick=async()=>{
   try{await fetch("/api/learning/mine",{method:"POST"});}catch{}
   await refreshLearning(); $("lMineBtn").textContent="OSVEŽI";
 };
-refreshHealth();refreshSkills();refreshJobs();refreshMachines();refreshUsage();refreshLearning();
+refreshHealth();refreshSkills();refreshJobs();refreshMachines();refreshUsage();refreshLearning();refreshCapabilities();refreshSettings();refreshVerifyQueue();checkCalibration();
 setInterval(refreshUsage,60000);
 setInterval(refreshHealth,15000); setInterval(refreshJobs,60000); setInterval(refreshMachines,10000);
-setInterval(refreshSkills,120000); setInterval(refreshLearning,45000);
+setInterval(refreshSkills,120000); setInterval(refreshLearning,45000); setInterval(refreshVerifyQueue,30000); setInterval(refreshCapabilities,60000); setInterval(refreshSettings,60000);
 
 /* ====================== holographic media panels ==================== */
 function holoWhoosh(up=true){

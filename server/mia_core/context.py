@@ -89,6 +89,15 @@ def build_brief(store: Store, cfg: dict, request: str = "",
             lines.append(f"- {fact['key']}: {fact.get('value')}")
         sections.append((20, lines))
 
+    try:
+        from .capabilities import lines as capability_lines
+        cap_lines = capability_lines(store, request, limit=5)
+        if cap_lines:
+            sections.append((25, ["Preverjene zmogljivosti tega računalnika:"] +
+                             [f"- {line}" for line in cap_lines]))
+    except Exception:
+        pass
+
     if ccfg.get("include_skills", True) and skills_root:
         try:
             from .knowledge import skill_context_lines

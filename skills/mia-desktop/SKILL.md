@@ -114,6 +114,17 @@ mia-ctl service restart mia-voice --yes
 Only units allowed by `~/.config/mia/control.json`
 (`allow_service_control`, default `mia-*` and `hermes-*`) can be controlled.
 
+### Displays, resources, audio
+
+```bash
+mia-ctl displays list                 # monitors, resolutions, focus
+mia-ctl resources                     # CPU/RAM/disk/GPU + top processes
+mia-ctl audio devices                 # sinks and sources
+```
+
+Use these before answering »kateri zasloni so priključeni«, »koliko virov
+uporabljamo« or »kje se predvaja zvok«.
+
 ### Files
 
 ```bash
@@ -125,6 +136,18 @@ mia-ctl files reveal ~/Documents/pogodba.pdf
 
 Paths are restricted to `allowed_roots` and denied under `deny_paths`
 (`~/.ssh`, `~/.hermes`, …). Never try to bypass a denial.
+
+## Verification (important)
+
+Every action returns a `verification` object:
+
+- `verified` — a real post-condition passed (window absent, volume read back,
+  screenshot file exists, process gone, service active, …),
+- `failed` — the post-condition did not hold,
+- `unknown` — no safe post-condition exists (typing, clicking, power).
+
+Only `verified` actions become trusted recipes. If `unknown`, do not claim the
+action was proven; wait for the user's ✓ in the HUD confirmation card.
 
 ## Safety and confirmations
 
