@@ -168,6 +168,62 @@ def google_url(query: str) -> str:
     return "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
 
 
+_MUSIC_WORDS = ("glazb", "muzik", "glasb", "pesem", "pesm", "predvajaj",
+                "zaigraj", "song", "music", "play", "youtube", "jutub", "yt")
+_MUSIC_JUNK = (
+    "v ozadju", "iz ozadja", "enega od izvajalcev", "od izvajalca",
+    "izvajalcev", "izvajalca", "in ga predvajaj", "ter ga predvajaj",
+    "in jo predvajaj", "ter jo predvajaj", "predvajaj", "glazbo", "glasbo",
+    "muziko", "muzika", "glasba", "glazba", "pesem", "pesmo", "nekaj",
+    "neko", "eno", "malce", "prosim", "spet", "ponovno", "kakšno",
+    "kaksno", "na youtube", "na youtubu", "na jutubu", "na yt", "youtube",
+    "youtubu", "jutub", "jutubu", "yt", "mi",
+)
+
+
+def music_play_request(text: str, fav_match=None) -> str | None:
+    """Return the search query, '' for a favourite, or None if not music.
+
+    Understands the natural forms the user actually says:
+      »na youtube pusti muziko«, »pusti mi glasbo na youtubu«,
+      »youtube predvajaj Bajago«, »poišči na youtube …«.
+    """
+    flat = _flat(text)
+    if not flat:
+        return None
+    has_music = any(word in flat for word in _MUSIC_WORDS)
+    if not has_music:
+        match = re.match(r"^pusti(?:te)?(?:\s+mi)?\s+(.+)$", flat)
+        if match and fav_match:
+            return fav_match(re.sub(r"\s+", " ", match.group(1)).strip())
+        return None
+
+    patterns = (
+        r"^(?:na\s+)?(?:youtube|jutub|yt)\s+(?:mi\s+)?(?:pusti|predvajaj|zaigraj|poisci|poišči|najdi)\s+(.*)$",
+        r"^(?:pusti|predvajaj|zaigraj)(?:\s+mi)?\s+(?:na\s+)?(?:youtube|jutub|yt)\s*(.*)$",
+        r"^(?:poisci|poišči|najdi|nadi|pronađi|pronadi)\s+(?:na\s+)?(?:youtube|jutub|yt)\s+(.*)$",
+        r"^(?:poisci|poišči|najdi|nadi|pronađi|pronadi)\s+(.*)$",
+        r"^pusti(?:te)?(?:\s+mi)?\s+(.*)$",
+        r"^zaigraj(?:\s+mi)?\s+(.*)$",
+    )
+    query = ""
+    for pattern in patterns:
+        match = re.match(pattern, flat)
+        if match:
+            query = match.group(1)
+            break
+    else:
+        # »na youtube pusti muziko« has the verb after the platform
+        match = re.match(
+            r"^(?:na\s+)?(?:youtube|jutub|yt)\s+(.*)$", flat)
+        if match:
+            query = match.group(1)
+    for junk in _MUSIC_JUNK:
+        query = query.replace(junk, " ")
+    query = re.sub(r"^od\s+", "", query.strip())
+    return re.sub(r"\s+", " ", query).strip()
+
+
 def outcome_from_turn(response: str, errors: list[str] | None = None,
                       interrupted: bool = False) -> str:
     errors = errors or []

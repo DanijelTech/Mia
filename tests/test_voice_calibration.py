@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "server"))
 
-from mia_core.integration import google_request, google_url  # noqa: E402
+from mia_core.integration import google_request, google_url, music_play_request  # noqa: E402
 
 try:
     import numpy as np
@@ -103,6 +103,16 @@ class CalibrationTests(unittest.TestCase):
             accept, score = gate.verify(np.zeros(16000, dtype=np.int16))
             self.assertTrue(accept)  # fail-open unless require_profile
             self.assertEqual(score, 1.0)
+
+
+class MusicIntentTests(unittest.TestCase):
+    def test_natural_youtube_forms(self):
+        self.assertEqual(music_play_request("na youtube pusti muziko"), "")
+        self.assertEqual(music_play_request("pusti mi glasbo na youtubu"), "")
+        self.assertEqual(music_play_request("youtube predvajaj Bajago"), "bajago")
+        self.assertEqual(music_play_request("poišči na youtube Bajaga"), "bajaga")
+        self.assertEqual(music_play_request("pusti mi glasbo"), "")
+        self.assertIsNone(music_play_request("kaj je danes za kosilo"))
 
 
 class GoogleIntentTests(unittest.TestCase):

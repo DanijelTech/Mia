@@ -54,7 +54,8 @@ from continuous import WakeGate, build_segmenter, starts_with_exact_wake
 from speaker_gate import SpeakerGate
 from tts import build_backend
 from mia_core.integration import (detect_feedback, detect_remember,
-                                  google_request, google_url)
+                                  google_request, google_url,
+                                  music_play_request)
 from mia_core import capabilities as capability_core
 from mia_core.learning import get_core
 
@@ -286,33 +287,8 @@ def _fav_artist_match(query: str) -> str | None:
 
 
 def _music_play_request(text: str) -> str | None:
-    """'Mia, pusti mi glazbo (v ozadju)!' / 'Mia, poišči X in ga predvajaj!'
-
-    Returns the search query, '' when a favorite artist should be picked,
-    or None when this is not a music-play request."""
-    flat = _flat(text)
-    if not any(w in flat for w in ("glazb", "muzik", "glasb", "pesem", "pesm", "predvajaj")):
-        # no music keyword: only "pusti (mi) <ime>" with a fuzzy favorite match
-        m = re.match(r"^pusti(?:te)?(?:\s+mi)?\s+(.+)$", flat)
-        if m:
-            q = re.sub(r"\s+", " ", m.group(1)).strip()
-            return _fav_artist_match(q)
-        return None
-    m = (re.match(r"^(?:poi[sš][cč]i|najdi|na[đd]i|prona[đd]i)\s+(.+)$", flat)
-         or re.match(r"^pusti(?:te)?(?:\s+mi)?\s+(.+)$", flat)
-         or re.match(r"^zaigraj(?:\s+mi)?\s+(.+)$", flat))
-    if not m:
-        return None
-    q = m.group(1)
-    for junk in ("v ozadju", "iz ozadja", "enega od izvajalcev", "od izvajalca",
-                 "izvajalcev", "izvajalca", "in ga predvajaj", "ter ga predvajaj",
-                 "in jo predvajaj", "ter jo predvajaj", "predvajaj", "glazbo",
-                 "glasbo", "muziko", "glasba", "glazba", "muzika", "pesem",
-                 "pesmo", "nekaj", "neko", "eno", "malce", "prosim", "spet",
-                 "ponovno", "kakšno", "kaksno"):
-        q = q.replace(junk, " ")
-    q = re.sub(r"^od\s+", "", q.strip())   # "od Cece" -> "cece"
-    return re.sub(r"\s+", " ", q).strip()
+    """Natural-language music parser (also handles »na youtube pusti muziko«)."""
+    return music_play_request(text, _fav_artist_match)
 
 
 def _pick_favorite_artist() -> str:
@@ -2401,6 +2377,10 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
         music_query = _music_play_request(stripped) if said_wake else None
         if music_query is not None:
             query = music_query or _pick_favorite_artist()
+            # Explicit »youtube« / »v brskalniku« means a visible window, not
+            # the HUD panel (which may have external media disabled).
+            prefer_desktop = any(word in _flat(stripped) for word in
+                                 ("youtube", "jutub", "yt", "brskalnik", "okno"))
             # one song at a time: the new order immediately stops the old one
             await _stop_all_media()
 
@@ -2417,9 +2397,16 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
 
             found = await asyncio.to_thread(_find_on_youtube)
             if not found:
-                print(f"MUSIC search failed for {query!r}", flush=True)
-                await _speak_and_finish(ws, pipeline, conn, timing,
-                                        "Nisem našla ničesar, šefe.")
+                from urllib.parse import quote_plus
+                url = ("https://www.youtube.com/results?search_query="
+                       + quote_plus(query))
+                opened = await asyncio.to_thread(_open_visible_url, url)
+                timing.tools_used.append("mia-open")
+                print(f"MUSIC search fallback -> {url} opened={opened}", flush=True)
+                await _speak_and_finish(
+                    ws, pipeline, conn, timing,
+                    "Odprla sem YouTube iskanje, šefe." if opened
+                    else "Nisem našla ničesar, šefe.")
                 return
             title, vid = found
             src = f"https://www.youtube.com/watch?v={vid}"
@@ -2428,12 +2415,22 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
                     f.write(f"{time.strftime('%Y-%m-%d %H:%M')}\t{src}\n")
             except OSError:
                 pass
-            sent = await _summon_media(src, title)
-            if sent == 0:  # no HUD connected: play in a desktop window instead
-                await asyncio.to_thread(subprocess.run, ["mia-open", src],
-                                        capture_output=True, timeout=20)
-            print(f"MUSIC playing ({query!r}): {title[:60]} [{vid}]", flush=True)
-            await _speak_and_finish(ws, pipeline, conn, timing, "Evo šefe.")
+            hud_media = bool((CFG.get("hud") or {}).get("allow_external_media", False))
+            opened = False
+            if prefer_desktop or not hud_media:
+                opened = await asyncio.to_thread(_open_visible_url, src)
+                timing.tools_used.append("mia-open")
+            else:
+                sent = await _summon_media(src, title)
+                opened = sent > 0
+                if not opened:  # no HUD connected: play in a desktop window
+                    opened = await asyncio.to_thread(_open_visible_url, src)
+                    timing.tools_used.append("mia-open")
+            print(f"MUSIC playing ({query!r}): {title[:60]} [{vid}] desktop={opened}",
+                  flush=True)
+            await _speak_and_finish(ws, pipeline, conn, timing,
+                                    "Evo šefe." if opened
+                                    else "Našla sem, a nisem mogla odpreti, šefe.")
             return
 
         if not speaker_ok:
