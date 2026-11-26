@@ -55,7 +55,7 @@ from speaker_gate import SpeakerGate
 from tts import build_backend
 from mia_core.integration import (detect_feedback, detect_remember,
                                   google_request, google_url,
-                                  music_play_request)
+                                  music_play_request, time_answer)
 from mia_core import capabilities as capability_core
 from mia_core.learning import get_core
 
@@ -457,6 +457,8 @@ class HermesAPI:
 
     def __init__(self, cfg: dict):
         self.cfg = cfg.get("hermes") or {}
+        self._session_lock = threading.Lock()
+        self._logged_sessions: set[str] = set()
 
     @property
     def base(self) -> str:
@@ -483,22 +485,98 @@ class HermesAPI:
 
     def _save_state(self, state: dict) -> None:
         STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        STATE_PATH.write_text(json.dumps(state), encoding="utf-8")
+        tmp = STATE_PATH.with_suffix(STATE_PATH.suffix + ".tmp")
+        tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, STATE_PATH)
 
-    def get_session_id(self, name: str, force_new: bool = False) -> str:
+    @staticmethod
+    def _extract_session_id(data: dict) -> str | None:
+        """Accept every session-create response shape Hermes has used."""
+        candidates = []
+        if isinstance(data, dict):
+            for key in ("session", "data", "result"):
+                if isinstance(data.get(key), dict):
+                    candidates.append(data[key])
+            candidates.append(data)
+        for item in candidates:
+            for key in ("id", "session_id", "sessionId"):
+                value = item.get(key) if isinstance(item, dict) else None
+                if value:
+                    return str(value)
+        return None
+
+    def _deterministic_session_id(self, name: str) -> str:
+        import hashlib
+        seed = str(self.cfg.get("session_key") or name or "mia-main")
+        return "mia_" + hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
+
+    def session_info(self, name: str) -> dict:
         state = self._load_state()
         sid = state.get(name)
-        if sid and not force_new:
-            return sid
-        r = requests.post(f"{self.base}/api/sessions", headers=self.headers(),
-                          json={"title": name}, timeout=15)
-        r.raise_for_status()
-        data = r.json()
-        sid = (data.get("session") or data).get("id")
-        state[name] = sid
-        self._save_state(state)
-        print(f"Created Hermes session '{name}' -> {sid}", flush=True)
-        return sid
+        return {"conversation": name, "session_id": sid,
+                "state_path": str(STATE_PATH),
+                "state_exists": STATE_PATH.exists(),
+                "saved_sessions": len(state),
+                "deterministic_id": self._deterministic_session_id(name)}
+
+    def get_session_id(self, name: str, force_new: bool = False) -> str:
+        """Return one stable Hermes session for the whole conversation.
+
+        A per-turn new session is catastrophic: every turn reloads the model
+        context and tools, which is exactly the 5-sessions/6-minutes symptom.
+        We persist the id AND use a deterministic id as a second safety net, so
+        even a lost state file cannot create a second session.
+        """
+        with self._session_lock:
+            state = self._load_state()
+            sid = state.get(name)
+            if sid and not force_new:
+                if sid not in self._logged_sessions:
+                    self._logged_sessions.add(sid)
+                    print(f"Using Hermes session '{name}' -> {sid}", flush=True)
+                return str(sid)
+
+            desired = self._deterministic_session_id(name)
+            payload = {"id": desired, "title": name}
+            r = requests.post(f"{self.base}/api/sessions", headers=self.headers(),
+                              json=payload, timeout=15)
+            if r.status_code == 409:
+                # A 409 means the id already exists (good: reuse it) unless the
+                # id was explicitly retired after deletion.
+                if "invalid_title" in r.text or "TitleConflict" in r.text:
+                    r = requests.post(f"{self.base}/api/sessions",
+                                      headers=self.headers(),
+                                      json={"id": desired}, timeout=15)
+                elif "session_deleted" in r.text or "cannot be reused" in r.text:
+                    desired = f"{desired}_{int(time.time())}"
+                    r = requests.post(f"{self.base}/api/sessions",
+                                      headers=self.headers(),
+                                      json={"id": desired, "title": name},
+                                      timeout=15)
+                else:
+                    print(f"Reusing existing Hermes session '{name}' -> {desired}",
+                          flush=True)
+                    state[name] = desired
+                    self._save_state(state)
+                    return desired
+            if r.status_code >= 400:
+                print(f"Hermes session create failed ({r.status_code}): {r.text[:300]}",
+                      flush=True)
+                r.raise_for_status()
+            data = r.json() if r.content else {}
+            new_sid = self._extract_session_id(data)
+            if not new_sid:
+                print(f"Hermes session response without id; keys={list(data) if isinstance(data, dict) else type(data)} "
+                      f"body={str(data)[:300]}", flush=True)
+                raise RuntimeError(
+                    "Hermes did not return a session id (session API response "
+                    "shape changed?) — refusing to create a new session on "
+                    "every turn")
+            state[name] = new_sid
+            self._save_state(state)
+            self._logged_sessions.add(new_sid)
+            print(f"Created Hermes session '{name}' -> {new_sid}", flush=True)
+            return new_sid
 
     def stop_run(self, run_id: str) -> dict:
         r = requests.post(f"{self.base}/v1/runs/{run_id}/stop", headers=self.headers(), timeout=15)
@@ -1707,6 +1785,12 @@ async def set_voice_pitch(request: Request) -> JSONResponse:
     return JSONResponse({"pitch_semitones": VOICE_SETTINGS["pitch_semitones"]})
 
 
+@app.get("/api/session-info")
+async def session_info() -> JSONResponse:
+    conversation = (CFG.get("hermes") or {}).get("conversation", "mia-main")
+    return JSONResponse(HERMES.session_info(conversation))
+
+
 @app.get("/api/settings")
 async def get_settings() -> JSONResponse:
     try:
@@ -2339,6 +2423,12 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
                                         "Shranjeno, šefe — postopek sem si zapomnila.")
                 return
             print(f"LEARNING remember ignored (no previous episode): {result}", flush=True)
+
+        time_text = time_answer(stripped)
+        if time_text:
+            print(f"TIME answered locally: {time_text!r}", flush=True)
+            await _speak_and_finish(ws, pipeline, conn, timing, time_text)
+            return
 
         google_mode, google_query = google_request(stripped)
         agent_transcript = transcript

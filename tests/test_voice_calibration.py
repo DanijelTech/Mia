@@ -10,7 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "server"))
 
-from mia_core.integration import google_request, google_url, music_play_request  # noqa: E402
+from mia_core.integration import (google_request, google_url, music_play_request,
+                                  time_answer)  # noqa: E402
 
 try:
     import numpy as np
@@ -103,6 +104,17 @@ class CalibrationTests(unittest.TestCase):
             accept, score = gate.verify(np.zeros(16000, dtype=np.int16))
             self.assertTrue(accept)  # fail-open unless require_profile
             self.assertEqual(score, 1.0)
+
+
+class TimeIntentTests(unittest.TestCase):
+    def test_time_and_date_are_local(self):
+        import datetime
+        now = datetime.datetime(2026, 11, 26, 14, 5)
+        self.assertEqual(time_answer("koliko je ura", now), "Ura je 14 in 5.")
+        self.assertEqual(time_answer("kateri dan je danes", now),
+                         "Danes je četrtek, 26. novembra 2026.")
+        self.assertIn("14 in 5", time_answer("koliko je ura in kateri dan je", now))
+        self.assertIsNone(time_answer("kaj je danes za kosilo", now))
 
 
 class MusicIntentTests(unittest.TestCase):

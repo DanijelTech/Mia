@@ -224,6 +224,49 @@ def music_play_request(text: str, fav_match=None) -> str | None:
     return re.sub(r"\s+", " ", query).strip()
 
 
+_WEEKDAYS_SL = ("ponedeljek", "torek", "sreda", "četrtek", "petek",
+                "sobota", "nedelja")
+_MONTHS_SL = ("januarja", "februarja", "marca", "aprila", "maja", "junija",
+              "julija", "avgusta", "septembra", "oktobra", "novembra",
+              "decembra")
+
+
+def time_answer(text: str, now=None) -> str | None:
+    """Instant local time/date answer — no LLM, no Hermes session.
+
+    This is deliberately generous: the user should not need an exact phrase
+    for something as trivial as the clock.
+    """
+    import datetime as _dt
+    flat = _flat(text)
+    if not flat:
+        return None
+    asks_time = any(phrase in flat for phrase in (
+        "koliko je ura", "koliko je uro", "kaj je ura", "kaksna ura",
+        "povej mi uro", "povej uro", "ura je", "what time is it",
+        "what is the time", "current time",
+    ))
+    asks_date = any(phrase in flat for phrase in (
+        "kateri dan je", "kateri datum", "kaksen dan je", "danes je kateri",
+        "kateri dan smo", "what is the date", "what day is it", "todays date",
+        "današnji datum", "danasnji datum",
+    ))
+    if not (asks_time or asks_date):
+        return None
+    current = now or _dt.datetime.now()
+    if asks_time and not asks_date:
+        hour, minute = current.hour, current.minute
+        if minute == 0:
+            return f"Ura je {hour}."
+        return f"Ura je {hour} in {minute}."
+    if asks_date and not asks_time:
+        return (f"Danes je {_WEEKDAYS_SL[current.weekday()]}, "
+                f"{current.day}. {_MONTHS_SL[current.month - 1]} {current.year}.")
+    return (f"Danes je {_WEEKDAYS_SL[current.weekday()]}, "
+            f"{current.day}. {_MONTHS_SL[current.month - 1]} {current.year}, "
+            f"ura je {current.hour} in {current.minute}.")
+
+
 def outcome_from_turn(response: str, errors: list[str] | None = None,
                       interrupted: bool = False) -> str:
     errors = errors or []
