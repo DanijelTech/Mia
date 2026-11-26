@@ -166,7 +166,17 @@ def read_usage() -> dict:
         except Exception:
             data = {"total": {}, "days": {}}
     return {"total": data.get("total", {}), "today": data.get("days", {}).get(_today(), {})}
+# Mia must read the same env file as the Hermes gateway. The installer writes
+# a pointer because a systemd service does not inherit HERMES_HOME.
 ENV_PATHS = [Path.home() / ".hermes" / ".env", ROOT / ".env"]
+try:
+    _hermes_home_text = (Path.home() / ".config" / "mia" / "hermes_home").read_text(
+        encoding="utf-8").strip()
+    _hermes_home = Path(_hermes_home_text).expanduser() if _hermes_home_text else None
+    if _hermes_home is not None and _hermes_home.is_dir():
+        ENV_PATHS.insert(0, _hermes_home / ".env")
+except OSError:
+    pass
 SENTENCE_RE = re.compile(r"(.+?[.!?])(?=\s|$)", re.DOTALL)
 THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 CODEBLOCK_RE = re.compile(r"```.*?```", re.DOTALL)

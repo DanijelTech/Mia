@@ -56,7 +56,7 @@ DO_OPEN=0
 ASSUME_YES=0
 DRY_RUN=0
 SERVICE_DIR=""
-HERMES_ENV=""
+HERMES_ENV="${HERMES_ENV:-}"
 HERMES_HOME="${HERMES_HOME:-}"
 PORT_TTS=8770
 
@@ -243,8 +243,10 @@ info "python version: $PYV"
 $PYTHON -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' \
   || die "Python 3.10+ required (found $PYV)"
 
-[ -n "$HERMES_ENV" ] || HERMES_ENV="$HOME/.hermes/.env"
 [ -n "$HERMES_HOME" ] || HERMES_HOME="$HOME/.hermes"
+# Keep the env file inside the SAME Hermes home the gateway and skills use.
+# (A common trap: HERMES_HOME on an external disk, token written to ~/.hermes.)
+[ -n "$HERMES_ENV" ] || HERMES_ENV="$HERMES_HOME/.env"
 info "hermes env: $HERMES_ENV"
 info "hermes home: $HERMES_HOME"
 
@@ -599,7 +601,10 @@ fi
 if [ "$DRY_RUN" = 0 ]; then
   printf '%s\n' "$REPO_DIR" > "$HOME/.config/mia/home"
   add_file "$HOME/.config/mia/home"
+  printf '%s\n' "$HERMES_HOME" > "$HOME/.config/mia/hermes_home"
+  add_file "$HOME/.config/mia/hermes_home"
   info "repository pointer: $HOME/.config/mia/home -> $REPO_DIR"
+  info "hermes pointer:     $HOME/.config/mia/hermes_home -> $HERMES_HOME"
 fi
 
 # command-line tools (windows, volume, artists, learning, skills, control)
