@@ -146,6 +146,19 @@ The HUD centre now renders a **3D female character** (Ready Player Me-compatible
 GLB, Mixamo rig, 72 ARKit/Oculus blendshapes, separate clothing/hair/glasses
 meshes). The ring stays as a holographic pedestal and fallback.
 
+<p align="center">
+  <img src="docs/screenshots/01-hud.webp" alt="MIA HUD with the 3D character in the centre" width="900">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/02-lik-cel-lik.webp" alt="LIK IN GARDEROBA page, full body" width="442">
+  <img src="docs/screenshots/03-obraz.webp" alt="Face close-up" width="442">
+</p>
+
+<sub>Screenshots come from a test environment without a connected Hermes, so
+the right-hand HUD panels are empty and the header says "connection lost"; the
+3D layer and its settings are real.</sub>
+
 ```bash
 server/scripts/fetch-avatar-assets.sh        # downloads the free RPM female model
 ./install.sh --yes --open --with-avatar      # same during install

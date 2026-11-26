@@ -447,21 +447,35 @@ and separate hair, glasses, top, bottom and footwear meshes. The model is not
 committed; fetch it with `server/scripts/fetch-avatar-assets.sh` (or
 `install.sh --with-avatar`).
 
-**User controls:** hair (colour/style/off), glasses, top, bottom, footwear,
-colours, skin tone, camera (bust/head/full), quality, mood. Settings are saved
-to `server/logs/avatar.json` and apply to the main HUD immediately.
+**User controls:** hair (any style present in the model, or off), hair colour,
+glasses, top, bottom, footwear, colours, skin tone, camera (bust/head/full),
+quality, mood, model (swapped without a page reload). Settings are saved to
+`server/logs/avatar.json` and apply to the main HUD immediately.
 
 **Sync:** each TTS sentence sends `avatar_speech` with
 `visemes/times/durations` and `duration_ms`; the HUD anchors them to the
-actual `playhead`. A model without morph targets (e.g. Avaturn T1) only gets
-head/body motion; facial animation needs a T2/ARKit model.
+actual `playhead`. The same event carries `mood` and `gesture`/`look` from
+inline tags (`[mood:happy]`, `[gesture:nod]`, `[look:away]`), so the face and
+body react to content, not just loudness. A model without morph targets (e.g.
+Avaturn T1) only gets head/body motion; facial animation needs a T2/ARKit
+model.
 
-**First-release limits:**
-- one hairstyle in the default model; extra hair/outfits are additional `.glb`
-  models or extra `avaturn_hair_*` meshes,
-- no full co-speech hand gestures yet (idle clip + gaze + breathing are the
-  first layer; gestures are the next phase),
+**Gestures:** the free model ships one Mixamo idle clip and no gesture
+library, so gestures are procedural: `nod`, `shake`, `tilt`, `look`, `wave`,
+`shrug`, `point`, `bow` are additive head/chest offsets with an envelope.
+Trigger them with a tag in the sentence or by hand on `/hud/avatar.html`
+(GESTE IN GOVOR).
+
+**Limits:**
+- the default model has one hairstyle; the list only shows meshes the model
+  has, extra hairstyles are another `.glb` or extra `avaturn_hair_*` meshes,
+- gestures are procedural (no mocap/animation library), arms stay in the idle
+  pose,
 - no Audio2Face and no MetaHuman Pixel Streaming (phases B/C of the plan).
+
+**Screenshots:** [HUD with the 3D character](../screenshots/01-hud.webp) ·
+[LIK page, full body](../screenshots/02-lik-cel-lik.webp) ·
+[face close-up](../screenshots/03-obraz.webp)
 
 **Avaturn:** the T1 demo has a static face and is unsuitable for lip sync; a
 T2 (Animation-ready) export supports ARKit/visemes. Drop the `.glb` into

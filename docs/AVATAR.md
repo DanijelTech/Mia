@@ -462,6 +462,10 @@ Nastavijo se z oznako v stavku ali ročno v `/hud/avatar.html` (GESTE IN GOVOR).
   idle drži,
 - brez Audio2Face in brez MetaHuman Pixel Streaming (fazi B/C iz načrta).
 
+**Zaslonske slike:** [HUD s 3D likom](screenshots/01-hud.webp) ·
+[stran LIK, cel lik](screenshots/02-lik-cel-lik.webp) ·
+[obraz od blizu](screenshots/03-obraz.webp)
+
 **Avaturn:** T1 demo ima statičen obraz in ni primeren za lip-sync; T2 izvoz
 (Animation-ready) podpira ARKit/viseme. Izvoz `.glb` daj v
 `server/hud/avatar/models/` in ga izberi v `/hud/avatar.html`; imena

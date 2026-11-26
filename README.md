@@ -152,6 +152,19 @@ V sredini HUD-a je zdaj **3D ženski lik** (Ready Player Me kompatibilen GLB z
 Mixamo rigom, 72 ARKit/Oculus blendshapi in ločenimi kosi oblačil, las in
 očal). Obroč ostane kot holografska podlaga in fallback.
 
+<p align="center">
+  <img src="docs/screenshots/01-hud.webp" alt="MIA HUD s 3D likom v sredini" width="900">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/02-lik-cel-lik.webp" alt="Stran LIK IN GARDEROBA, cel lik" width="442">
+  <img src="docs/screenshots/03-obraz.webp" alt="Obraz od blizu" width="442">
+</p>
+
+<sub>Zaslonske slike so iz testnega okolja brez povezanega Hermesa, zato so
+desni paneli HUD-a prazni in piše "povezava prekinjena"; 3D plast in
+nastavitve so prave.</sub>
+
 ```bash
 server/scripts/fetch-avatar-assets.sh        # prenese brezplačni RPM ženski model
 ./install.sh --yes --open --with-avatar      # isto med namestitvijo
