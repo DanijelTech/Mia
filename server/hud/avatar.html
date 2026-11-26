@@ -96,6 +96,7 @@ textarea{width:100%;min-height:150px;background:#06101c;border:1px solid var(--l
       <h2>HITRE AKCIJE</h2>
       <div class="row"><span>Gesta</span>
         <div class="inline"><select id="gesture"></select><button id="gestureBtn">IZVED</button></div></div>
+      <div id="gestureChips" class="chips"></div>
       <div class="row"><span>Pogled</span>
         <select id="look"><option value="">prosto</option><option value="user">v uporabnika</option>
           <option value="camera">v kamero</option><option value="away">stran</option>
@@ -103,6 +104,8 @@ textarea{width:100%;min-height:150px;background:#06101c;border:1px solid var(--l
           <option value="up">gor</option><option value="down">dol</option></select></div>
       <div class="row"><button id="testBtn" class="wide">TEST GOVOR</button>
         <button id="stopBtn" class="ghost">USTAVI</button></div>
+      <div class="hint">Geste so proceduralne: glava, trup, roke in noge. Borilne
+        kombinacije (udarec, brca, blok, kata, borba) so v istem seznamu.</div>
     </section>
   </aside>
 
@@ -143,7 +146,7 @@ textarea{width:100%;min-height:150px;background:#06101c;border:1px solid var(--l
 </script>
 <script type="module">
 import {
-  DEFAULTS, SCHEMA, PRESETS, MOOD_OPTIONS, SETTINGS_COUNT,
+  DEFAULTS, SCHEMA, PRESETS, MOOD_OPTIONS, SETTINGS_COUNT, HAIR_STYLES,
 } from '/hud/avatar/presets.js';
 import { GESTURES } from '/hud/avatar/avatar.js';
 
@@ -154,8 +157,12 @@ const GESTURE_LABELS = { nod: 'prikima', shake: 'odkima', tilt: 'nagne glavo',
   look: 'pogled', wave: 'maha', shrug: 'skomigne', point: 'pokaže', bow: 'poklon' };
 
 const PRESET_LABELS = {
+  character: { mia: 'Mia', nika: 'Nika', eva: 'Eva', lana: 'Lana',
+    zoja: 'Zoja', tara: 'Tara', iris: 'Iris', maja: 'Maja', nova: 'Nova' },
   outfit: { casual: 'vsakdanji', business: 'poslovni', sport: 'športni',
-    evening: 'večerni', cyber: 'cyber', minimal: 'minimal', warm: 'topel', mono: 'mono' },
+    evening: 'večerni', cyber: 'cyber', minimal: 'minimal', warm: 'topel', mono: 'mono',
+    body: 'brez oblačil', hoodie: 'hoodie', uniform: 'uniforma', gala: 'gala',
+    techwear: 'techwear', kimono: 'kimono', stealth: 'stealth', pastel: 'pastel' },
   light: { studio: 'studio', cyan: 'cyan', warm: 'toplo', cinema: 'kino',
     night: 'noč', soft: 'mehko', neon: 'neon', flat: 'ravno' },
   camera: { bust: 'doprsni', head: 'glava', face: 'obraz', full: 'cel lik',
@@ -351,7 +358,8 @@ function queueApply() {
 function applyPreset(kind, name) {
   const group = PRESETS[kind];
   if (!group || !group[name]) return;
-  const patch = { ...group[name], [kind]: name };
+  const { label, note, ...bundle } = group[name];
+  const patch = { ...bundle, [kind]: name };
   Object.assign(state.config, patch);
   setInputs(patch);
   queueApply();
@@ -362,9 +370,29 @@ function applyPreset(kind, name) {
 function fillGestures() {
   const select = $('gesture');
   select.innerHTML = '';
+  const chips = $('gestureChips');
+  chips.innerHTML = '';
   for (const name of Object.keys(GESTURES)) {
-    select.appendChild(new Option(GESTURE_LABELS[name] || name, name));
+    const action = GESTURES[name] || {};
+    const label = action.label || GESTURE_LABELS[name] || name;
+    select.appendChild(new Option(label, name));
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip';
+    chip.textContent = label;
+    chip.onclick = () => {
+      select.value = name;
+      playSelectedGesture();
+    };
+    chips.appendChild(chip);
   }
+}
+
+function playSelectedGesture() {
+  const gesture = $('gesture').value;
+  const ok = window.MiaAvatar?.playGesture(gesture);
+  status(ok ? 'gesta: ' + ((GESTURES[gesture] && GESTURES[gesture].label)
+    || GESTURE_LABELS[gesture] || gesture) : 'gesta ni na voljo');
 }
 
 function fillHairStyles() {
@@ -373,7 +401,9 @@ function fillHairStyles() {
   const ready = !!window.MiaAvatar?.ready;
   const styles = ready
     ? window.MiaAvatar.hairStyles()
-    : [{ id: 'default', label: 'pričeska 1' }, { id: 'none', label: 'brez' }];
+    : [{ id: 'default', label: 'pričeska 1' }]
+      .concat(Object.entries(HAIR_STYLES).map(([id, cfg]) => ({ id, label: cfg.label })))
+      .concat([{ id: 'none', label: 'brez' }]);
   const current = state.config.hairStyle || 'default';
   select.innerHTML = '';
   for (const style of styles) select.appendChild(new Option(style.label, style.id));
@@ -424,10 +454,13 @@ function updateStatus() {
   const avatar = window.MiaAvatar;
   const ready = !!avatar?.ready;
   const hair = ready ? avatar.hairStyles().filter((s) => s.id !== 'none').length : 0;
-  $('modelBadge').textContent = ready ? '3D · ' + hair + ' pričesk' : '3D se nalaga…';
+  const characters = Object.keys(PRESETS.character || {}).length;
+  $('modelBadge').textContent = ready
+    ? '3D · ' + characters + ' likov · ' + hair + ' pričesk' : '3D se nalaga…';
   $('countBadge').textContent = SETTINGS_COUNT + ' nastavitev';
   if (!ready) status('3D se nalaga…');
-  else status('3D pripravljen · ' + SETTINGS_COUNT + ' nastavitev · ' + stamp());
+  else status('3D pripravljen · ' + characters + ' likov · ' + SETTINGS_COUNT
+    + ' nastavitev · ' + stamp());
 }
 
 function randomize() {
@@ -499,6 +532,10 @@ $('groups').addEventListener('input', (event) => {
 $('groups').addEventListener('change', (event) => {
   if (!event.target.id.startsWith('f_')) return;
   updateOutput(event.target);
+  if (event.target.id === 'f_character') {
+    applyPreset('character', event.target.value);
+    return;
+  }
   queueApply();
 });
 $('f_enabled').addEventListener('change', queueApply);
@@ -543,11 +580,7 @@ $('reloadModelBtn').onclick = () => {
   if (select) select.onchange();
 };
 
-$('gestureBtn').onclick = () => {
-  const gesture = $('gesture').value;
-  const ok = window.MiaAvatar?.playGesture(gesture);
-  status(ok ? 'gesta: ' + (GESTURE_LABELS[gesture] || gesture) : 'gesta ni na voljo');
-};
+$('gestureBtn').onclick = playSelectedGesture;
 $('look').onchange = () => {
   window.MiaAvatar?.setLook($('look').value || null);
   status($('look').value ? 'pogled: ' + $('look').value : 'pogled: prosto');

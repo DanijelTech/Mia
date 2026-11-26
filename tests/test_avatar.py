@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -12,6 +16,56 @@ sys.path.insert(0, str(ROOT / "server"))
 
 import avatar_visemes  # noqa: E402
 import avatar_config  # noqa: E402
+
+AVATAR_DIR = ROOT / "server" / "hud" / "avatar"
+
+
+def _node_facts():
+    """Import the pure avatar modules with node and return their metadata."""
+    node = shutil.which("node")
+    if not node:
+        raise unittest.SkipTest("node is not installed")
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpdir = Path(tmp)
+        for name in ("characters.js", "motion.js", "presets.js"):
+            shutil.copy(AVATAR_DIR / name, tmpdir / name)
+        (tmpdir / "package.json").write_text('{"type":"module"}')
+        script = """
+import { CHARACTERS } from './characters.js';
+import { ACTIONS, resolveAction, samplePose } from './motion.js';
+import {
+  DEFAULTS, SCHEMA, HAIR_STYLES, ACCESSORY_STYLES, PRESETS,
+} from './presets.js';
+const actions = {};
+for (const [id, a] of Object.entries(ACTIONS)) {
+  actions[id] = {
+    label: a.label, dur: a.dur, group: a.group,
+    keys: a.keys.map((k) => k.t),
+    start: samplePose(a, 0), end: samplePose(a, 1),
+  };
+}
+const aliases = {};
+for (const name of ['pomahaj', 'prekloni', 'prikimi', 'brcni', 'boks',
+  'blokiraj', 'pokloni', 'skeniraj']) aliases[name] = resolveAction(name);
+const schemaKeys = SCHEMA.flatMap((g) => g.controls.map((c) => c.key));
+console.log(JSON.stringify({
+  characters: CHARACTERS,
+  actions,
+  aliases,
+  defaults: Object.keys(DEFAULTS),
+  schemaKeys,
+  hair: Object.keys(HAIR_STYLES),
+  accessories: Object.keys(ACCESSORY_STYLES),
+  presets: Object.keys(PRESETS),
+}));
+"""
+        (tmpdir / "facts.mjs").write_text(script)
+        proc = subprocess.run([node, str(tmpdir / "facts.mjs")], cwd=tmpdir,
+                              capture_output=True, text=True, timeout=60)
+        if proc.returncode != 0:
+            raise AssertionError(proc.stderr or proc.stdout)
+        return json.loads(proc.stdout)
+
 
 
 class AvatarVisemeTests(unittest.TestCase):
@@ -173,6 +227,112 @@ class AvatarConfigValidationTests(unittest.TestCase):
         cfg = avatar_config.merge({"hairColor": "#000000", "legacy": 1})
         self.assertEqual(cfg["hairColor"], "#000000")
         self.assertNotIn("legacy", cfg)
+
+    def test_every_default_has_a_validator(self):
+        known = (avatar_config.COLOR_KEYS | avatar_config.BOOL_KEYS
+                 | avatar_config.STRING_KEYS | set(avatar_config.RANGES))
+        self.assertEqual(set(avatar_config.DEFAULTS), known)
+
+    def test_character_and_wardrobe_settings_validate(self):
+        cfg = avatar_config.sanitize({
+            "character": "nova", "accessory": "armor",
+            "accessoryColor": "#00E5FF", "robot": True,
+            "robotGlow": "#ff00aa", "garmentLength": 9,
+            "robotIntensity": -2, "actionSpeed": 9,
+        })
+        self.assertEqual(cfg["character"], "nova")
+        self.assertEqual(cfg["accessory"], "armor")
+        self.assertEqual(cfg["accessoryColor"], "#00e5ff")
+        self.assertEqual(cfg["robotGlow"], "#ff00aa")
+        self.assertTrue(cfg["robot"])
+        self.assertEqual(cfg["garmentLength"], 1.2)
+        self.assertEqual(cfg["robotIntensity"], 0.0)
+        self.assertEqual(cfg["actionSpeed"], 2.0)
+
+    def test_bad_new_types_are_rejected(self):
+        with self.assertRaises(ValueError):
+            avatar_config.sanitize({"robot": "true"})
+        with self.assertRaises(ValueError):
+            avatar_config.sanitize({"accessoryColor": "cyan"})
+
+
+class AvatarMotionAndCharacterTests(unittest.TestCase):
+    """The procedural motion, character roster and wig catalog."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.facts = _node_facts()
+
+    def test_character_roster_has_several_women(self):
+        characters = self.facts["characters"]
+        self.assertGreaterEqual(len(characters), 8)
+        for cid, character in characters.items():
+            self.assertIn("label", character, cid)
+            unknown = set(character) - set(self.facts["defaults"]) - {"label", "note"}
+            self.assertFalse(unknown, f"{cid} has unknown keys {unknown}")
+        self.assertIn("nova", characters)
+        self.assertTrue(characters["nova"].get("robot"))
+
+    def test_required_moves_exist(self):
+        actions = self.facts["actions"]
+        for name in ("wave", "nod", "shake", "bend", "bow",
+                     "punch", "kick", "block", "kata", "combat"):
+            self.assertIn(name, actions)
+            self.assertTrue(actions[name]["label"])
+            self.assertGreater(actions[name]["dur"], 0)
+            self.assertEqual(actions[name]["keys"][0], 0)
+            self.assertEqual(actions[name]["keys"][-1], 1)
+
+    def test_actions_start_and_end_at_rest(self):
+        for name, action in self.facts["actions"].items():
+            for edge in ("start", "end"):
+                values = [abs(v) for pose in action[edge].values()
+                          for v in pose.values()]
+                self.assertTrue(all(v < 1e-9 for v in values),
+                                f"{name}.{edge} does not return to rest")
+
+    def test_slovenian_aliases_resolve(self):
+        aliases = self.facts["aliases"]
+        self.assertEqual(aliases["pomahaj"], "wave")
+        self.assertEqual(aliases["prekloni"], "bend")
+        self.assertEqual(aliases["prikimi"], "nod")
+        self.assertEqual(aliases["brcni"], "kick")
+        self.assertEqual(aliases["boks"], "punch")
+        self.assertEqual(aliases["blokiraj"], "block")
+        self.assertEqual(aliases["pokloni"], "bow")
+        self.assertEqual(aliases["skeniraj"], "scan")
+
+    def test_hair_and_accessory_catalog(self):
+        hair = set(self.facts["hair"])
+        self.assertLessEqual({"long", "short", "bob", "pixie", "ponytail",
+                              "bun", "twin", "braid", "afro", "mohawk"}, hair)
+        accessories = set(self.facts["accessories"])
+        self.assertLessEqual({"none", "armor", "visor", "dress", "skirt",
+                              "antenna", "headset"}, accessories)
+
+    def test_character_presets_are_wired_into_the_schema(self):
+        self.assertIn("character", self.facts["presets"])
+        self.assertIn("character", self.facts["schemaKeys"])
+        self.assertIn("accessory", self.facts["schemaKeys"])
+        self.assertIn("actionSpeed", self.facts["schemaKeys"])
+
+    def test_avatar_runtime_imports_the_new_modules(self):
+        runtime = (AVATAR_DIR / "avatar.js").read_text()
+        for module in ("hair.js", "garments.js", "motion.js"):
+            self.assertIn(module, runtime)
+        page = (ROOT / "server/hud/avatar.html").read_text()
+        self.assertIn("gestureChips", page)
+        self.assertIn("HAIR_STYLES", page)
+
+    def test_hidden_layers_keep_their_limb_meshes(self):
+        runtime = (AVATAR_DIR / "avatar.js").read_text()
+        wardrobe = runtime.split("_applyWardrobe() {", 1)[1].split("_tintKind", 1)[0]
+        self.assertIn("_setBare", wardrobe)
+        self.assertNotIn("_setVisible('top', this.config.top", runtime)
+        self.assertNotIn("_setVisible('bottom', this.config.bottom", runtime)
+        bare = runtime.split("_setBare(mesh, bare) {", 1)[1].split("_applyWardrobe", 1)[0]
+        self.assertIn("map = null", bare)
+        self.assertIn("__clothed", bare)
 
 
 if __name__ == "__main__":

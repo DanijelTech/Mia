@@ -29,12 +29,15 @@ The current major addition is the **learning/knowledge core** and the
   `system_status/profile/health/adapt/plans/run_plan/command/jobs/tasks/alerts`
   over `/api/autonomy/*`.
 - 3D avatar: `server/hud/avatar/avatar.js` (Three.js runtime, wardrobe, gaze,
-  breathing, blink, ARKit/viseme blending, procedural gestures, live model
-  swap, hairstyle list from the loaded GLB), `server/hud/avatar.html`
-  (settings), `server/avatar_visemes.py` (Slovenian → Oculus 15 timeline), and
-  `_send_tts_sentence()` emits `avatar_speech` before each sentence's PCM.
-  Models are downloaded by `server/scripts/fetch-avatar-assets.sh` and are
-  gitignored; the HUD keeps the 2D reactor as fallback and says so in the feed.
+  breathing, blink, ARKit/viseme blending, live model swap), `presets.js`
+  (79 settings, schema, presets), `characters.js` (9 female appearance
+  bundles), `motion.js` (24 procedural full-body actions), `hair.js` (10
+  procedural wigs), `garments.js` (accessories, dresses, robot rig),
+  `server/hud/avatar.html` (settings deck), `server/avatar_visemes.py`
+  (Slovenian → Oculus 15 timeline), and `_send_tts_sentence()` emits
+  `avatar_speech` before each sentence's PCM. Models are downloaded by
+  `server/scripts/fetch-avatar-assets.sh` and are gitignored; the HUD keeps the
+  2D reactor as fallback and says so in the feed.
 - `server/mia_core/autonomy/` — the mini sub-OS layer: adaptive machine
   profile/backends (`profile.py`), declarative conditions, plan execution with
   verification/retry/rollback/journal (`planner.py`), persistent jobs and rules
@@ -162,14 +165,32 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
 - Do not add random gestures or a webcam-style "idle loop"; the behaviour
   director must gate gaze/gesture/emotion on state, speech stress and user
   intent. This is the difference between premium and robotic.
-- Gestures are procedural (`GESTURES` in `avatar.js`): additive head/chest
-  offsets with an envelope, triggered by `[gesture:…]` tags or the avatar page.
-  There is no mocap/gesture clip in the free model, so do not claim real hand
-  animation; arms stay in the idle clip.
-- Hair styles come from the meshes present in the loaded GLB
-  (`hairStyles()`), so the page never offers a mesh style that cannot be
-  shown. `HAIR_LOOKS` (long/short/volume/sleek/wild) only rescales that mesh;
-  a genuinely new hairstyle still means shipping another mesh/GLB.
+- Gestures are procedural full-body tracks (`ACTIONS` in `motion.js`), not
+  mocap clips. Each action is a list of key poses on world axes per bone; the
+  runtime converts them to local axes against the current parent world
+  quaternion and premultiplies them onto the idle pose. Keep every action's
+  first and last key at rest (`{}`), otherwise it snaps.
+- `_resetRest()` must run before every `mixer.update()` and every pose
+  application. Without it, bones that the idle clip does not animate keep the
+  previous frame's delta and accumulate.
+- Do not write `bone.rotation.*` directly for gaze/sway/gesture. Build a pose
+  map and let `_applyPose()` compose it, or the idle clip and actions fight.
+- Hair styles: the GLB meshes are listed first, then the 10 procedural wigs
+  from `HAIR_STYLES`. Procedural wigs are stylised geometry attached to the
+  Head bone, not simulated hair; `HAIR_LOOKS` only scales them. Do not rebuild
+  a wig per frame — `_buildHair()` caches by style id and only recolours.
+- Garments are authored in world space from the current skeleton and then
+  re-parented to a bone (`_attachToBone`), so they follow that bone. Rebuild
+  them when the accessory, colour, length, robot flags or body-shape sliders
+  change; `_accessoryKey` covers that. They are props, not cloth simulation.
+- Characters are appearance bundles on one GLB (`characters.js`). Applying a
+  character must strip `label`/`note` before merging into the config; the
+  Python validator drops unknown keys anyway, but the HUD would keep them.
+- The sample GLB skins only the torso in `Wolf3D_Body`: arms live in the top
+  mesh, legs in the bottom mesh, feet in the footwear mesh. Never hide those
+  meshes to mean "off" — a limb disappears. `_setBare()` keeps the geometry and
+  swaps in a skin-tone material without the fabric map, so "brez oblačil" is a
+  body shell rather than a separate nude mesh.
 - `BODY_SHAPES` and the shape sliders scale the rig's existing bones (Head,
   Neck, Shoulders, Hips, arms, legs, hands, feet). They are proportion controls,
   not a different body mesh; keep the ranges modest so joints do not tear.
@@ -197,8 +218,20 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
 - New avatar setting: add it to `server/hud/avatar/presets.js` (`DEFAULTS`,
   `SCHEMA`, optionally a preset group), mirror the default and its
   colour/bool/string/range in `server/avatar_config.py`, and use it in
-  `avatar.js`; `tests/test_avatar.py` enforces parity. `/hud/avatar.html` is
-  generated from `SCHEMA`, so no per-field HTML is needed.
+  `avatar.js`; `tests/test_avatar.py` enforces parity (including that every
+  default has a validator). `/hud/avatar.html` is generated from `SCHEMA`, so
+  no per-field HTML is needed.
+- New avatar action: add an entry to `ACTIONS` in
+  `server/hud/avatar/motion.js` (label, group, dur, keys from t=0 to t=1 at
+  rest), optionally an alias in `ACTION_ALIASES`; it appears automatically in
+  the LIK page chips. Add it to the required-move test if it is a core move.
+- New wig: add it to `HAIR_STYLES` in `presets.js` and build it in
+  `hair.js` (`buildHair` switch). It is then listed by `hairStyles()`.
+- New garment: add it to `ACCESSORY_STYLES` in `presets.js`, build it in
+  `garments.js` (`buildAccessory` switch), and attach to an existing bone.
+- New character: add a full appearance bundle to `characters.js` (keys must
+  exist in `DEFAULTS`; `label`/`note` are metadata). It is picked up by
+  `PRESETS.character`, the schema select and the chips.
 - New autonomy capability: add it to `autonomy/profile.py` BACKEND_CHAINS +
   READINESS_GROUPS, to `capabilities.py` CATALOG/mark_learned, and (if it has a
   `mia-ctl` verb) to the `mia-ctl` parser + dispatch + `verify_result`.

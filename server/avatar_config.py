@@ -16,26 +16,30 @@ DEFAULTS = {
     "model": "/hud/avatar/models/mia-female.glb",
     "idle": "/hud/avatar/models/mia-female-idle.glb",
 
+    "character": "mia",
+
     "outfit": "casual",
     "top": True, "bottom": True, "footwear": True, "glasses": False,
     "topStyle": "casual",
     "topColor": "#1d3f52", "bottomColor": "#101820", "footwearColor": "#101820",
-    "glassesColor": "#101820", "topRoughness": 0.8, "topMetalness": 0.0,
+    "glassesColor": "#101820", "topRoughness": 0.85, "topMetalness": 0.02,
+    "accessory": "collar", "accessoryColor": "#cfeefb", "garmentLength": 0.6,
+    "robot": False, "robotGlow": "#00e5ff", "robotIntensity": 1.0,
 
-    "hair": True, "hairStyle": "default", "hairLook": "natural",
+    "hair": True, "hairStyle": "long", "hairLook": "natural",
     "hairColor": "#3b2418", "hairScale": 1.0, "hairVolume": 1.0,
-    "skinTone": "#ffffff", "eyeColor": "#5a7d8c",
+    "skinTone": "#f2d2bd", "eyeColor": "#2f6f8f",
 
     "bodyShape": "natural",
     "height": 1.0, "build": 1.0, "headSize": 1.0, "headWidth": 1.0,
     "neckLength": 1.0, "eyeSize": 1.0, "armLength": 1.0, "legLength": 1.0,
     "shoulderWidth": 1.0, "hipWidth": 1.0, "handSize": 1.0, "footSize": 1.0,
 
-    "mood": "neutral", "smile": 0.0, "browRaise": 0.0, "eyeWide": 0.0,
+    "mood": "warm", "smile": 0.16, "browRaise": 0.0, "eyeWide": 0.0,
 
     "autoBlink": True, "blinkSpeed": 1.0, "breathAmount": 1.0,
     "swayAmount": 1.0, "gazeFollow": 1.0, "idleSpeed": 1.0,
-    "gestureAmount": 1.0,
+    "gestureAmount": 1.0, "actionSpeed": 1.0,
 
     "camera": "bust", "cameraDistance": 1.0, "cameraHeight": 0.0,
     "cameraYaw": 0.0, "cameraFov": 32.0, "cameraParallax": 1.0,
@@ -54,22 +58,25 @@ DEFAULTS = {
 COLOR_KEYS = frozenset({
     "topColor", "bottomColor", "footwearColor", "glassesColor", "hairColor",
     "skinTone", "eyeColor", "keyColor", "rimColor", "fillColor",
-    "ambientColor", "backgroundColor",
+    "ambientColor", "backgroundColor", "accessoryColor", "robotGlow",
 })
 
 BOOL_KEYS = frozenset({
     "enabled", "top", "bottom", "footwear", "glasses", "hair",
-    "autoBlink", "autoOrbit", "shadows",
+    "autoBlink", "autoOrbit", "shadows", "robot",
 })
 
 STRING_KEYS = frozenset({
-    "model", "idle", "outfit", "topStyle", "hairStyle", "hairLook",
-    "bodyShape", "mood", "camera", "light", "background", "quality",
+    "model", "idle", "character", "outfit", "accessory", "topStyle",
+    "hairStyle", "hairLook", "bodyShape", "mood", "camera", "light",
+    "background", "quality",
 })
 
 RANGES = {
     "topRoughness": (0.0, 1.0),
     "topMetalness": (0.0, 1.0),
+    "garmentLength": (0.2, 1.2),
+    "robotIntensity": (0.0, 3.0),
     "hairScale": (0.6, 1.4),
     "hairVolume": (0.6, 1.5),
     "height": (0.75, 1.35),
@@ -93,6 +100,7 @@ RANGES = {
     "gazeFollow": (0.0, 1.5),
     "idleSpeed": (0.3, 2.0),
     "gestureAmount": (0.0, 2.0),
+    "actionSpeed": (0.4, 2.0),
     "cameraDistance": (0.6, 2.5),
     "cameraHeight": (-0.25, 0.35),
     "cameraYaw": (-60.0, 60.0),

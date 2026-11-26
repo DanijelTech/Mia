@@ -422,6 +422,10 @@ Implementirano:
 | Del | Datoteka |
 |---|---|
 | 3D runtime, kamera, luči, PBR okolje, stanja, pogled, dihanje, utripanje | `server/hud/avatar/avatar.js` |
+| Proceduralne poze glave/trupa/rok/nog (24 akcij, slovenski aliasi) | `server/hud/avatar/motion.js` |
+| 9 ženskih likov (cel paket videza) | `server/hud/avatar/characters.js` |
+| 10 proceduralnih pričesk | `server/hud/avatar/hair.js` |
+| Dodatki, obleke in robot rig | `server/hud/avatar/garments.js` |
 | Geste in pogled iz oznak (`[gesture:]`, `[look:]`) | `server/hud/avatar/avatar.js`, `server/avatar_visemes.py` |
 | Zamenjava modela v teku (`reloadModel`) in izbira pričeske | `server/hud/avatar/avatar.js`, `server/hud/avatar.html` |
 | HUD integracija (canvas nad obročem, `avatar-ready`, `avatar_speech`, `mia_say`, opozorilo ob manjkajočem modelu) | `server/hud/index.html` |
@@ -436,15 +440,20 @@ Implementirano:
 kose: lasje, očala, zgornji/spodnji del, obutev. Model se ne commit-a; prenese
 se z `server/scripts/fetch-avatar-assets.sh` (ali `install.sh --with-avatar`).
 
-**Kaj uporabnik lahko nastavi (71 nastavitev):** garderoba (8 presetov,
-barve in material vsakega kosa, očala), lasje (pričeska iz modela ali brez,
-6 variant oblike, barva, dolžina, volumen), koža in oči (paleti), oblika
-(6 telesnih tipov in 12 drsnikov: višina, postava, glava, oči, vrat, rame,
-boki, roke, stopala), obraz (razpoloženje, nasmeh, obrvi, široke oči), vedenje
-(utripanje, dihanje, zibanje, sledenje kazalcu, idle, moč gest), kamera
-(7 kadrov ter oddaljenost, višina, kot, FOV, paralaksa, kroženje), luči
-(8 presetov, barve in moč vsake luči, osvetlitev, okoljski odsev), ozadje in
-render (kakovost, sence, FPS, pixel ratio), model in idle animacija. Vse se
+**Kaj uporabnik lahko nastavi (79 nastavitev):** 9 ženskih likov (Mia, Nika,
+Eva, Lana, Zoja, Tara, Iris, Maja in android Nova), vsak s celim paketom
+videza; garderoba (16 presetov, tudi "brez oblačil", barve in material vsakega
+kosa, očala), dodatki in obleke (ovratnik, kravata, šal, naramnice, oklep,
+vizir, antena, slušalke, pas, krilo, obleka, potisniki) z nastavljivo dolžino
+krila/obleke, robotski finiš (kovinska koža, žareče oči, obroči na udih in
+vratu, jedro na prsih, barva in moč žarenja), lasje (10 proceduralnih pričesk,
+modelove pričeske ali brez, barva, dolžina, volumen), koža in oči (paleti),
+oblika (6 telesnih tipov in 12 drsnikov: višina, postava, glava, oči, vrat,
+rame, boki, roke, stopala), obraz (razpoloženje, nasmeh, obrvi, široke oči),
+vedenje (utripanje, dihanje, zibanje, sledenje kazalcu, idle, moč in hitrost
+gest), kamera (7 kadrov ter oddaljenost, višina, kot, FOV, paralaksa, kroženje),
+luči (8 presetov, barve in moč vsake luči, osvetlitev, okoljski odsev), ozadje
+in render (kakovost, sence, FPS, pixel ratio), model in idle animacija. Vse se
 shrani v `server/logs/avatar.json`, velja takoj v glavnem HUD-u, izvozi/uvozi
 kot JSON, naključno izbere ali ponastavi. Shema je v
 `server/hud/avatar/presets.js`; `server/avatar_config.py` jo zrcali in
@@ -458,16 +467,37 @@ obraz in telo odzivata na vsebino, ne le na glasnost. Če model nima morph
 targetov (npr. Avaturn T1), se uporabi samo gibanje glave/telesa; za obrazno
 mimiko je potreben T2/ARKit model.
 
-**Geste:** model prinese en Mixamo idle posnetek in nobene knjižnice gest, zato
-so geste proceduralne: `nod`, `shake`, `tilt`, `look`, `wave`, `shrug`,
-`point`, `bow` so aditivni odmiki glave/prsnega koša z envelope krivuljo.
-Nastavijo se z oznako v stavku ali ročno v `/hud/avatar.html` (GESTE IN GOVOR).
+**Geste in polno telo:** model prinese en Mixamo idle posnetek in nobene
+knjižnice gest, zato je gibanje proceduralno. `motion.js` opisuje 24 akcij kot
+ključne poze na **svetovnih oseh** za posamezne kosti (glava, vrat, hrbtenica,
+rame, komolci, dlani, boki, kolena, stopala); runtime vsak odmik pretvori v
+lokalno os trenutnega starša in ga doda na idle pozo. Zato delujejo tudi
+verižne poze (dvigni roko, nato upogni komolec) in cele borilne kombinacije.
+Akcije: `nod`, `shake`, `tilt`, `look`, `lookAround`, `wave`, `waveBoth`,
+`point`, `shrug`, `salute`, `think`, `heart`, `celebrate`, `bow`, `bend`,
+`lean`, `stretch`, `dance`, `punch`, `kick`, `block`, `kata`, `combat`,
+`scan`, `powerUp`, `glitch`. Nastavijo se z oznako v stavku, s čipi na strani
+LIK ali prek `?pose=<ime>&at=<0..1>` za predogled poze.
+
+**Lasje in obleke:** `hair.js` zgradi 10 stiliziranih pričesk iz krogel, cevi
+in stožcev okoli glave (dolga, kratka, bob, pixie, rep, figa, dvojni repki,
+pletenice, afro, mohawk); pripete so na kost glave, zato sledijo vsakemu gibu.
+`garments.js` doda dodatke in obleke kot toge pripomočke na kosti (ovratnik,
+kravata, šal, naramnice, oklep, vizir, antena, slušalke, pas, krilo, obleka,
+potisniki) ter robot obroče in žareče jedro. Model potrebuje le en GLB.
 
 **Omejitve:**
-- privzeti model ima eno pričesko; seznam prikaže le kose, ki so v modelu,
-  dodatne pričeske so nov `.glb` ali dodatni `avaturn_hair_*` kosi,
-- geste so proceduralne (nič mocap/animation knjižnice), roke ostanejo v
-  idle drži,
+- model ima kožo trupa le v `Wolf3D_Body`, roke pa so v zgornjem, noge v
+  spodnjem in stopala v kosu obutve; zato izklop kosa ne skrije geometrije
+  (izginili bi udi), ampak jo obarva v kožo brez teksture tkanine. "Brez
+  oblačil" je torej kožen telesni ovoj, ne ločen goli model,
+- privzeti model ima eno pričesko; proceduralne pričeske so stilizirane
+  geometrije, ne las s kolizijami/fiziko, zato so pripete togo na glavo,
+- obleke so dodatki na kosti, ne simulacija tkanine; krilo/obleka se pri
+  skrajnih gibih lahko prelomi z nogami,
+- geste so proceduralne (nič mocap/animation knjižnice), zato so gibi
+  stilizirani in ne človeško natančni; roke ostanejo v idle drži, ko akcija
+  ni aktivna,
 - brez Audio2Face in brez MetaHuman Pixel Streaming (fazi B/C iz načrta).
 
 **Zaslonske slike:** [HUD s 3D likom](screenshots/01-hud.webp) ·

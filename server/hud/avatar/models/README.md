@@ -17,3 +17,9 @@ To use an Avaturn T2 export, drop its `.glb` here and select it in
 `/hud/avatar.html`. Avaturn naming is supported by the wardrobe layer
 (`avaturn_hair_*`, `avaturn_look_0`, `avaturn_shoes_0`); T2 adds ARKit
 blendshapes and therefore facial lip sync.
+
+One female GLB is enough for the whole roster: the nine characters
+(`characters.js`), ten procedural wigs (`hair.js`) and the garment/robot props
+(`garments.js`) are generated around whichever rig is loaded. Extra female
+GLBs are still useful for a different face or body and appear automatically in
+the model selector.

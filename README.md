@@ -172,10 +172,20 @@ server/scripts/fetch-avatar-assets.sh        # prenese brezplačni RPM ženski m
 
 - obraz: visemi, čustva, utripanje, pogled, dihanje, mikroizrazi; ročno tudi
   nasmeh, dvignjene obrvi in široke oči,
-- garderoba: 8 prednastavljenih oblek (vsakdanji, poslovni, športni, večerni,
-  cyber, minimal, topel, mono), barva in material vsakega kosa, očala,
-- lasje: pričeske iz modela ali brez, 6 variant oblike (naravna, dolga, kratka,
-  volumna, gladka, divja), barva, dolžina in volumen,
+- **9 ženskih likov**: Mia, Nika, Eva, Lana, Zoja, Tara, Iris, Maja in
+  androidka Nova; vsak lik je cel paket (lasje, koža, oči, postava, obleka,
+  dodatki, razpoloženje, robot končna obdelava) in se preklopi z enim klikom,
+- garderoba: 16 prednastavljenih oblek (vsakdanji, poslovni, športni, večerni,
+  cyber, minimal, topel, mono, brez oblačil, hoodie, uniforma, gala, techwear,
+  kimono, stealth, pastel), barva in material vsakega kosa, očala,
+- dodatki in obleke: ovratnik, kravata, šal, naramnice, oklep, vizir, antena,
+  slušalke, pas, krilo, obleka in potisniki; dolžina krila/obleke je drsnik,
+- robot: kovinska koža, žareče oči, obroči na rokah/nogah in vratu, jedro na
+  prsih ter žareče linije; barva in moč žarenja sta nastavljivi,
+- lasje: 10 proceduralnih pričesk (dolga do prsi, kratka, bob, pixie, rep,
+  figa, dvojni repki, pletenice, afro, mohawk) + pričeske iz modela ali brez,
+  barva, dolžina in volumen; proceduralne pričeske sledijo glavi pri vsakem
+  gibu,
 - oblika: 6 telesnih tipov (naravna, vitka, atletska, oblina, drobna, visoka)
   in 12 drsnikov za višino, postavo, glavo, oči, rame, boke, roke in stopala,
 - koža in oči: palete odtenkov kože in barve oči,
@@ -184,19 +194,28 @@ server/scripts/fetch-avatar-assets.sh        # prenese brezplačni RPM ženski m
 - luči in scena: 8 presetov (studio, cyan, toplo, kino, noč, mehko, neon,
   ravno), moč in barva vsake luči, osvetlitev, okoljski odsev in ozadje,
 - vedenje: hitrost utripanja, dihanje, zibanje, sledenje kazalcu, hitrost idle
-  animacije in moč gest,
+  animacije, moč in hitrost gest,
+- **polno telo**: proceduralna skeletna animacija glave, trupa, rok in nog —
+  prikima/odkima, nagne glavo, maha (z eno ali obema rokama), pokaže, skomigne,
+  pozdravi, razmišlja, pokloni se, **prekloni se**, nagne, razteza, pleše,
+  udari, brcne, blokira, izvede kato in borilno kombinacijo, skenira, vklop
+  moči in glitch; 24 akcij z glajenjem in prehodom med prekinitvami,
 - render: kakovost, sence, omejitev FPS in pixel ratio,
 - izvoz/uvoz vseh nastavitev v JSON, naključni videz in ponastavitev,
-- geste: `[gesture:nod|shake|tilt|look|wave|shrug|point|bow]` v stavku ali
-  ročno na strani LIK; pogled tudi z `[look:user|camera|away|left|right|up|down]`,
+- geste: `[gesture:wave|nod|shake|bend|bow|punch|kick|block|kata|combat|…]` v
+  stavku ali ročno na strani LIK; pogled tudi z
+  `[look:user|camera|away|left|right|up|down]`; sprejeta so tudi slovenska
+  imena (`pomahaj`, `prikimi`, `prekloni`, `brcni`, `boks`, `kata`, …),
 - menjava modela na strani LIK brez osvežitve (GLB se naloži in star se sprosti),
 - sinhronizacija: strežnik pošlje `avatar_speech` z visemi/časi iz vsakega
   stavka TTS; HUD jih veže na `playhead`, brez časovne osi pa na približno
   besedilno oceno.
-- HUD stran **LIK IN GARDEROBA** (`/hud/avatar.html`) shrani vseh 71 nastavitev
+- HUD stran **LIK IN GARDEROBA** (`/hud/avatar.html`) shrani vseh 79 nastavitev
   v `server/logs/avatar.json`; modeli so v `server/hud/avatar/models/`,
 - Avaturn T2 izvoz lahko dodaš kot nov `.glb` in ga izbereš v isti strani;
   T1 demo nima obraznih blendshapov, zato ni privzet.
+- za ogled posamezne poze: `/hud/avatar.html?pose=wave&at=0.4&camera=full`
+  (uporabno za preverjanje gest in za zaslonske slike).
 
 Podrobnosti, primerjava z MetaHuman/Audio2Face in faze:
 [docs/AVATAR.md](docs/AVATAR.md).

@@ -12,8 +12,14 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import {
   DEFAULTS, PRESETS, OUTFIT_PRESETS, LIGHT_PRESETS, CAMERA_PRESETS,
-  HAIR_LOOKS, BODY_SHAPES, HAIR_COLORS, SKIN_TONES, EYE_COLORS, TOP_STYLES,
+  HAIR_LOOKS, HAIR_STYLES, ACCESSORY_STYLES, BODY_SHAPES, HAIR_COLORS,
+  SKIN_TONES, EYE_COLORS, TOP_STYLES,
 } from './presets.js';
+import {
+  ACTIONS, resolveAction, samplePose, mixPose, addPose,
+} from './motion.js';
+import { buildHair, disposeHair } from './hair.js';
+import { buildAccessory } from './garments.js';
 
 const VISEMES = ['sil', 'PP', 'FF', 'TH', 'DD', 'kk', 'CH', 'SS', 'nn', 'RR',
   'aa', 'E', 'I', 'O', 'U'];
@@ -43,19 +49,14 @@ const VIS_OPEN = { aa: .85, E: .55, I: .35, O: .72, U: .42, sil: 0,
   PP: 0, FF: .12, TH: .18, DD: .18, kk: .15, CH: .25, SS: .15,
   nn: .12, RR: .2 };
 
-/* Procedural co-speech gestures. The free model ships one Mixamo idle clip and
- * no gesture library, so gestures are additive head/chest offsets driven by
- * the `[gesture:…]` tag that the server forwards with each sentence. */
-const GESTURES = {
-  nod: { dur: .7, head: { x: .07 } },
-  shake: { dur: .8, head: { y: .07 }, cycles: 2 },
-  tilt: { dur: .9, head: { z: .09 } },
-  look: { dur: .9, head: { y: -.08 }, chest: { z: .02 } },
-  wave: { dur: 1.2, head: { z: .05 }, chest: { z: .05, y: .04 } },
-  shrug: { dur: 1.0, chest: { x: -.05, z: .03 } },
-  point: { dur: .8, head: { y: .08 }, chest: { y: .03 } },
-  bow: { dur: 1.3, head: { x: .12 }, chest: { x: .12 } },
-};
+const GESTURES = ACTIONS;
+
+const AXES = [
+  ['x', new THREE.Vector3(1, 0, 0)],
+  ['y', new THREE.Vector3(0, 1, 0)],
+  ['z', new THREE.Vector3(0, 0, 1)],
+];
+
 
 const LOOKS = {
   user: 'pointer', camera: 'camera', away: 'away',
@@ -125,7 +126,10 @@ class MiaAvatar {
     this.hairMeshes = [];
     this.current = new Map();
     this.speech = null;
-    this.gesture = null;
+    this.action = null;
+    this.fade = null;
+    this.held = null;
+    this.lastPose = {};
     this.look = null;
     this._loading = null;
     this.lastBlink = 0;
@@ -142,6 +146,19 @@ class MiaAvatar {
     this._baseBoneScale = null;
     this._baseHairScale = null;
     this._baseModelScale = null;
+    this._restPose = null;
+    this._orderedBones = null;
+    this._worldQuat = new Map();
+    this._worldScale = new Map();
+    this._tmpQ = new THREE.Quaternion();
+    this._tmpQ2 = new THREE.Quaternion();
+    this._tmpV = new THREE.Vector3();
+    this._tmpS = new THREE.Vector3();
+    this.headFrame = null;
+    this.procHair = null;
+    this.procHairStyle = null;
+    this.accessoryParts = [];
+    this._accessoryKey = '';
     this._bgKey = '';
     this._shapeTick = 0;
     this.forcePreview = /avatar\.html$/.test(location.pathname);
@@ -169,6 +186,7 @@ class MiaAvatar {
       this.config = await this.loadConfig();
       const qp = new URLSearchParams(location.search);
       if (qp.get('model')) this.config.model = qp.get('model');
+      if (qp.get('camera')) this.config.camera = qp.get('camera');
       if (!this.config.enabled && !this.forcePreview) return;
       this.setupRenderer();
       this.scene = new THREE.Scene();
@@ -177,6 +195,7 @@ class MiaAvatar {
       await this.loadModel();
       await this.loadIdle();
       this.applyConfig(this.config);
+      if (qp.get('pose')) this.holdAction(qp.get('pose'), Number(qp.get('at') || .5));
       this.ready = true;
       this.resize();
       this.canvas.classList.add('online');
@@ -256,6 +275,9 @@ class MiaAvatar {
   async loadModel() {
     this.eyes = []; this.morphMeshes = []; this.teeth = null; this.bones = {};
     this.hairMeshes = [];
+    this._disposeAccessory();
+    this._disposeHair();
+    this._accessoryKey = '';
     const loader = new GLTFLoader();
     const gltf = await loader.loadAsync(cacheBust(this.config.model));
     this.model = gltf.scene;
@@ -291,8 +313,69 @@ class MiaAvatar {
     for (const m of this.hairMeshes) this._baseHairScale.set(m, m.scale.clone());
     this._baseModelScale = this.model.scale.clone();
     this.scene.add(this.model);
+    this.model.updateMatrixWorld(true);
+    this._captureSkeleton();
     this.frameModel();
   }
+
+  /* Rest pose, hierarchy order and the head frame drive additive animation,
+   * procedural hair and bone-attached garments. */
+  _captureSkeleton() {
+    this._worldQuat.clear();
+    this._worldScale.clear();
+    const boneSet = new Set(Object.values(this.bones));
+    this._restPose = new Map();
+    for (const bone of boneSet) {
+      this._restPose.set(bone, {
+        position: bone.position.clone(),
+        quaternion: bone.quaternion.clone(),
+      });
+    }
+    this._orderedBones = [];
+    for (const bone of boneSet) {
+      let parentBone = null;
+      let walk = bone.parent;
+      while (walk) {
+        if (boneSet.has(walk)) { parentBone = walk; break; }
+        walk = walk.parent;
+      }
+      let depth = 0;
+      let node = bone;
+      while (node && boneSet.has(node)) { depth += 1; node = node.parent; }
+      const ancestor = node || bone.parent;
+      const ancestorQuat = ancestor
+        ? ancestor.getWorldQuaternion(new THREE.Quaternion())
+        : new THREE.Quaternion();
+      const ancestorScale = ancestor
+        ? ancestor.getWorldScale(new THREE.Vector3())
+        : new THREE.Vector3(1, 1, 1);
+      this._orderedBones.push({ bone, parentBone, depth, ancestorQuat, ancestorScale });
+    }
+    this._orderedBones.sort((a, b) => a.depth - b.depth);
+
+    const headMesh = this.model.getObjectByName('Wolf3D_Head') || this.head;
+    this.headFrame = null;
+    if (headMesh) {
+      const box = new THREE.Box3().setFromObject(headMesh);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      if (size.x > 0.01 && size.y > 0.01 && size.z > 0.01) {
+        this.headFrame = {
+          center: box.getCenter(new THREE.Vector3()),
+          size,
+        };
+      }
+    }
+  }
+
+  _resetRest() {
+    if (!this._restPose) return;
+    for (const [bone, rest] of this._restPose) {
+      bone.position.copy(rest.position);
+      bone.quaternion.copy(rest.quaternion);
+    }
+  }
+
 
   /* Swap the avatar GLB without rebuilding the scene (used by /hud/avatar.html). */
   async reloadModel(url) {
@@ -308,7 +391,8 @@ class MiaAvatar {
         disposeTree(this.model);
         this.model = null;
       }
-      this.speech = null; this.gesture = null; this.look = null;
+      this.speech = null; this.action = null; this.fade = null;
+      this.lastPose = {}; this.look = null;
       this.current.clear();
       await this.loadModel();
       await this.loadIdle();
@@ -341,31 +425,222 @@ class MiaAvatar {
     return !!this.mixer;
   }
 
-  /* Hair styles available in the loaded GLB, in selection order. */
+  /* Hair styles available in the loaded GLB plus the procedural wigs. */
   hairStyles() {
     const out = this.hairMeshes.map((m, i) => ({
       id: i === 0 ? 'default' : (i === 1 ? 'alt' : 'alt' + i),
       label: i === 0 ? 'pričeska 1' : 'pričeska ' + (i + 1),
       mesh: m.name,
     }));
+    for (const [id, cfg] of Object.entries(HAIR_STYLES)) {
+      out.push({ id, label: cfg.label, procedural: true });
+    }
     out.push({ id: 'none', label: 'brez', mesh: null });
     return out;
   }
 
-  _applyHair() {
-    const mesh = this._hairTarget();
-    for (const m of this.hairMeshes) m.visible = m === mesh;
+  _hairSelection() {
+    if (this.config.hair === false || this.config.hairStyle === 'none') return null;
+    const styles = this.hairStyles();
+    const want = styles.find((s) => s.id === this.config.hairStyle);
+    if (want) return want;
+    return styles.find((s) => !s.procedural && s.id !== 'none')
+      || styles.find((s) => s.procedural) || null;
   }
 
-  _hairTarget() {
-    if (this.config.hair === false || this.config.hairStyle === 'none') return null;
-    const styles = this.hairStyles().filter((s) => s.id !== 'none');
-    if (!styles.length) return null;
-    const want = this.config.hairStyle && this.config.hairStyle !== 'default'
-      ? styles.find((s) => s.id === this.config.hairStyle) : styles[0];
-    const style = want || styles[0];
-    return this.hairMeshes.find((m) => m.name === style.mesh) || this.hairMeshes[0];
+  _applyHair() {
+    const selection = this._hairSelection();
+    const meshStyle = selection && !selection.procedural ? selection : null;
+    for (const m of this.hairMeshes) m.visible = !!meshStyle && m.name === meshStyle.mesh;
+    this._buildHair(selection && selection.procedural ? selection.id : null);
+    if (this.procHair) {
+      const scale = Math.max(.2, num(this.config.hairScale, 1));
+      const volume = Math.max(.2, num(this.config.hairVolume, 1));
+      this.procHair.scale.set(volume, scale, volume);
+      const mat = this.procHair.userData.material;
+      if (mat && mat.color) mat.color.set(color(this.config.hairColor, '#3b2418'));
+      if (mat && this.config.robot === true) {
+        mat.emissive.set(color(this.config.robotGlow, '#00e5ff'));
+        mat.emissiveIntensity = .12 * num(this.config.robotIntensity, 1);
+      } else if (mat && mat.emissive) {
+        mat.emissive.set('#000000');
+        mat.emissiveIntensity = 0;
+      }
+    }
   }
+
+  _buildHair(styleId) {
+    if (styleId === this.procHairStyle) return;
+    this._disposeHair();
+    this.procHairStyle = styleId || null;
+    if (!styleId || !this.headFrame || !this.bones.Head) return;
+    const group = buildHair(styleId, {
+      width: this.headFrame.size.x,
+      height: this.headFrame.size.y,
+      depth: this.headFrame.size.z,
+      color: this.config.hairColor,
+    });
+    if (!group) return;
+    group.position.copy(this.headFrame.center);
+    this._attachToBone(group, this.bones.Head);
+    this.procHair = group;
+  }
+
+  _disposeHair() {
+    if (!this.procHair) return;
+    if (this.procHair.parent) this.procHair.parent.remove(this.procHair);
+    disposeHair(this.procHair);
+    this.procHair = null;
+    this.procHairStyle = null;
+  }
+
+  /* Re-parent a world-space object to a bone without moving it. */
+  _attachToBone(object, bone) {
+    if (!object || !bone) return;
+    this.model.updateMatrixWorld(true);
+    const inverse = new THREE.Matrix4().copy(bone.matrixWorld).invert();
+    object.applyMatrix4(inverse);
+    bone.add(object);
+  }
+
+  _boneWorld(name) {
+    const bone = this.bones[name];
+    if (!bone) return null;
+    return {
+      pos: bone.getWorldPosition(new THREE.Vector3()),
+      dir: new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(bone.getWorldQuaternion(new THREE.Quaternion())).normalize(),
+    };
+  }
+
+  _garmentContext() {
+    if (!this.model || !this.bones.Hips) return null;
+    this.model.updateMatrixWorld(true);
+    const hips = this._boneWorld('Hips');
+    const neck = this._boneWorld('Neck');
+    const head = this._boneWorld('Head');
+    const chestBone = this.bones.Spine2 || this.bones.Spine1 || this.bones.Spine;
+    const chest = chestBone ? {
+      pos: chestBone.getWorldPosition(new THREE.Vector3()),
+      dir: new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(chestBone.getWorldQuaternion(new THREE.Quaternion())).normalize(),
+    } : neck;
+    const leftArm = this._boneWorld('LeftArm') || this._boneWorld('LeftShoulder');
+    const rightArm = this._boneWorld('RightArm') || this._boneWorld('RightShoulder');
+    const leftLeg = this._boneWorld('LeftUpLeg');
+    const rightLeg = this._boneWorld('RightUpLeg');
+    if (!hips || !neck || !head || !chest) return null;
+    const right = leftArm && rightArm
+      ? leftArm.pos.clone().sub(rightArm.pos).normalize()
+      : new THREE.Vector3(1, 0, 0);
+    const up = neck.pos.clone().sub(hips.pos).normalize();
+    const forward = right.clone().cross(up).normalize();
+    if (!Number.isFinite(forward.x) || forward.lengthSq() < .5) forward.set(0, 0, 1);
+    const width = leftArm && rightArm ? leftArm.pos.distanceTo(rightArm.pos) : 0.24;
+    const torsoHeight = hips.pos.distanceTo(neck.pos);
+    const hipWidth = leftLeg && rightLeg
+      ? leftLeg.pos.distanceTo(rightLeg.pos) : width * 0.75;
+    const headSize = this.headFrame ? this.headFrame.size : new THREE.Vector3(.18, .26, .22);
+    return {
+      color: color(this.config.accessoryColor, '#101820'),
+      glow: color(this.config.robotGlow, '#00e5ff'),
+      length: num(this.config.garmentLength, .6),
+      intensity: num(this.config.robotIntensity, 1),
+      robot: this.config.robot === true,
+      torso: { width, height: torsoHeight, depth: Math.max(.08, width * .55) },
+      hips: { pos: hips.pos, width: Math.max(.12, hipWidth), depth: Math.max(.08, hipWidth * .6),
+        up, forward, right },
+      chest: { pos: chest.pos, height: torsoHeight * .45,
+        depth: Math.max(.08, width * .5), up, forward, right },
+      neck,
+      head: { center: this.headFrame ? this.headFrame.center : head.pos,
+        width: headSize.x, height: headSize.y, depth: headSize.z,
+        up: new THREE.Vector3(0, 1, 0), right: new THREE.Vector3(1, 0, 0),
+        forward: new THREE.Vector3(0, 0, 1) },
+      shoulders: { left: this._boneWorld('LeftShoulder') || leftArm,
+        right: this._boneWorld('RightShoulder') || rightArm },
+      forearms: { left: this._boneWorld('LeftForeArm'), right: this._boneWorld('RightForeArm') },
+      thighs: { left: leftLeg, right: rightLeg },
+    };
+  }
+
+  _applyAccessory() {
+    const shape = [this.config.height, this.config.build, this.config.shoulderWidth,
+      this.config.hipWidth, this.config.headSize, this.config.headWidth,
+      this.config.neckLength, this.config.armLength, this.config.legLength].join(',');
+    const key = [this.config.accessory, this.config.accessoryColor,
+      this.config.garmentLength, this.config.robot, this.config.robotGlow,
+      this.config.robotIntensity, shape].join('|');
+    if (key === this._accessoryKey) return;
+    this._disposeAccessory();
+    this._accessoryKey = key;
+    const id = ACCESSORY_STYLES[this.config.accessory] ? this.config.accessory : 'none';
+    if (id === 'none' && this.config.robot !== true) return;
+    const ctx = this._garmentContext();
+    if (!ctx) return;
+    for (const { bone, object } of buildAccessory(id, ctx)) {
+      const target = this.bones[bone];
+      if (!target) { disposeTree(object); continue; }
+      this._attachToBone(object, target);
+      this.accessoryParts.push(object);
+    }
+  }
+
+  _disposeAccessory() {
+    for (const object of this.accessoryParts) {
+      if (object.parent) object.parent.remove(object);
+      disposeTree(object);
+    }
+    this.accessoryParts = [];
+  }
+
+  _applyRobotSkin() {
+    const robot = this.config.robot === true;
+    const glow = color(this.config.robotGlow, '#00e5ff');
+    const intensity = num(this.config.robotIntensity, 1);
+    for (const kind of ['body', 'head']) {
+      for (const mesh of this._meshesFor(kind)) {
+        for (const mat of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+          if (!mat) continue;
+          if (mat.userData.__basePhys === undefined) {
+            mat.userData.__basePhys = {
+              metalness: mat.metalness, roughness: mat.roughness,
+            };
+          }
+          if (robot) {
+            mat.metalness = .8;
+            mat.roughness = .24;
+            if (mat.emissive) {
+              mat.emissive.set(glow);
+              mat.emissiveIntensity = .06 * intensity;
+            }
+          } else {
+            mat.metalness = mat.userData.__basePhys.metalness;
+            mat.roughness = mat.userData.__basePhys.roughness;
+            if (mat.emissive) {
+              mat.emissive.set('#000000');
+              mat.emissiveIntensity = 0;
+            }
+          }
+          mat.needsUpdate = true;
+        }
+      }
+    }
+    for (const mesh of this._meshesFor('eyes')) {
+      for (const mat of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        if (!mat || !mat.emissive) continue;
+        if (robot) {
+          mat.emissive.set(glow);
+          mat.emissiveIntensity = .8 * intensity;
+        } else {
+          mat.emissive.set('#000000');
+          mat.emissiveIntensity = 0;
+        }
+        mat.needsUpdate = true;
+      }
+    }
+  }
+
 
   async loadIdle() {
     if (!this.config.idle) return;
@@ -453,6 +728,8 @@ class MiaAvatar {
     this._applyWardrobe();
     this._applyColors();
     this._applyShape();
+    this._applyAccessory();
+    this._applyRobotSkin();
     this._applyLighting();
     this._applyBackground();
     this.setMood(this.config.mood || this.mood);
@@ -479,12 +756,43 @@ class MiaAvatar {
     for (const m of this._meshesFor(kind)) m.visible = !!on;
   }
 
+  /* This GLB only skins the torso in Wolf3D_Body: the arms live in the top
+   * mesh, the legs in the bottom mesh and the feet in the footwear mesh.
+   * Hiding a layer would delete limbs, so "off" means bare skin: the mesh
+   * stays, but its fabric map is dropped and the surface takes the skin tone. */
+  _setBare(mesh, bare) {
+    if (!mesh.userData.__clothed) mesh.userData.__clothed = mesh.material;
+    if (!bare) {
+      mesh.material = mesh.userData.__clothed;
+      mesh.needsUpdate = true;
+      return;
+    }
+    if (!mesh.userData.__bare) {
+      const source = mesh.userData.__clothed;
+      const clone = (m) => {
+        const copy = m.clone();
+        if ('map' in copy) copy.map = null;
+        if (copy.emissive) copy.emissive.set('#000000');
+        copy.roughness = 0.62;
+        copy.metalness = 0;
+        copy.needsUpdate = true;
+        return copy;
+      };
+      mesh.userData.__bare = Array.isArray(source) ? source.map(clone) : clone(source);
+    }
+    mesh.material = mesh.userData.__bare;
+    mesh.needsUpdate = true;
+  }
+
   _applyWardrobe() {
     this._applyHair();
     this._setVisible('glasses', this.config.glasses === true);
-    this._setVisible('top', this.config.top !== false);
-    this._setVisible('bottom', this.config.bottom !== false);
-    this._setVisible('footwear', this.config.footwear !== false);
+    for (const kind of ['top', 'bottom', 'footwear']) {
+      const on = this.config[kind] !== false;
+      this._setVisible(kind, true);
+      for (const m of this._meshesFor(kind)) this._setBare(m, !on);
+    }
+    if (this.config.top === false) return;
     const style = TOP_STYLES[this.config.topStyle];
     const roughness = num(this.config.topRoughness, style ? style.roughness : 0.8);
     const metalness = num(this.config.topMetalness, style ? style.metalness : 0);
@@ -499,13 +807,14 @@ class MiaAvatar {
 
   _applyColors() {
     const cfg = this.config;
+    const skin = cfg.skinTone;
     for (const m of this.hairMeshes) this.tintMesh(m, cfg.hairColor);
     this._tintKind('glasses', cfg.glassesColor);
-    this._tintKind('top', cfg.topColor);
-    this._tintKind('bottom', cfg.bottomColor);
-    this._tintKind('footwear', cfg.footwearColor);
-    this._tintKind('body', cfg.skinTone);
-    this._tintKind('head', cfg.skinTone);
+    this._tintKind('top', cfg.top === false ? skin : cfg.topColor);
+    this._tintKind('bottom', cfg.bottom === false ? skin : cfg.bottomColor);
+    this._tintKind('footwear', cfg.footwear === false ? skin : cfg.footwearColor);
+    this._tintKind('body', skin);
+    this._tintKind('head', skin);
     this._tintKind('eyes', cfg.eyeColor, 0.55);
   }
 
@@ -679,10 +988,41 @@ class MiaAvatar {
   }
 
   playGesture(name) {
-    const gesture = GESTURES[name];
-    if (!gesture || !this.ready) return false;
-    this.gesture = { ...gesture, name, start: performance.now() / 1000 };
+    if (!this.ready) return false;
+    const id = resolveAction(name);
+    if (!id) return false;
+    this.held = null;
+    const now = performance.now() / 1000;
+    const speed = Math.max(.1, num(this.config.actionSpeed, 1));
+    if (this.action) {
+      this.fade = { pose: this.lastPose || {}, start: now, dur: .14 };
+    }
+    this.action = {
+      def: ACTIONS[id],
+      name: id,
+      start: now,
+      dur: Math.max(.25, ACTIONS[id].dur / speed),
+    };
     return true;
+  }
+
+  playAction(name) {
+    return this.playGesture(name);
+  }
+
+  /* Freeze one action at a normalized time; used by the settings preview and
+   * `?pose=<name>&at=<0..1>` links. */
+  holdAction(name, p = .5) {
+    const id = resolveAction(name);
+    if (!id) return false;
+    this.held = { def: ACTIONS[id], p: clamp(Number(p) || 0, 0, 1) };
+    return true;
+  }
+
+  releaseAction() {
+    this.held = null;
+    this.action = null;
+    this.fade = null;
   }
 
   setLook(look) {
@@ -690,7 +1030,14 @@ class MiaAvatar {
   }
 
   configure(patch, save = true) {
-    this.applyConfig(patch || {});
+    let next = patch || {};
+    const keys = Object.keys(next);
+    const bundle = PRESETS.character[next.character];
+    if (keys.length === 1 && bundle) {
+      const { label, note, ...rest } = bundle;
+      next = { ...rest, character: next.character };
+    }
+    this.applyConfig(next);
     if (save) this.saveConfig();
   }
 
@@ -702,23 +1049,32 @@ class MiaAvatar {
     this.configure({ ...DEFAULTS }, save);
   }
 
-  /* Apply a named preset group: outfit / camera / light / mood. */
+  /* Apply a named preset group: character / outfit / camera / light / mood. */
   applyPreset(kind, name, save = true) {
     const group = PRESETS[kind];
     if (!group || !group[name]) return false;
-    this.configure({ ...group[name], [kind]: name }, save);
+    const { label, note, ...bundle } = group[name];
+    this.configure({ ...bundle, [kind]: name }, save);
     return true;
   }
 
   randomizeConfig(save = true) {
     const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
     const rand = (lo, hi) => lo + Math.random() * (hi - lo);
-    const outfit = pick(Object.keys(OUTFIT_PRESETS));
+    const characters = Object.keys(PRESETS.character);
+    const character = pick(characters);
+    const { label, note, ...bundle } = PRESETS.character[character];
+    const outfits = Object.keys(OUTFIT_PRESETS).filter((id) => id !== 'body');
+    const outfit = pick(outfits);
     const light = pick(Object.keys(LIGHT_PRESETS));
     const camera = pick(Object.keys(CAMERA_PRESETS));
     const hairLook = pick(Object.keys(HAIR_LOOKS));
     const bodyShape = pick(Object.keys(BODY_SHAPES));
+    const accessories = Object.keys(ACCESSORY_STYLES);
+    const hairStyles = this.hairStyles().filter((s) => s.id !== 'none');
     const patch = {
+      ...bundle,
+      character,
       ...OUTFIT_PRESETS[outfit], outfit,
       ...LIGHT_PRESETS[light], light,
       ...CAMERA_PRESETS[camera], camera,
@@ -727,8 +1083,8 @@ class MiaAvatar {
       hairColor: pick(HAIR_COLORS),
       skinTone: pick(SKIN_TONES),
       eyeColor: pick(EYE_COLORS),
-      hairStyle: this.hairStyles().length > 1
-        ? pick(this.hairStyles().filter((s) => s.id !== 'none')).id : 'default',
+      hairStyle: hairStyles.length ? pick(hairStyles).id : 'default',
+      accessory: pick(accessories),
       headSize: rand(0.93, 1.07),
       cameraDistance: rand(0.88, 1.12),
     };
@@ -783,25 +1139,62 @@ class MiaAvatar {
     this.look = null;
   }
 
-  _gestureOffsets(now) {
-    const g = this.gesture;
-    if (!g) return null;
-    const p = (now - g.start) / g.dur;
-    if (p >= 1) { this.gesture = null; return null; }
-    const env = Math.sin(Math.PI * Math.min(1, Math.max(0, p)));
-    const wave = g.cycles ? Math.cos(2 * Math.PI * g.cycles * p) : 1;
-    const scale = env * wave * num(this.config.gestureAmount, 1);
-    return {
-      head: { x: (g.head?.x || 0) * scale, y: (g.head?.y || 0) * scale,
-        z: (g.head?.z || 0) * scale },
-      chest: { x: (g.chest?.x || 0) * scale, y: (g.chest?.y || 0) * scale,
-        z: (g.chest?.z || 0) * scale },
-    };
+  _actionPose(now) {
+    if (this.held) return samplePose(this.held.def, this.held.p);
+    let pose = {};
+    if (this.action) {
+      const p = (now - this.action.start) / this.action.dur;
+      pose = samplePose(this.action.def, p);
+      if (p >= 1) { this.action = null; this.fade = null; }
+    }
+    if (this.fade) {
+      const w = clamp((now - this.fade.start) / this.fade.dur);
+      if (w >= 1) this.fade = null;
+      else pose = mixPose(this.fade.pose, pose, w);
+    }
+    this.lastPose = pose;
+    return pose;
+  }
+
+  /* Apply world-axis deltas on top of the mixer pose, parents first. */
+  _applyPose(pose) {
+    if (!this._orderedBones || !this.model) return;
+    const worldQ = this._worldQuat;
+    const worldS = this._worldScale;
+    for (const entry of this._orderedBones) {
+      const bone = entry.bone;
+      const parentQ = entry.parentBone
+        ? (worldQ.get(entry.parentBone) || entry.ancestorQuat)
+        : entry.ancestorQuat;
+      const parentS = entry.parentBone
+        ? (worldS.get(entry.parentBone) || entry.ancestorScale)
+        : this._tmpS.copy(entry.ancestorScale).multiply(this.model.scale);
+      const delta = pose[bone.name];
+      if (delta) {
+        this._tmpQ.copy(parentQ).invert();
+        for (const [axis, worldAxis] of AXES) {
+          const angle = delta[axis] || 0;
+          if (!angle) continue;
+          this._tmpV.copy(worldAxis).applyQuaternion(this._tmpQ).normalize();
+          this._tmpQ2.setFromAxisAngle(this._tmpV, angle);
+          bone.quaternion.premultiply(this._tmpQ2);
+        }
+        if (delta.tx || delta.ty || delta.tz) {
+          this._tmpV.set(delta.tx || 0, delta.ty || 0, delta.tz || 0)
+            .applyQuaternion(this._tmpQ);
+          this._tmpV.divide(parentS);
+          bone.position.add(this._tmpV);
+        }
+      }
+      worldQ.set(bone, parentQ.clone().multiply(bone.quaternion));
+      worldS.set(bone, parentS.clone().multiply(bone.scale));
+    }
   }
 
   update(dt, now) {
     if (!this.ready) return;
     const cfg = this.config;
+    this._resetRest();
     if (this.mixer) {
       this.mixer.timeScale = num(cfg.idleSpeed, 1);
       this.mixer.update(dt);
@@ -843,25 +1236,22 @@ class MiaAvatar {
     this.gazeX = lerp(this.gazeX || 0, targetX, 1 - Math.pow(.001, dt));
     this.gazeY = lerp(this.gazeY || 0, targetY, 1 - Math.pow(.001, dt));
 
-    const gest = this._gestureOffsets(now);
+    const pose = {};
     const swayAmount = num(cfg.swayAmount, 1);
-    const head = this.bones.Head || this.bones.head;
-    if (head) {
-      const sway = (Math.sin(t * .6) * .012 +
-        (this.state === 'speaking' ? Math.sin(t * 3.1) * .008 : 0)) * swayAmount;
-      head.rotation.y = lerp(head.rotation.y, this.gazeX + (gest ? gest.head.y : 0), .08);
-      head.rotation.x = lerp(head.rotation.x, this.gazeY * .6 + sway + (gest ? gest.head.x : 0), .06);
-      head.rotation.z = lerp(head.rotation.z, Math.sin(t * .35) * .01 * swayAmount + (gest ? gest.head.z : 0), .05);
-    }
+    const sway = (Math.sin(t * .6) * .012 +
+      (this.state === 'speaking' ? Math.sin(t * 3.1) * .008 : 0)) * swayAmount;
+    pose.Head = {
+      y: this.gazeX,
+      x: this.gazeY * .6 + sway,
+      z: Math.sin(t * .35) * .01 * swayAmount,
+    };
+    const breathAmount = num(cfg.breathAmount, 1);
+    const breath = Math.sin(t * 1.25) * .012 * breathAmount;
+    pose.Spine2 = { x: breath };
+    addPose(pose, this._actionPose(now), num(cfg.gestureAmount, 1));
+    this._applyPose(pose);
     const chest = this.bones.Spine2 || this.bones.Spine1 || this.bones.Spine;
-    if (chest) {
-      const breathAmount = num(cfg.breathAmount, 1);
-      const breath = Math.sin(t * 1.25) * .012 * breathAmount;
-      chest.rotation.x = lerp(chest.rotation.x, breath + (gest ? gest.chest.x : 0), .05);
-      chest.rotation.y = lerp(chest.rotation.y, gest ? gest.chest.y : 0, .05);
-      chest.rotation.z = lerp(chest.rotation.z, gest ? gest.chest.z : 0, .05);
-      chest.scale.y = 1 + Math.sin(t * 1.25) * .006 * breathAmount;
-    }
+    if (chest) chest.scale.y = 1 + Math.sin(t * 1.25) * .006 * breathAmount;
 
     if (this.camera && this.cameraBase) {
       const parallax = num(cfg.cameraParallax, 1);
@@ -1048,4 +1438,7 @@ if (document.readyState === 'loading') {
   boot();
 }
 
-export { MiaAvatar, textTimeline, DEFAULTS, GESTURES, LOOKS, MOODS, PRESETS };
+export {
+  MiaAvatar, textTimeline, DEFAULTS, GESTURES, ACTIONS, LOOKS, MOODS,
+  PRESETS, HAIR_STYLES, ACCESSORY_STYLES,
+};

@@ -447,19 +447,31 @@ and separate hair, glasses, top, bottom and footwear meshes. The model is not
 committed; fetch it with `server/scripts/fetch-avatar-assets.sh` (or
 `install.sh --with-avatar`).
 
-**User controls (71 settings):** wardrobe (8 presets, per-piece colour and
-fabric material, glasses), hair (styles present in the model or off, 6 shape
-variants, colour, length, volume), skin and eye palettes, shape (6 body types
-and 12 sliders: height, build, head, eyes, neck, shoulders, hips, hands, feet),
-face (mood, smile, brow raise, wide eyes), behaviour (blink, breathing, sway,
-pointer gaze, idle, gesture strength), camera (7 shots plus distance, height,
-yaw, FOV, parallax, orbit), lights (8 presets, per-light colour and intensity,
-exposure, environment), background and render (quality, shadows, FPS, pixel
-ratio), model and idle clip. Everything is saved to `server/logs/avatar.json`,
-applies to the main HUD immediately, and can be exported/imported as JSON,
-randomised or reset. The schema lives in `server/hud/avatar/presets.js`;
-`server/avatar_config.py` mirrors and validates it, and a test enforces the
-parity.
+**Bare layers:** the sample GLB skins only the torso in `Wolf3D_Body`; the arms
+live in the top mesh, the legs in the bottom mesh and the feet in the footwear
+mesh. Switching a layer off therefore keeps its geometry (removing it would
+delete a limb) and swaps in a flat skin material without the fabric map, so
+"brez oblačil" is a skin-tone body shell, not a separate nude mesh.
+
+**User controls (79 settings):** 9 female characters (Mia, Nika, Eva, Lana,
+Zoja, Tara, Iris, Maja and the android Nova), each a full appearance bundle;
+wardrobe (16 presets including a base-body option, per-piece colour and fabric
+material, glasses); accessories and garments (collar, tie, scarf, pauldrons,
+armour, visor, antenna, headset, belt, skirt, dress, thrusters) with an
+adjustable skirt/dress length; robot finish (metallic skin, glowing eyes, limb
+and neck rings, chest core, glow colour and strength); hair (10 procedural
+wigs: long, short, bob, pixie, ponytail, bun, twin tails, braids, afro, mohawk
+plus the model meshes or off, colour, length, volume); skin and eye palettes;
+shape (6 body types and 12 sliders: height, build, head, eyes, neck, shoulders,
+hips, hands, feet); face (mood, smile, brow raise, wide eyes); behaviour
+(blink, breathing, sway, pointer gaze, idle, gesture strength and speed);
+camera (7 shots plus distance, height, yaw, FOV, parallax, orbit); lights
+(8 presets, per-light colour and intensity, exposure, environment);
+background and render (quality, shadows, FPS, pixel ratio), model and idle
+clip. Everything is saved to `server/logs/avatar.json`, applies to the main HUD
+immediately, and can be exported/imported as JSON, randomised or reset. The
+schema lives in `server/hud/avatar/presets.js`; `server/avatar_config.py`
+mirrors and validates it, and a test enforces the parity.
 
 **Sync:** each TTS sentence sends `avatar_speech` with
 `visemes/times/durations` and `duration_ms`; the HUD anchors them to the
@@ -469,17 +481,33 @@ body react to content, not just loudness. A model without morph targets (e.g.
 Avaturn T1) only gets head/body motion; facial animation needs a T2/ARKit
 model.
 
-**Gestures:** the free model ships one Mixamo idle clip and no gesture
-library, so gestures are procedural: `nod`, `shake`, `tilt`, `look`, `wave`,
-`shrug`, `point`, `bow` are additive head/chest offsets with an envelope.
-Trigger them with a tag in the sentence or by hand on `/hud/avatar.html`
-(GESTE IN GOVOR).
+**Gestures and full body:** the free model ships one Mixamo idle clip and no
+gesture library, so motion is procedural. `motion.js` defines 24 actions as
+key poses on **world axes** per bone (head, neck, spine, shoulders, elbows,
+hands, hips, knees, feet); the runtime converts each offset into the current
+parent's local axis and adds it to the idle pose. Chained poses (raise an arm,
+then bend the elbow) and full combat combinations therefore work. Actions:
+`nod`, `shake`, `tilt`, `look`, `lookAround`, `wave`, `waveBoth`, `point`,
+`shrug`, `salute`, `think`, `heart`, `celebrate`, `bow`, `bend`, `lean`,
+`stretch`, `dance`, `punch`, `kick`, `block`, `kata`, `combat`, `scan`,
+`powerUp`, `glitch`. Trigger them with a sentence tag, the LIK page chips, or
+`?pose=<name>&at=<0..1>` for a pose preview.
+
+**Hair and clothes:** `hair.js` builds 10 stylised wigs from spheres, tubes and
+cones around the head (long, short, bob, pixie, ponytail, bun, twin tails,
+braids, afro, mohawk); they are attached to the head bone, so they follow every
+move. `garments.js` adds accessories and garments as rigid bone props (collar,
+tie, scarf, pauldrons, armour, visor, antenna, headset, belt, skirt, dress,
+thrusters) plus the robot rings and glowing chest core. One GLB is enough.
 
 **Limits:**
-- the default model has one hairstyle; the list only shows meshes the model
-  has, extra hairstyles are another `.glb` or extra `avaturn_hair_*` meshes,
-- gestures are procedural (no mocap/animation library), arms stay in the idle
-  pose,
+- the default model has one hairstyle; procedural wigs are stylised geometry,
+  not simulated hair with collisions, so they are rigidly attached to the head,
+- garments are bone props, not cloth simulation; a skirt/dress can clip through
+  the legs in extreme poses,
+- gestures are procedural (no mocap/animation library), so motion is stylised
+  rather than human-accurate; arms rest in the idle pose when no action is
+  active,
 - no Audio2Face and no MetaHuman Pixel Streaming (phases B/C of the plan).
 
 **Screenshots:** [HUD with the 3D character](../screenshots/01-hud.webp) ·
