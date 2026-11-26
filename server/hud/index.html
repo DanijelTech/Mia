@@ -690,7 +690,23 @@ function connect(){
   ws.onclose=ev=>{wsReady=false;continuous=false;capturing=false;
     if($("contBtn")){$("contBtn").textContent="STALNO";}
     $("wsDot").className="dot off";$("wsState").textContent="brez povezave";$("connState").textContent="POVEZAVA PREKINJENA";setState("standby","PRIPRAVLJEN");
-    if(ev&&ev.code===4401){addMsg("sys","povezava zavrnjena (4401): osveži stran z veljavnim žetonom — "+location.origin+"/hud/?token=…");return}
+    const code=ev&&ev.code;
+    if(code===4401){
+      addMsg("sys","povezava zavrnjena (4401): žeton je napačen ali potekel — prijavi se znova");
+      if($("pinMsg"))$("pinMsg").textContent="ŽETON JE POTEKEL ALI NI PRAV — VNESI NOVEGA";
+      showPinGate();
+      if(calibActive){
+        calibActive=false;capturing=false;
+        $("calibStage").textContent="PRIJAVA POTREBNA (4401)";
+        $("calibPrompt").textContent="Žeton HUD-a ni veljaven. Vnesi nov MIA_HUD_TOKEN ali odpri URL z ?token=…";
+        $("calibStart").style.display="";
+      }
+      return;
+    }
+    if(calibActive){
+      $("calibStage").textContent="POVEZAVA PREKINJENA ("+(code||"?")+")";
+      $("calibPrompt").textContent="HUD se znova povezuje. Če se ne poveže v 5 s, preveri, da Mia teče na vratih 8766.";
+    }
     setTimeout(connect,3000)};
   ws.onerror=()=>{};
   ws.onmessage=ev=>{
