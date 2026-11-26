@@ -77,6 +77,22 @@ Strežnik požene `tick` vsakih `autonomy.interval_seconds` (privzeto 30 s) in
 zdravstveni pregled vsakih `health_interval` (300 s). Vse je fail-open: če
 profil ali baza odpove, glasovna zanka teče naprej.
 
+## 3D lik in sinhronizacija govora
+
+`server/hud/avatar/avatar.js` (Three.js, lokalno vendoriran) naloži ženski
+GLB z Mixamo rigom in ARKit/Oculus blendshapi, doda idle animacijo in upravlja
+garderobo (lasje/očala/zgornji/spodnji del/obutev), pogled, dihanje, utripanje
+in čustva. Obroč `#reactor` ostane pod likom kot holografska podlaga in
+fallback, če WebGL/model odpove.
+
+`server/avatar_visemes.py` iz vsakega TTS stavka zgradi Oculus 15 visemov in
+jih skalira na dejansko trajanje PCM. `_send_tts_sentence()` pošlje
+`avatar_speech` (visemi/časi/mood) **pred** binarnimi PCM kosi istega stavka;
+HUD jih veže na `playhead` in glajeno aplicira na blendshape. Nastavitve
+garderobe so v `server/logs/avatar.json`, modeli pa v
+`server/hud/avatar/models/` (prenese jih
+`server/scripts/fetch-avatar-assets.sh`, niso commitani).
+
 ## Kalibracija, stroga budnica in preverjanje
 
 - `server/speaker_gate.py` hrani oddaljenostne odtise (bližina/sredina/daleč)
@@ -163,6 +179,7 @@ approval_request{data,run_id} · error · done{timing}
 | `/api/learning/remember` | shrani zadnjo epizodo kot recept |
 | `/api/learning/recipe`, `/mistake`, `/fact` | ročni vnos |
 | `/api/learning/mine`, `/prune`, `/sysinfo`, `/delete`, `/export` | vzdrževanje |
+| `/api/avatar/config`, `/api/avatar/models` | nastavitve garderobe/kamere in seznam GLB modelov |
 | `/api/autonomy/status`, `/profile`, `/health`, `/jobs`, `/tasks`, `/alerts` | stanje samodejnosti, profil stroja, zdravje, opravila, naloge, opozorila |
 | `/api/autonomy/refresh`, `/adapt`, `/remediate`, `/tick`, `/run`, `/text` | zaznava/prilagoditev, sanacija, en cikel urnika, izvedba načrta, naravni ukaz |
 | `/api/autonomy/jobs` (POST/DELETE), `/jobs/{id}/toggle`, `/tasks/{id}/resume`, `/cancel` | upravljanje opravil in nalog iz HUD-a |

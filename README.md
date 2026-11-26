@@ -146,6 +146,31 @@ V HUD-u sta panel **SAMODEJNOST** in stran `/hud/autonomy.html` (pregled,
 prilagoditev, opravila in pravila, naloge, ukaz, opozorila). Podrobnosti:
 [docs/AUTONOMY.md](docs/AUTONOMY.md).
 
+## 3D lik in garderoba
+
+V sredini HUD-a je zdaj **3D ženski lik** (Ready Player Me kompatibilen GLB z
+Mixamo rigom, 72 ARKit/Oculus blendshapi in ločenimi kosi oblačil, las in
+očal). Obroč ostane kot holografska podlaga in fallback.
+
+```bash
+server/scripts/fetch-avatar-assets.sh        # prenese brezplačni RPM ženski model
+./install.sh --yes --open --with-avatar      # isto med namestitvijo
+```
+
+- obraz: visemi, čustva, utripanje, pogled, dihanje (brez drugega modela),
+- garderoba: zgornji/spodnji del, obutev, očala, lasje (barva/pričeska),
+- kamera: doprsni/obraz/cel lik; kakovost: ultra/visoka/varčna,
+- sinhronizacija: strežnik pošlje `avatar_speech` z visemi/časi iz vsakega
+  stavka TTS; HUD jih veže na `playhead`, brez časovne osi pa na približno
+  besedilno oceno.
+- HUD stran **LIK IN GARDEROBA** (`/hud/avatar.html`) shrani nastavitve v
+  `server/logs/avatar.json`; modeli so v `server/hud/avatar/models/`,
+- Avaturn T2 izvoz lahko dodaš kot nov `.glb` in ga izbereš v isti strani;
+  T1 demo nima obraznih blendshapov, zato ni privzet.
+
+Podrobnosti, primerjava z MetaHuman/Audio2Face in faze:
+[docs/AVATAR.md](docs/AVATAR.md).
+
 ## Arhitektura
 
 ```
@@ -318,6 +343,8 @@ server/calibration.py   vodena kalibracija prek HUD WebSocketa
 server/hud/settings.html      NASTAVITVE (budnica, prag, učenje, kalibracija)
 server/hud/capabilities.html  ZMOGLJIVOSTI (potrjeno/naučeno/prazno)
 server/hud/autonomy.html      SAMODEJNOST (profil, načrti, opravila, naloge, zdravje)
+server/hud/avatar/      3D lik: Three.js runtime, modeli (fetch), garderoba, visemi
+server/avatar_visemes.py  slovenski tekst → Oculus 15 visemov + časovna os
 server/scripts/  mia-start/stop/health + enroll_voice.py (glasovna kalibracija)
                  + gepard_tts.py (TTS storitev s per-request višino tona)
 client/          opcijski Windows/Linux odjemalec za pritisk na tipko (z zaznavo budnice)
@@ -335,7 +362,7 @@ skills/mia-companion/bin/  mia-open, mia-close, mia-volume, mia-artists,
 tests/           unittest suite za mia_core, mia-ctl in drevo veščin
 launchd/         predloge za samodejni zagon na macOS (pripombe o TCC in FD limitih)
 docs/            slovenska dokumentacija: SETUP, ARCHITECTURE, LEARNING, CONTROL,
-                 AUTONOMY, CALIBRATION, CAPABILITIES, TROUBLESHOOTING
+                 AUTONOMY, AVATAR, CALIBRATION, CAPABILITIES, TROUBLESHOOTING
 docs/en/         ista dokumentacija v angleščini
 install.sh       namestitev (brez venv, root ali uporabnik) + manifest
 start-mia.sh     zbudi cel sklad (stack: llama → Hermes → dashboard → Mia + TTS), odpre HUD

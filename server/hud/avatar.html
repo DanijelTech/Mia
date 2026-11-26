@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MIA // LIK IN GARDEROBA</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+:root{--bg:#050b14;--panel:#081523cc;--line:#0e2c40;--cyan:#00e5ff;--cyan-dim:#0a7f96;
+  --teal:#19f0d8;--amber:#ffb300;--red:#ff4d5e;--txt:#9fd8e8;--txt-dim:#4d7d92}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%}
+body{background:radial-gradient(ellipse at 50% 0%,#0a1a2c 0%,var(--bg) 60%);color:var(--txt);
+  font-family:'Rajdhani',sans-serif;padding:14px 18px 28px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line);
+  background:var(--panel);padding:10px 14px;clip-path:polygon(0 0,100% 0,100% 70%,calc(100% - 14px) 100%,14px 100%,0 70%)}
+header h1{font-family:'Orbitron';font-size:15px;letter-spacing:6px;color:var(--cyan)}
+header .sub{font-size:11px;letter-spacing:2px;color:var(--txt-dim)}
+button{background:#0a2435;color:var(--cyan);border:1px solid var(--cyan-dim);padding:6px 10px;
+  font-family:'Orbitron';font-size:9.5px;letter-spacing:1.2px;cursor:pointer}
+button:hover{background:#0e3448}
+button.ghost{color:var(--txt-dim);border-color:var(--line)}
+.layout{display:grid;grid-template-columns:minmax(280px,420px) 1fr;gap:14px;margin-top:12px}
+@media(max-width:860px){.layout{grid-template-columns:1fr}}
+.stage{border:1px solid var(--line);background:#06111d;min-height:520px;position:relative;
+  clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,16px 100%,0 calc(100% - 16px))}
+#avatar{width:100%;height:100%;display:block;min-height:520px}
+#stageHint{position:absolute;left:10px;bottom:8px;font:11px 'Orbitron';letter-spacing:2px;color:var(--txt-dim)}
+.panel{border:1px solid var(--line);background:var(--panel);padding:12px 14px;margin-bottom:10px}
+.panel h2{font-family:'Orbitron';font-size:10px;letter-spacing:2px;color:var(--cyan);margin-bottom:8px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 0;
+  border-bottom:1px solid #0b2233;font-size:13px}
+.row:last-child{border-bottom:0}
+label{display:flex;align-items:center;gap:8px;cursor:pointer}
+input[type=checkbox]{width:16px;height:16px;accent-color:var(--cyan)}
+input[type=color]{width:42px;height:26px;border:1px solid var(--line);background:#06101c;padding:1px;cursor:pointer}
+select,input[type=range]{background:#06101c;border:1px solid var(--line);color:#cfeefb;padding:5px 7px;
+  font-family:'Rajdhani';font-size:13px;outline:none}
+input[type=range]{padding:0;accent-color:var(--teal);width:130px}
+.hint{font-size:11.5px;color:var(--txt-dim);margin:4px 0 8px}
+.badge{display:inline-block;font-size:10px;padding:2px 7px;border:1px solid var(--line);color:var(--teal)}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>LIK</h1><div class="sub">3D MIA · GARDEROBA · LASJE · ČUSTVA · KAMERA</div></div>
+  <div><button id="closeBtn" class="ghost">✕ ZAPRI</button></div>
+</header>
+<div class="layout">
+  <div class="stage">
+    <canvas id="avatar"></canvas>
+    <div id="stageHint">3D · MIA PRESENCE</div>
+  </div>
+  <div>
+    <div class="panel">
+      <h2>OBLEKA IN DODATKI</h2>
+      <div class="row"><label><input type="checkbox" id="top"> Zgornji del</label><input type="color" id="topColor"></div>
+      <div class="row"><label><input type="checkbox" id="bottom"> Spodnji del</label><input type="color" id="bottomColor"></div>
+      <div class="row"><label><input type="checkbox" id="footwear"> Obutev</label><input type="color" id="footwearColor"></div>
+      <div class="row"><label><input type="checkbox" id="glasses"> Očala</label><input type="color" id="glassesColor"></div>
+    </div>
+    <div class="panel">
+      <h2>LASJE IN KOŽA</h2>
+      <div class="row"><label><input type="checkbox" id="hair"> Lasje</label><div style="display:flex;gap:6px;align-items:center"><select id="hairStyle"><option value="default">pričeska 1</option><option value="alt">pričeska 2</option><option value="none">brez</option></select><input type="color" id="hairColor"></div></div>
+      <div class="row"><span>Odtenek kože</span><input type="color" id="skinTone"></div>
+      <div class="hint">Barva se meša s teksturo modela. Za popolnoma drugo pričesko
+        dodaj drug GLB v <code>server/hud/avatar/models/</code> in ga izberi spodaj.</div>
+      <div class="row"><span>Model</span><select id="model"></select></div>
+    </div>
+    <div class="panel">
+      <h2>KAMERA IN KAKOVOST</h2>
+      <div class="row"><span>Kader</span>
+        <select id="camera"><option value="bust">doprsni</option><option value="head">obraz</option><option value="full">cel lik</option></select></div>
+      <div class="row"><span>Kakovost</span>
+        <select id="quality"><option value="ultra">ultra</option><option value="high">visoka</option><option value="balanced">varčna</option></select></div>
+      <div class="row"><span>Razpoloženje</span>
+        <select id="mood"><option value="neutral">nevtralno</option><option value="warm">toplo</option>
+          <option value="happy">veselo</option><option value="sad">žalostno</option>
+          <option value="angry">jezno</option><option value="fearful">prestrašeno</option>
+          <option value="disgust">gnus</option><option value="love">ljubezen</option>
+          <option value="sleep">spanje</option></select></div>
+    </div>
+    <div class="panel">
+      <h2>UKREPI</h2>
+      <div class="row"><button id="saveBtn">SHRANI</button><button id="testBtn" class="ghost">TEST GOVOR</button><button id="resetBtn" class="ghost">PONASTAVI</button></div>
+      <div class="hint" id="status">—</div>
+    </div>
+  </div>
+</div>
+<script type="importmap">
+{"imports":{"three":"/hud/avatar/vendor/three/three.module.js","three/addons/":"/hud/avatar/vendor/three/addons/"}}
+</script>
+<script type="module">
+import { DEFAULTS } from '/hud/avatar/avatar.js';
+const $=id=>document.getElementById(id);
+const fields=['top','bottom','footwear','glasses','hair'];
+function fill(cfg){
+  for(const f of fields) $(f).checked=!!cfg[f];
+  for(const k of ['topColor','bottomColor','footwearColor','glassesColor','hairColor','skinTone']){
+    if(cfg[k]) $(k).value=cfg[k];
+  }
+  $('camera').value=cfg.camera||'bust';
+  $('quality').value=cfg.quality||'high';
+  $('mood').value=cfg.mood||'neutral';
+  $('hairStyle').value=cfg.hairStyle||'default';
+  $('model').innerHTML='';
+  const opt=document.createElement('option');
+  opt.value=cfg.model||DEFAULTS.model; opt.textContent=(cfg.model||DEFAULTS.model).split('/').pop();
+  $('model').appendChild(opt);
+}
+async function load(){
+  let cfg={...DEFAULTS};
+  try{
+    const j=await (await fetch('/api/avatar/config',{cache:'no-store'})).json();
+    cfg={...DEFAULTS,...(j.config||j||{})};
+  }catch{}
+  fill(cfg);
+  try{
+    const m=await (await fetch('/api/avatar/models',{cache:'no-store'})).json();
+    const models=(m.models||[]).filter(x=>!/idle/i.test(x.name));
+    if(models.length){
+      const sel=$('model'); sel.innerHTML='';
+      for(const item of models){
+        const opt=document.createElement('option');
+        opt.value=item.url;
+        opt.textContent=item.name.replace(/\.glb$/,'');
+        sel.appendChild(opt);
+      }
+      sel.value=cfg.model;
+    }
+  }catch{}
+}
+function patch(){
+  return {
+    top:$('top').checked,bottom:$('bottom').checked,footwear:$('footwear').checked,
+    glasses:$('glasses').checked,hair:$('hair').checked,hairStyle:$('hairStyle').value,
+    topColor:$('topColor').value,bottomColor:$('bottomColor').value,
+    footwearColor:$('footwearColor').value,glassesColor:$('glassesColor').value,
+    hairColor:$('hairColor').value,skinTone:$('skinTone').value,
+    camera:$('camera').value,quality:$('quality').value,mood:$('mood').value,
+    model:$('model').value,
+  };
+}
+function apply(save=true){
+  const p=patch();
+  window.MiaAvatar?.configure(p, save);
+  $('status').textContent=save?'shranjeno · '+new Date().toLocaleTimeString('sl-SI'):'predogled';
+}
+for(const f of fields) $(f).addEventListener('change',()=>apply(false));
+for(const k of ['topColor','bottomColor','footwearColor','glassesColor','hairColor','skinTone','camera','quality','mood','hairStyle'])
+  $(k).addEventListener('input',()=>apply(false));
+$('model').addEventListener('change',async()=>{await window.MiaAvatar?.reloadModel($('model').value);apply(true)});
+$('saveBtn').onclick=()=>apply(true);
+$('testBtn').onclick=()=>{window.MiaAvatar?.speakText('Dober dan, šefe. Kako si? Lepo te vidim.',1800)};
+$('resetBtn').onclick=()=>{fill({...DEFAULTS});apply(true)};
+$('closeBtn').onclick=()=>{try{window.parent.closeView()}catch{window.close()}};
+load();
+</script>
+</body>
+</html>

@@ -86,6 +86,22 @@ The server ticks the scheduler every `autonomy.interval_seconds` (30 s) and the
 health check every `health_interval` (300 s). The whole layer is fail-open: a
 broken profile or DB never stops the voice loop.
 
+## 3D avatar and speech sync
+
+`server/hud/avatar/avatar.js` (vendored Three.js) loads a female GLB with a
+Mixamo rig and ARKit/Oculus blendshapes, adds an idle animation, and drives
+wardrobe (hair/glasses/top/bottom/footwear), gaze, breathing, blinking and
+emotion. The `#reactor` ring stays beneath the avatar as a holographic pedestal
+and fallback when WebGL or the model fails.
+
+`server/avatar_visemes.py` builds an Oculus 15-viseme timeline for each TTS
+sentence and scales it to the actual PCM duration. `_send_tts_sentence()` sends
+`avatar_speech` (visemes/times/mood) **before** the binary PCM of the same
+sentence; the HUD anchors it to `playhead` and applies it smoothly to the
+blendshapes. Wardrobe settings live in `server/logs/avatar.json`; models live in
+`server/hud/avatar/models/` (fetched by
+`server/scripts/fetch-avatar-assets.sh`, never committed).
+
 ## Calibration, settings and verification
 
 - The HUD can start a guided distance calibration over the same WebSocket:
@@ -138,6 +154,7 @@ approval_request{data,run_id} · error · done{timing}
 | `/api/learning/feedback`, `/remember` | ✓/✗ feedback and recipe promotion |
 | `/api/learning/recipe`, `/mistake`, `/fact` | manual entries |
 | `/api/learning/mine`, `/prune`, `/sysinfo`, `/delete`, `/export` | maintenance |
+| `/api/avatar/config`, `/api/avatar/models` | wardrobe/camera settings and available GLB models |
 | `/api/autonomy/status`, `/profile`, `/health`, `/jobs`, `/tasks`, `/alerts` | autonomy state, machine profile, health, jobs, tasks, alerts |
 | `/api/autonomy/refresh`, `/adapt`, `/remediate`, `/tick`, `/run`, `/text` | detect/adapt, remediate, one scheduler cycle, run a plan, natural command |
 | `/api/autonomy/jobs` (POST/DELETE), `/jobs/{id}/toggle`, `/tasks/{id}/resume`, `/cancel` | manage jobs and tasks from the HUD |

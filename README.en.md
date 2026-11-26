@@ -140,6 +140,31 @@ reactive rules (“when the disk is full …”), watches health, and understand
 deterministic system commands before the LLM. HUD: `/hud/autonomy.html`.
 Details: [docs/en/AUTONOMY.md](docs/en/AUTONOMY.md).
 
+## 3D character and wardrobe
+
+The HUD centre now renders a **3D female character** (Ready Player Me-compatible
+GLB, Mixamo rig, 72 ARKit/Oculus blendshapes, separate clothing/hair/glasses
+meshes). The ring stays as a holographic pedestal and fallback.
+
+```bash
+server/scripts/fetch-avatar-assets.sh        # downloads the free RPM female model
+./install.sh --yes --open --with-avatar      # same during install
+```
+
+- face: visemes, emotion, blinking, gaze, breathing,
+- wardrobe: top/bottom, footwear, glasses, hair colour/style,
+- camera: bust/head/full; quality: ultra/high/balanced,
+- sync: the server sends `avatar_speech` with visemes/timings for every TTS
+  sentence; the HUD anchors them to `playhead`; without a timeline it falls
+  back to an approximate text estimate.
+- HUD page **LIK IN GARDEROBA** (`/hud/avatar.html`) saves to
+  `server/logs/avatar.json`; models live in `server/hud/avatar/models/`,
+- an Avaturn T2 export can be dropped in and selected there; the T1 demo has
+  no facial blendshapes, so it is not the default.
+
+Details, MetaHuman/Audio2Face comparison and phases:
+[docs/en/AVATAR.md](docs/en/AVATAR.md).
+
 ## Architecture
 
 ```
@@ -324,6 +349,8 @@ server/calibration.py   guided calibration over the HUD WebSocket
 server/hud/settings.html      SETTINGS (wake, threshold, learning, calibration)
 server/hud/capabilities.html  CAPABILITIES (confirmed/learned/empty)
 server/hud/autonomy.html      AUTONOMY (profile, plans, jobs, tasks, health)
+server/hud/avatar/      3D character: Three.js runtime, models (fetch), wardrobe, visemes
+server/avatar_visemes.py  Slovenian text → Oculus 15 visemes + timeline
 server/scripts/  mia-start/stop/health + enroll_voice.py (voice calibration)
                  + gepard_tts.py (TTS service with per-request pitch)
 client/          optional Windows/Linux push-to-talk Python client (wake word capable)
@@ -341,7 +368,7 @@ skills/mia-companion/bin/  mia-open, mia-close, mia-volume, mia-artists,
 tests/           unittest suite for mia_core, mia-ctl and the skill tree
 launchd/         macOS auto-start templates with hard-won TCC + FD-limit notes
 docs/            Slovenian docs; docs/en/ the English copies
-                 (SETUP, ARCHITECTURE, LEARNING, CONTROL, AUTONOMY, CALIBRATION, CAPABILITIES)
+                 (SETUP, ARCHITECTURE, LEARNING, CONTROL, AUTONOMY, AVATAR, CALIBRATION, CAPABILITIES)
 install.sh       install (no venv, root or user) + manifest
 start-mia.sh     boots the whole stack (stack: llama → Hermes → dashboard → Mia + TTS), opens HUD
 stop-mia.sh      stops everything and frees RAM/VRAM; status, --restart, --free-ports

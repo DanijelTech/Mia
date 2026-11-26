@@ -53,6 +53,7 @@ from calibration import CalibrationSession, DEFAULT_STAGES
 from continuous import WakeGate, build_segmenter, starts_with_exact_wake
 from speaker_gate import SpeakerGate
 from tts import build_backend
+import avatar_visemes
 from mia_core.integration import (detect_feedback, detect_remember,
                                   google_request, google_url,
                                   music_play_request, time_answer)
@@ -1051,32 +1052,56 @@ class VoicePipelineServer:
                                  conn: "ConnState | None" = None) -> None:
         if not sentence:
             return
+        spoken, tags = avatar_visemes.strip_tags(sentence)
+        if not spoken:
+            return
         q: asyncio.Queue = asyncio.Queue()
         loop = asyncio.get_running_loop()
 
         def worker() -> None:
             try:
-                for chunk in self.tts_chunks_sync(sentence, timing):
+                for chunk in self.tts_chunks_sync(spoken, timing):
                     loop.call_soon_threadsafe(q.put_nowait, chunk)
                 loop.call_soon_threadsafe(q.put_nowait, None)
             except Exception as exc:
                 loop.call_soon_threadsafe(q.put_nowait, exc)
 
         worker_task = asyncio.create_task(asyncio.to_thread(worker))
+        chunks: list[bytes] = []
         while True:
             item = await q.get()
             if item is None:
                 break
             if isinstance(item, Exception):
                 raise item
-            if conn is not None and not conn.is_speaking:
-                # announce "speaking" only when audio really exists — on a slow
-                # CPU TTS the synthesis takes minutes and a premature GOVORIM
-                # state reads as "she is mute"
-                await ws.send_json({"type": "agent_status", "state": "speaking"})
-                conn.is_speaking = True
-            await ws.send_bytes(item)
+            chunks.append(item)
         await worker_task
+        if not chunks:
+            return
+        pcm = b"".join(chunks)
+        timeline = avatar_visemes.timeline_for_pcm(spoken, pcm)
+        await ws.send_json({
+            "type": "avatar_speech",
+            "v": 1,
+            "speech_id": int(time.time() * 1000) & 0x7FFFFFFF,
+            "text": spoken,
+            "voice": getattr(self.tts, "label", ""),
+            "duration_ms": timeline["duration_ms"],
+            "mood": timeline.get("mood") or "warm",
+            "gesture": timeline.get("gesture") or "",
+            "look": timeline.get("look") or "",
+            "visemes": timeline["visemes"],
+            "times": timeline["times"],
+            "durations": timeline["durations"],
+        })
+        if conn is not None and not conn.is_speaking:
+            # announce "speaking" only when audio really exists — on a slow
+            # CPU TTS the synthesis takes minutes and a premature GOVORIM
+            # state reads as "she is mute"
+            await ws.send_json({"type": "agent_status", "state": "speaking"})
+            conn.is_speaking = True
+        for chunk in chunks:
+            await ws.send_bytes(chunk)
 
     @staticmethod
     def _extract_complete_sentences(text: str) -> tuple[list[str], str]:
@@ -1380,6 +1405,27 @@ def _ws_allowed(ws: WebSocket) -> bool:
 # --------------------------------------------------------------- HUD + proxy
 
 HUD_DIR = ROOT / "hud"
+AVATAR_CONFIG_PATH = ROOT / "logs" / "avatar.json"
+AVATAR_DEFAULTS = {
+    "enabled": True,
+    "model": "/hud/avatar/models/mia-female.glb",
+    "idle": "/hud/avatar/models/mia-female-idle.glb",
+    "hair": True, "hairStyle": "default", "glasses": False, "top": True,
+    "bottom": True, "footwear": True,
+    "hairColor": "#3b2418", "topColor": "#1d3f52", "bottomColor": "#101820",
+    "footwearColor": "#101820", "glassesColor": "#101820", "skinTone": "#ffffff",
+    "camera": "bust", "quality": "high", "mood": "neutral",
+}
+
+
+def _avatar_config() -> dict:
+    try:
+        data = json.loads(AVATAR_CONFIG_PATH.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return {**AVATAR_DEFAULTS, **data}
+    except (OSError, ValueError):
+        pass
+    return dict(AVATAR_DEFAULTS)
 ALLOWED_GET_PATHS = {
     "/health", "/health/detailed", "/v1/capabilities",
     "/v1/skills", "/v1/toolsets", "/api/jobs", "/api/sessions",
@@ -2426,6 +2472,51 @@ async def autonomy_alert_ack(alert_id: int) -> JSONResponse:
         return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
     ok = await asyncio.to_thread(service.store.acknowledge_alert, alert_id)
     return JSONResponse({"ok": ok})
+
+
+@app.get("/api/avatar/config")
+async def avatar_config_get() -> JSONResponse:
+    return JSONResponse({"config": _avatar_config()})
+
+
+@app.post("/api/avatar/config")
+async def avatar_config_set(request: Request) -> JSONResponse:
+    body = await request.json()
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "config must be an object"}, status_code=400)
+    cfg = _avatar_config()
+    allowed = set(AVATAR_DEFAULTS)
+    color_keys = {"hairColor", "topColor", "bottomColor", "footwearColor",
+                  "glassesColor", "skinTone"}
+    for key, value in body.items():
+        if key not in allowed:
+            continue
+        if key in color_keys:
+            if not isinstance(value, str) or not re.match(r"^#[0-9a-fA-F]{6}$", value):
+                return JSONResponse({"error": f"invalid color for {key}"}, status_code=400)
+            cfg[key] = value.lower()
+        elif key in ("camera", "quality", "mood", "model", "idle"):
+            if not isinstance(value, str) or len(value) > 300:
+                return JSONResponse({"error": f"invalid {key}"}, status_code=400)
+            cfg[key] = value
+        elif key in ("enabled", "hair", "glasses", "top", "bottom", "footwear"):
+            cfg[key] = bool(value)
+    AVATAR_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    AVATAR_CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2),
+                                  encoding="utf-8")
+    return JSONResponse({"ok": True, "config": cfg})
+
+
+@app.get("/api/avatar/models")
+async def avatar_models() -> JSONResponse:
+    base = HUD_DIR / "avatar" / "models"
+    items = []
+    if base.is_dir():
+        for path in sorted(base.glob("*.glb")):
+            items.append({"name": path.name,
+                          "url": f"/hud/avatar/models/{path.name}",
+                          "size": path.stat().st_size})
+    return JSONResponse({"models": items})
 
 
 @app.get("/api/machines")

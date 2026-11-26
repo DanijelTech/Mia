@@ -10,7 +10,7 @@
 #   ./install.sh --with-gepard        # also install the Gepard TTS service
 #   ./install.sh --with-maya1         # ...or the Maya1 TTS service (better SL)
 #   ./install.sh --dry-run            # show every action, change nothing
-#   ./install.sh --yes --open         # install, start and open the HUD
+#   ./install.sh --yes --open --with-avatar  # install, start, open HUD, fetch 3D avatar
 #
 # Common options:
 #   --yes                 no prompts
@@ -29,6 +29,7 @@
 #   --no-start            install the unit but do not start it
 #   --no-token            do not touch ~/.hermes/.env
 #   --open                start Mia (if needed) and open the HUD in the browser
+#   --with-avatar         download the free Ready Player Me female 3D avatar
 #   --service-dir DIR     where unit/plist files go (default: system-dependent)
 #   --hermes-env PATH     env file for the HUD token (default: ~/.hermes/.env)
 #   --hermes-home PATH    Hermes home for skills/plugins (default: ~/.hermes)
@@ -53,6 +54,7 @@ DO_SERVICE=1
 DO_START=1
 DO_TOKEN=1
 DO_OPEN=0
+DO_AVATAR=0
 ASSUME_YES=0
 DRY_RUN=0
 SERVICE_DIR=""
@@ -79,6 +81,7 @@ while [ $# -gt 0 ]; do
     --no-start) DO_START=0 ;;
     --no-token) DO_TOKEN=0 ;;
     --open) DO_OPEN=1 ;;
+    --with-avatar) DO_AVATAR=1 ;;
     --service-dir) SERVICE_DIR="${2:-}"; shift ;;
     --hermes-env) HERMES_ENV="${2:-}"; shift ;;
     --hermes-home) HERMES_HOME="${2:-}"; shift ;;
@@ -615,6 +618,13 @@ for tool in mia-open mia-close mia-volume mia-artists mia-learn mia-skill mia-ct
   add_file "$BIN_DIR/$tool"
 done
 info "tools installed into $BIN_DIR"
+
+# Optional 3D avatar sample (Ready Player Me, downloaded locally; not committed)
+if [ "$DO_AVATAR" = 1 ]; then
+  run "$SERVER_DIR/scripts/fetch-avatar-assets.sh" || warn "avatar download failed — run server/scripts/fetch-avatar-assets.sh later"
+else
+  info "3D avatar assets not fetched (run server/scripts/fetch-avatar-assets.sh or reinstall with --with-avatar)"
+fi
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) warn "$BIN_DIR is not on PATH — add it to your shell profile" ;;
@@ -732,6 +742,7 @@ $([ "$DRY_RUN" = 1 ] && printf '\033[1;33mDry run complete — nothing was chang
   tts deps    $TTS_DEPS
   learning    ${BIN_DIR:-$HOME/.local/bin}/mia-learn  ·  $HOME/.local/state/mia/learning.db
   autonomy    ${BIN_DIR:-$HOME/.local/bin}/mia-auto  ·  jobs, rules, health, adaptation
+  avatar      server/hud/avatar/models  ·  run server/scripts/fetch-avatar-assets.sh
   control     $HOME/.config/mia/control.json  ·  $HOME/.local/state/mia/control-audit.jsonl
   skills      $HERMES_HOME/skills (8 skills, validated)
   stt device  $(grep -m1 -E '^  device:' "$CFG" 2>/dev/null | awk '{print $2}')$( [ "$(grep -m1 -E '^  device:' "$CFG" 2>/dev/null | awk '{print $2}')" = "cpu" ] && echo " (GPU free for the LLM)" || echo " — if your LLM launcher says 'GPU busy', run: ./install.sh --stt-device cpu" )

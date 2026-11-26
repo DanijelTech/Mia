@@ -28,6 +28,12 @@ The current major addition is the **learning/knowledge core** and the
   panel plugin; `hermes-plugin/mia_autonomy/` exposes
   `system_status/profile/health/adapt/plans/run_plan/command/jobs/tasks/alerts`
   over `/api/autonomy/*`.
+- 3D avatar: `server/hud/avatar/avatar.js` (Three.js runtime, wardrobe, gaze,
+  breathing, blink, ARKit/viseme blending), `server/hud/avatar.html` (settings),
+  `server/avatar_visemes.py` (Slovenian → Oculus 15 timeline), and
+  `_send_tts_sentence()` emits `avatar_speech` before each sentence's PCM.
+  Models are downloaded by `server/scripts/fetch-avatar-assets.sh` and are
+  gitignored; the HUD keeps the 2D reactor as fallback.
 - `server/mia_core/autonomy/` — the mini sub-OS layer: adaptive machine
   profile/backends (`profile.py`), declarative conditions, plan execution with
   verification/retry/rollback/journal (`planner.py`), persistent jobs and rules
@@ -54,6 +60,7 @@ python3 -c "import sys; sys.path.insert(0,'server'); import mia_core; print(mia_
 ./skills/mia-companion/bin/mia-auto route "opomni me čez 5 minut, da pijem vodo"
 ./skills/mia-companion/bin/mia-auto jobs add "test" --every 3600 --plan '{"steps":[{"kind":"python","action":"noop"}]}'
 ./skills/mia-companion/bin/mia-auto tasks list
+server/scripts/fetch-avatar-assets.sh
 python3 server/scripts/calibrate_voice.py --help
 
 # installer / runtime
@@ -111,6 +118,7 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
 - `tests/test_capabilities.py` — catalog, detection, confirmation, learned.
 - `tests/test_voice_calibration.py` — strict wake, calibration state machine,
   Google answer/show split (numpy-dependent tests skip if numpy is absent).
+- `tests/test_avatar.py` — Slovenian viseme timeline, tags/moods, PCM duration.
 - `tests/test_autonomy.py` — profile/metrics, planner verification/retries/
   rollback/confirmation, scheduler edge triggers and events, health, alerts,
   intent router, service confirmations and `mia-auto` CLI.
@@ -143,6 +151,22 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   level trigger or every tick will repeat the action.
 - `mia-ctl net firewall` uses `dest` `fw_action` because `action` is already
   the subcommand name; keep that split.
+- Avatar speech must carry a viseme timeline (`avatar_speech`) before the
+  sentence PCM; `playChunk()` has only a 60 ms lookahead and no timestamps, so
+  never assume the client can infer phonemes from audio.
+- Slovenian lip sync is phoneme-driven (`espeak-ng` → Oculus 15 visemes) and
+  scaled to the actual sentence duration; HeadAudio is only a fallback/hybrid
+  refinement, not the primary source.
+- Do not add random gestures or a webcam-style "idle loop"; the behaviour
+  director must gate gaze/gesture/emotion on state, speech stress and user
+  intent. This is the difference between premium and robotic.
+- Avatar models are not committed. `server/hud/avatar/models/*.glb` is ignored;
+  use `fetch-avatar-assets.sh` or `install.sh --with-avatar`. Keep the
+  `ASSET_LICENSE` provenance in models/README.md.
+- The HUD avatar uses `/hud/avatar/vendor/three` (vendored, no CDN) and an
+  import map; keep `/hud` self-contained for offline use.
+- `avatar_speech` must precede the binary PCM of the same sentence; the HUD
+  anchors visemes to `window.MiaAudio.delay()`/playhead. Do not reorder.
 - Capabilities live in `server/mia_core/capabilities.py`; adding an item means
   also wiring `mark_learned()` if it has a `mia-ctl` action.
 - Never commit `server/config/server.yaml`, `server/logs/`, `server/voices/`,
@@ -166,3 +190,9 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   `next_run`; keep condition rules edge-triggered.
 - New natural command: add an anchored rule to `autonomy/intents.py` and a
   handler in `autonomy/service.py`; add it to the intent test table.
+- 3D avatar work: read `docs/AVATAR.md` first. The decision is Tier A
+  (TalkingHead/Three.js + licensed GLB) now, Audio2Face optional, MetaHuman +
+  Pixel Streaming later. Keep the current `#reactor` ring as a fallback; vendor
+  the runtime and assets locally (no CDN), record every asset licence, and add
+  `avatar_speech`/`avatar_state` to the existing voice WebSocket rather than a
+  second channel.

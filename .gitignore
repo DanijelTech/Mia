@@ -30,3 +30,6 @@ server/voices/
 
 # config backups
 server/config/server.yaml.bak*
+
+# 3D avatar assets are downloaded, not committed
+server/hud/avatar/models/*.glb
