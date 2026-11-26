@@ -319,7 +319,14 @@ URL="$SCHEME://$HOST"
 URL="$URL/hud/"
 
 TOKEN="${MIA_HUD_TOKEN:-${JARVIS_HUD_TOKEN:-}}"
-for envfile in "$HOME/.hermes/.env" "$REPO/server/.env"; do
+TOKEN_FILES=("$HOME/.hermes/.env" "$REPO/server/.env")
+# HERMES_HOME may be on another disk; install.sh writes a pointer for that.
+if [ -f "$HOME/.config/mia/hermes_home" ]; then
+  HERMES_HOME_PTR="$(cat "$HOME/.config/mia/hermes_home" 2>/dev/null)"
+  [ -n "$HERMES_HOME_PTR" ] && TOKEN_FILES=("$HERMES_HOME_PTR/.env" "${TOKEN_FILES[@]}")
+fi
+[ -n "${HERMES_HOME:-}" ] && TOKEN_FILES=("$HERMES_HOME/.env" "${TOKEN_FILES[@]}")
+for envfile in "${TOKEN_FILES[@]}"; do
   [ -n "$TOKEN" ] && break
   [ -f "$envfile" ] || continue
   TOKEN="$(grep -hE '^(MIA_HUD_TOKEN|JARVIS_HUD_TOKEN)=' "$envfile" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'"'"' ')"
