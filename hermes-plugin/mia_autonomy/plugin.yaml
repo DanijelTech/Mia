@@ -1,0 +1,19 @@
+name: mia_autonomy
+version: 1.0.0
+description: Machine profile, plans, scheduled jobs, reactive rules, health and resumable tasks for Mia
+provides_tools:
+  - system_status
+  - system_profile
+  - system_health
+  - system_adapt
+  - system_plans
+  - system_run_plan
+  - system_command
+  - system_jobs
+  - system_job_add
+  - system_job_remove
+  - system_tasks
+  - system_task_resume
+  - system_task_cancel
+  - system_alerts
+  - system_alert_ack

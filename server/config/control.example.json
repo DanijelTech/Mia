@@ -10,9 +10,18 @@
   "allow_power": true,
   "allow_process_kill": true,
   "allow_service_control": ["mia-", "hermes-"],
+  "allow_package_management": true,
+  "allow_network_control": true,
+  "allow_file_delete": true,
   "require_confirmation": true,
   "max_text_length": 5000,
   "max_file_scan": 20000,
+  "package_timeout": 1800,
   "audit": true,
-  "audit_max_mb": 20
+  "audit_max_mb": 20,
+  "autonomy": {
+    "allow_destructive": false,
+    "auto_install": false,
+    "auto_remediate": false
+  }
 }

@@ -107,6 +107,12 @@ CATALOG: list[dict] = [
     _item("system.battery", "system", "Baterija", "`mia-ctl sysinfo`", "baterija battery", "battery"),
     _item("system.uptime", "system", "Čas delovanja", "`mia-ctl sysinfo`", "uptime", "sysinfo"),
     _item("system.network", "system", "Omrežje", "`mia-ctl net status`", "omrežje network wifi ip", "net"),
+    _item("net.wifi.list", "system", "Seznam Wi-Fi omrežij", "`mia-ctl net wifi list`", "wifi omrežja seznam", "wifi"),
+    _item("net.wifi.connect", "system", "Povezava na Wi-Fi", "`mia-ctl net wifi connect <ssid>`", "wifi poveži connect", "wifi"),
+    _item("net.ping", "system", "Ping preverjanje", "`mia-ctl net ping <host>`", "ping omrežje", "ping"),
+    _item("net.dns", "system", "DNS strežniki", "`mia-ctl net dns`", "dns strežnik", "net"),
+    _item("net.ports", "system", "Odprta vrata", "`mia-ctl net ports`", "vrata ports", "net"),
+    _item("net.firewall", "security", "Požarni zid", "`mia-ctl net firewall status`", "požarni zid firewall", "firewall"),
     _item("system.displays", "system", "Zasloni in ločljivosti", "`mia-ctl displays list`", "zaslon display", "displays"),
     _item("system.audio_devices", "system", "Zvočne naprave", "`mia-ctl audio devices`", "zvok audio naprave", "audio_devices"),
     _item("system.process.list", "system", "Seznam procesov", "`mia-ctl process list`", "procesi process", "process"),
@@ -116,12 +122,30 @@ CATALOG: list[dict] = [
     _item("system.service.start", "system", "Zagon storitve", "`mia-ctl service start <unit>`", "storitev service", "service"),
     _item("system.service.stop", "system", "Ustavitev storitve", "`mia-ctl service stop <unit> --yes`", "storitev service", "service"),
     _item("system.service.restart", "system", "Ponovni zagon storitve", "`mia-ctl service restart <unit> --yes`", "storitev service", "service"),
+    _item("system.time", "system", "Ura in časovni pas", "`mia-ctl sys time`", "ura čas time", "time"),
+    _item("system.timezone", "system", "Nastavi časovni pas", "`mia-ctl sys set-timezone <pas> --yes`", "časovni pas timezone", "time"),
+    _item("system.hostname", "system", "Ime računalnika", "`mia-ctl sys hostname`", "ime hostname", "time"),
+    _item("system.users", "system", "Prijavljeni uporabniki", "`mia-ctl sys users`", "uporabniki users", "time"),
+    _item("system.locale", "system", "Jezik in locale", "`mia-ctl sys locale`", "jezik locale", "time"),
+    _item("system.power_profile", "system", "Profil porabe energije", "`mia-ctl sys power-profile`", "poraba power profil", "power_profile"),
 
     # ----------------------------------------------------------------- files
     _item("files.search", "files", "Iskanje datotek", "`mia-ctl files search <q> --root <dir>`", "datoteka iskanje file", "files"),
     _item("files.recent", "files", "Nedavne datoteke", "`mia-ctl files recent`", "nedavne datoteke recent", "files"),
     _item("files.open", "files", "Odpri datoteko", "`mia-ctl files open <pot>`", "odpri datoteko file", "files"),
     _item("files.reveal", "files", "Pokaži datoteko v upravitelju", "`mia-ctl files reveal <pot>`", "pokaži datoteko reveal", "files"),
+    _item("files.info", "files", "Podrobnosti datoteke", "`mia-ctl files info <pot>`", "datoteka info velikost", "files"),
+    _item("files.mkdir", "files", "Ustvari mapo", "`mia-ctl files mkdir <pot>`", "mapa ustvari mkdir", "files"),
+    _item("files.copy", "files", "Kopiraj datoteko ali mapo", "`mia-ctl files copy <iz> <v>`", "kopiraj copy", "files"),
+    _item("files.move", "files", "Premakni datoteko ali mapo", "`mia-ctl files move <iz> <v> --yes`", "premakni move", "files"),
+    _item("files.rename", "files", "Preimenuj", "`mia-ctl files rename <iz> <v> --yes`", "preimenuj rename", "files"),
+    _item("files.trash", "files", "Vrzi v smeti (XDG koš)", "`mia-ctl files trash <pot> --yes`", "smeti trash", "files"),
+    _item("files.delete", "files", "Trajno izbriši", "`mia-ctl files delete <pot> --yes`", "izbriši delete", "files"),
+    _item("files.archive", "files", "Stisni v arhiv", "`mia-ctl files archive <iz> <arhiv>`", "arhiv stisni zip", "archive"),
+    _item("files.extract", "files", "Razširi arhiv", "`mia-ctl files extract <arhiv> <v>`", "razširi arhiv extract", "archive"),
+    _item("files.du", "files", "Velikost mape", "`mia-ctl files du <pot>`", "velikost mapa du", "files"),
+    _item("files.find_large", "files", "Poišči velike datoteke", "`mia-ctl files find-large`", "velike datoteke prostor", "files"),
+    _item("files.duplicates", "files", "Poišči dvojnike", "`mia-ctl files duplicates`", "dvojniki duplicates", "files"),
 
     # --------------------------------------------------------------- browser
     _item("browser.open", "browser", "Odpri URL v brskalniku", "`mia-ctl open <url>` / `mia-open`", "odpri brskalnik url", "open"),
@@ -143,6 +167,24 @@ CATALOG: list[dict] = [
     _item("security.policy", "security", "Politika nadzora", "`mia-ctl policy show`", "politika policy", "policy"),
     _item("security.audit", "security", "Revizija dejanj", "`mia-ctl audit tail`", "revizija audit", "audit"),
     _item("security.redaction", "security", "Prekrivanje skrivnosti", "`mia_core/privacy.py`", "skrivnosti redaction", "knowledge"),
+
+    # -------------------------------------------------------------- packages
+    _item("pkg.manager", "system", "Upravitelj paketov", "`mia-ctl pkg manager`", "paketi manager apt", "pkg"),
+    _item("pkg.search", "system", "Iskanje paketov", "`mia-ctl pkg search <q>`", "paket iskanje search", "pkg"),
+    _item("pkg.install", "system", "Namestitev paketov", "`mia-ctl pkg install <paket> --yes`", "namesti paket install", "pkg"),
+    _item("pkg.remove", "system", "Odstranitev paketov", "`mia-ctl pkg remove <paket> --yes`", "odstrani paket remove", "pkg"),
+    _item("pkg.update", "system", "Osvežitev seznamov", "`mia-ctl pkg update --yes`", "posodobi pakete update", "pkg"),
+    _item("pkg.upgrade", "system", "Posodobitev sistema", "`mia-ctl pkg upgrade --yes`", "posodobi sistem upgrade", "pkg"),
+    _item("pkg.upgradable", "system", "Pregled posodobitev", "`mia-ctl pkg list-upgradable`", "posodobitve pregled", "pkg"),
+
+    # -------------------------------------------------------------- autonomy
+    _item("autonomy.profile", "autonomy", "Samodejno zaznavanje stroja", "`mia-auto profile`", "profil stroj zaznaj", "autonomy"),
+    _item("autonomy.adapt", "autonomy", "Prilagoditev manjkajočih orodij", "`mia-auto adapt`", "prilagoditev namestitev", "autonomy"),
+    _item("autonomy.plan", "autonomy", "Načrti z več koraki", "`mia-auto plan --list`", "načrt plan koraki", "autonomy"),
+    _item("autonomy.schedule", "autonomy", "Opomniki in urnik", "`mia-auto jobs add`", "urnik opomnik job", "autonomy"),
+    _item("autonomy.rule", "autonomy", "Pravila na dogodke", "`mia-auto jobs add --kind rule`", "pravilo rule pogoj", "autonomy"),
+    _item("autonomy.health", "autonomy", "Zdravstveni nadzor", "`mia-auto health`", "zdravje health nadzor", "autonomy"),
+    _item("autonomy.tasks", "autonomy", "Dnevnik nalog z nadaljevanjem", "`mia-auto tasks list`", "naloge tasks dnevnik", "autonomy"),
 ]
 
 
@@ -257,6 +299,27 @@ def _detect(item: dict, extra: dict) -> tuple[str, str]:
         return ("detected", tool) if tool else ("unsupported", "install xdg-utils")
     if detect == "google":
         return "detected", "server intent + web_search"
+    if detect == "archive":
+        tool = _first_tool("tar", "zip", "unzip")
+        return ("detected", tool) if tool else ("unsupported", "install tar/zip")
+    if detect == "pkg":
+        tool = _first_tool("apt-get", "dnf", "pacman", "zypper", "apk", "brew")
+        return ("detected", tool) if tool else ("unsupported", "no package manager")
+    if detect == "wifi":
+        tool = _first_tool("nmcli", "iw")
+        return ("detected", tool) if tool else ("unsupported", "install network-manager")
+    if detect == "ping":
+        return ("detected", "ping") if _has("ping") else ("unsupported", "install iputils-ping")
+    if detect == "firewall":
+        tool = _first_tool("ufw", "firewall-cmd", "nft")
+        return ("detected", tool) if tool else ("unsupported", "install ufw or firewalld")
+    if detect == "power_profile":
+        return ("detected", "powerprofilesctl") if _has("powerprofilesctl") else (
+            "unsupported", "install power-profiles-daemon")
+    if detect == "time":
+        return "detected", platform.system()
+    if detect == "autonomy":
+        return "detected", "mia_core.autonomy"
     if detect == "hud":
         for base in (Path.home() / ".hermes" / "plugins", Path("hermes-plugin")):
             if (base / "hud_display").is_dir():
@@ -352,7 +415,11 @@ def mark_learned(store: Store, action: str, ok: bool = True) -> None:
         "resources": "system.resources",
         "audio devices": "system.audio_devices",
         "net": "system.network",
+        "net wifi": "net.wifi",
         "open": "browser.open",
+        "pkg": "pkg",
+        "sys": "system",
+        "autonomy": "autonomy",
     }
     base = mapping.get(action) or mapping.get(action.split(" ", 1)[0])
     if not base:
@@ -360,7 +427,8 @@ def mark_learned(store: Store, action: str, ok: bool = True) -> None:
     candidates = [base]
     if base in ("audio.volume", "display.brightness", "desktop.windows",
                 "desktop.apps", "desktop.clipboard", "desktop.media",
-                "desktop.power", "system.process", "system.service", "files"):
+                "desktop.power", "system.process", "system.service", "files",
+                "net.wifi", "pkg", "system", "autonomy"):
         suffix = action.split(" ", 1)[1] if " " in action else ""
         candidates.insert(0, f"{base}.{suffix}")
     for cap_id in candidates:

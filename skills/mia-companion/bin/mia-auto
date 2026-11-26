@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+"""mia-auto — Mia's autonomy CLI (profile, plans, jobs, rules, health).
+
+Locates the Mia repository through $MIA_HOME, ~/.config/mia/home (written by
+install.sh), or by walking up from this script, then runs mia_core.autonomy.cli.
+"""
+
+import os
+import sys
+from pathlib import Path
+
+
+def find_home() -> Path | None:
+    env = os.environ.get("MIA_HOME")
+    if env:
+        candidate = Path(env).expanduser()
+        if (candidate / "server" / "mia_core").is_dir():
+            return candidate
+    pointer = Path.home() / ".config" / "mia" / "home"
+    try:
+        candidate = Path(pointer.read_text(encoding="utf-8").strip()).expanduser()
+        if (candidate / "server" / "mia_core").is_dir():
+            return candidate
+    except OSError:
+        pass
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "server" / "mia_core").is_dir():
+            return parent
+    for guess in (Path.home() / "Mia", Path.home() / "mia", Path("/opt/Mia")):
+        if (guess / "server" / "mia_core").is_dir():
+            return guess
+    return None
+
+
+def main() -> int:
+    home = find_home()
+    if home is None:
+        print("mia-auto: cannot find the Mia repository; set MIA_HOME", file=sys.stderr)
+        return 3
+    sys.path.insert(0, str(home / "server"))
+    from mia_core.autonomy.cli import main as cli_main
+    return cli_main()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

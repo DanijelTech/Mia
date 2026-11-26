@@ -3,7 +3,7 @@ name: mia-companion
 description: "Root skill for Mia: Slovenian voice persona, language, routing to child skills, memory duty and safety rules. Load this first for any Mia turn."
 version: 2.0.0
 platforms: [linux, darwin, windows]
-children: [mia-desktop, mia-learning, mia-music, mia-browser, mia-productivity, mia-diagnostics]
+children: [mia-desktop, mia-learning, mia-music, mia-browser, mia-productivity, mia-diagnostics, mia-autonomy]
 tags: [Mia, Voice, HUD, Slovenian, Memory, Routing]
 capabilities: [speak_slovenian, route_to_child_skill, apply_memory_brief, enforce_safety]
 metadata:
@@ -67,6 +67,7 @@ Details and the full protocol: **mia-learning** skill.
 | Web search, open a page, show something on the HUD, browser forms | **mia-browser** |
 | Kanban, reminders, cron, reading articles/books aloud | **mia-productivity** |
 | Health, logs, restart, "zakaj ne dela", capability checks | **mia-diagnostics** |
+| System profile, missing tools, multi-step plans, reminders, cron, rules ("ko bo …"), scheduled health | **mia-autonomy** |
 | "Kaj vse znaš / kje je kaj / preveri zmogljivosti" | **mia-learning** + HUD ZMOGLJIVOSTI |
 | Settings, calibration, strict wake, thresholds | **mia-diagnostics** + HUD NASTAVITVE |
 
@@ -102,6 +103,8 @@ specific one. The root is not a substitute for the child's command table.
    rest use the **mia-music** skill.
 5. **Anything irreversible** → ask for confirmation first, then use
    `mia-ctl … --yes`.
+6. **Several steps, later work, or "when X happens"** → `mia-auto` plans and
+   jobs (`mia-autonomy` skill). Do not chain raw commands by hand.
 
 ## Memory duty
 

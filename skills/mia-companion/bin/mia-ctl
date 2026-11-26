@@ -71,11 +71,64 @@ DEFAULT_POLICY: dict[str, Any] = {
     "allow_power": True,
     "allow_process_kill": True,
     "allow_service_control": ["mia-", "hermes-"],
+    "allow_package_management": True,
+    "allow_network_control": True,
+    "allow_file_delete": True,
     "require_confirmation": True,
     "max_text_length": 5000,
     "max_file_scan": 20000,
+    "package_timeout": 1800,
     "audit": True,
     "audit_max_mb": 20,
+    "autonomy": {
+        "allow_destructive": False,
+        "auto_install": False,
+        "auto_remediate": False,
+    },
+}
+
+
+PKG_MANAGERS: dict[str, dict[str, Any]] = {
+    "apt": {"bin": "apt-get", "install": ["apt-get", "install", "-y",
+                                          "--no-install-recommends"],
+            "remove": ["apt-get", "remove", "-y"],
+            "update": ["apt-get", "update"],
+            "upgrade": ["apt-get", "upgrade", "-y"],
+            "clean": ["apt-get", "autoremove", "-y"],
+            "list_upgradable": ["apt", "list", "--upgradable"],
+            "search": ["apt-cache", "search"], "info": ["apt-cache", "show"]},
+    "dnf": {"bin": "dnf", "install": ["dnf", "install", "-y"],
+            "remove": ["dnf", "remove", "-y"], "update": ["dnf", "makecache"],
+            "upgrade": ["dnf", "upgrade", "-y"],
+            "clean": ["dnf", "autoremove", "-y"],
+            "list_upgradable": ["dnf", "list", "--upgrades"],
+            "search": ["dnf", "search"], "info": ["dnf", "info"]},
+    "pacman": {"bin": "pacman", "install": ["pacman", "-S", "--noconfirm"],
+               "remove": ["pacman", "-R", "--noconfirm"],
+               "update": ["pacman", "-Sy"],
+               "upgrade": ["pacman", "-Su", "--noconfirm"],
+               "clean": ["pacman", "-Rns", "--noconfirm"],
+               "list_upgradable": ["pacman", "-Qu"],
+               "search": ["pacman", "-Ss"], "info": ["pacman", "-Si"]},
+    "zypper": {"bin": "zypper",
+               "install": ["zypper", "--non-interactive", "install"],
+               "remove": ["zypper", "--non-interactive", "remove"],
+               "update": ["zypper", "refresh"],
+               "upgrade": ["zypper", "--non-interactive", "update"],
+               "clean": ["zypper", "--non-interactive", "removeorphans"],
+               "list_upgradable": ["zypper", "list-updates"],
+               "search": ["zypper", "--non-interactive", "search"],
+               "info": ["zypper", "info"]},
+    "apk": {"bin": "apk", "install": ["apk", "add"],
+            "remove": ["apk", "del"], "update": ["apk", "update"],
+            "upgrade": ["apk", "upgrade"], "clean": ["apk", "del"],
+            "list_upgradable": ["apk", "version", "-l", "<"],
+            "search": ["apk", "search"], "info": ["apk", "info"]},
+    "brew": {"bin": "brew", "install": ["brew", "install"],
+             "remove": ["brew", "uninstall"], "update": ["brew", "update"],
+             "upgrade": ["brew", "upgrade"], "clean": ["brew", "cleanup"],
+             "list_upgradable": ["brew", "outdated"],
+             "search": ["brew", "search"], "info": ["brew", "info"]},
 }
 
 
@@ -268,8 +321,15 @@ def redact(text: str, limit: int = 400) -> str:
 
 
 def _audit_args(args: argparse.Namespace) -> list[str]:
-    raw = getattr(args, "argv", None) or sys.argv[1:]
-    return [redact(a) for a in raw]
+    raw = [redact(a) for a in (getattr(args, "argv", None) or sys.argv[1:])]
+    # Wi-Fi passwords are positional and usually too short for the generic
+    # secret regex; never let one reach the audit log.
+    cleaned = [a for a in raw if a not in ("--json", "--dry-run", "--yes", "-y",
+                                           "--quiet")]
+    if len(cleaned) >= 5 and cleaned[:3] == ["net", "wifi", "connect"]:
+        cleaned[4] = "[REDACTED]"
+        return cleaned
+    return raw
 
 
 def audit(action: str, args: list[str], ok: bool, rc: int, ms: float,
@@ -1194,7 +1254,8 @@ def service_action(action: str, unit: str, system: bool = False) -> dict:
         return {"unit": unit, "active": False, "output": (out or err).strip()}
     if rc != 0:
         raise CtlError(f"systemctl {action} {unit} failed: {(err or out).strip()[:300]}")
-    return {"unit": unit, "action": action, "output": out.strip()}
+    return {"unit": unit, "action": action, "active": rc == 0,
+            "output": out.strip()}
 
 
 # ------------------------------------------------------------------- files
@@ -1297,6 +1358,388 @@ def files_reveal(path: str) -> dict:
     return {"revealed": str(target)}
 
 
+def _tree_size(path: Path) -> int:
+    total = 0
+    if path.is_file():
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
+    for base, dirs, files in os.walk(path, followlinks=False):
+        dirs[:] = [d for d in dirs if not (Path(base) / d).is_symlink()]
+        for name in files:
+            try:
+                total += (Path(base) / name).stat().st_size
+            except OSError:
+                continue
+    return total
+
+
+def files_info(path: str) -> dict:
+    target = resolve_path(path, must_exist=True)
+    try:
+        stat = target.stat()
+    except OSError as exc:
+        raise CtlError(f"cannot stat {target}: {exc}") from exc
+    import stat as statmod
+    return {
+        "path": str(target),
+        "type": "directory" if target.is_dir() else
+                "symlink" if target.is_symlink() else "file",
+        "size": stat.st_size,
+        "size_human": _human_size(stat.st_size),
+        "mode": statmod.filemode(stat.st_mode),
+        "uid": stat.st_uid,
+        "gid": stat.st_gid,
+        "mtime": stat.st_mtime,
+        "is_dir": target.is_dir(),
+        "children": len(list(target.iterdir())) if target.is_dir() else 0,
+        "tree_size": _tree_size(target) if target.is_dir() else stat.st_size,
+    }
+
+
+def _human_size(size: float) -> str:
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(size) < 1024 or unit == "TB":
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TB"
+
+
+def files_mkdir(path: str) -> dict:
+    target = resolve_path(path)
+    if target.exists() and not target.is_dir():
+        raise CtlError(f"a file already exists: {target}")
+    target.mkdir(parents=True, exist_ok=True)
+    return {"created": str(target), "is_dir": True}
+
+
+def _copy_move(src: str, dst: str, move: bool, overwrite: bool) -> dict:
+    source = resolve_path(src, must_exist=True)
+    target = resolve_path(dst)
+    if target.exists():
+        if not overwrite:
+            raise CtlError(f"target exists (use --overwrite): {target}")
+        if target.is_dir() and not source.is_dir():
+            raise CtlError(f"cannot overwrite directory with file: {target}")
+        if target.is_dir():
+            target = target / source.name
+            if target.exists() and not overwrite:
+                raise CtlError(f"target exists (use --overwrite): {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if DRY:
+        return {"dry_run": True, "would": "move" if move else "copy",
+                "src": str(source), "dst": str(target)}
+    try:
+        if move:
+            if target.exists() and overwrite:
+                if target.is_dir():
+                    shutil.rmtree(target, ignore_errors=True)
+                else:
+                    target.unlink()
+            shutil.move(str(source), str(target))
+        else:
+            if source.is_dir():
+                if target.exists():
+                    shutil.rmtree(target, ignore_errors=True)
+                shutil.copytree(source, target, symlinks=True)
+            else:
+                shutil.copy2(source, target)
+    except OSError as exc:
+        raise CtlError(f"{'move' if move else 'copy'} failed: {exc}") from exc
+    return {"src": str(source), "dst": str(target),
+            "operation": "move" if move else "copy",
+            "bytes": _tree_size(target)}
+
+
+def files_copy(src: str, dst: str, overwrite: bool = False) -> dict:
+    return _copy_move(src, dst, False, overwrite)
+
+
+def files_move(src: str, dst: str, overwrite: bool = False) -> dict:
+    require_yes("moving files")
+    return _copy_move(src, dst, True, overwrite)
+
+
+def files_rename(src: str, dst: str) -> dict:
+    require_yes("renaming files")
+    source = resolve_path(src, must_exist=True)
+    target = resolve_path(dst)
+    if target.exists() and target != source:
+        raise CtlError(f"target exists: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if DRY:
+        return {"dry_run": True, "would": "rename", "src": str(source),
+                "dst": str(target)}
+    try:
+        source.rename(target)
+    except OSError as exc:
+        raise CtlError(f"rename failed: {exc}") from exc
+    return {"src": str(source), "dst": str(target), "operation": "rename"}
+
+
+def _trash_root() -> Path:
+    base = Path(os.environ.get("XDG_DATA_HOME", HOME / ".local" / "share"))
+    return base / "Trash"
+
+
+def files_trash(paths: list[str]) -> dict:
+    require_yes("moving files to trash")
+    import urllib.parse
+    root = _trash_root()
+    files_dir = root / "files"
+    info_dir = root / "info"
+    if not DRY:
+        files_dir.mkdir(parents=True, exist_ok=True)
+        info_dir.mkdir(parents=True, exist_ok=True)
+    sources = []
+    for raw in paths:
+        source = resolve_path(raw, must_exist=True)
+        if root in source.parents or source == root:
+            raise Denied(f"cannot trash the trash itself: {source}")
+        sources.append(source)
+    trashed = []
+    for source in sources:
+        name = source.name or "item"
+        candidate = name
+        counter = 1
+        while (files_dir / candidate).exists() or (info_dir / (candidate + ".trashinfo")).exists():
+            stem = Path(name).stem
+            suffix = Path(name).suffix
+            candidate = f"{stem}.{counter}{suffix}"
+            counter += 1
+        if DRY:
+            trashed.append({"path": str(source), "would_trash": str(files_dir / candidate)})
+            continue
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+        info_text = ("[Trash Info]\n"
+                     f"Path={urllib.parse.quote(str(source))}\n"
+                     f"DeletionDate={stamp}\n")
+        (info_dir / (candidate + ".trashinfo")).write_text(info_text, encoding="utf-8")
+        try:
+            shutil.move(str(source), str(files_dir / candidate))
+        except OSError as exc:
+            try:
+                (info_dir / (candidate + ".trashinfo")).unlink()
+            except OSError:
+                pass
+            raise CtlError(f"trash failed: {exc}") from exc
+        trashed.append({"path": str(source), "trashed_to": str(files_dir / candidate),
+                        "size": _tree_size(files_dir / candidate)})
+    return {"trashed": trashed, "count": len(trashed)}
+
+
+def files_delete(paths: list[str], recursive: bool = False) -> dict:
+    require_yes("permanent deletion")
+    if not POLICY.get("allow_file_delete", True):
+        raise Denied("file deletion is disabled by policy")
+    targets = []
+    for raw in paths:
+        target = resolve_path(raw, must_exist=True)
+        if target.is_dir() and not recursive:
+            raise CtlError(f"directory needs --recursive: {target}")
+        targets.append(target)
+    removed = []
+    freed = 0
+    for target in targets:
+        size = _tree_size(target)
+        if DRY:
+            removed.append({"path": str(target), "would_delete": True, "size": size})
+            continue
+        try:
+            if target.is_dir() and not target.is_symlink():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+        except OSError as exc:
+            raise CtlError(f"delete failed: {exc}") from exc
+        removed.append({"path": str(target), "size": size})
+        freed += size
+    return {"deleted": removed, "count": len(removed), "freed_bytes": freed}
+
+
+def files_archive(src: str, dest: str, overwrite: bool = False) -> dict:
+    source = resolve_path(src, must_exist=True)
+    target = resolve_path(dest)
+    if target.exists() and not overwrite:
+        raise CtlError(f"target exists (use --overwrite): {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    name = target.name
+    base = target.with_suffix("") if target.suffix in (".gz", ".xz", ".bz2") else target
+    if DRY:
+        return {"dry_run": True, "would": "archive", "src": str(source),
+                "dst": str(target)}
+    try:
+        if name.endswith(".zip"):
+            shutil.make_archive(str(target.with_suffix("")), "zip",
+                                root_dir=str(source.parent), base_dir=source.name)
+        elif name.endswith((".tar.gz", ".tgz")):
+            shutil.make_archive(str(base.with_suffix("")), "gztar",
+                                root_dir=str(source.parent), base_dir=source.name)
+        elif name.endswith((".tar.xz", ".txz")):
+            shutil.make_archive(str(base.with_suffix("")), "xztar",
+                                root_dir=str(source.parent), base_dir=source.name)
+        elif name.endswith(".tar"):
+            shutil.make_archive(str(target.with_suffix("")), "tar",
+                                root_dir=str(source.parent), base_dir=source.name)
+        else:
+            raise CtlError("archive name must end in .zip, .tar, .tar.gz or .tar.xz")
+    except (OSError, shutil.Error) as exc:
+        raise CtlError(f"archive failed: {exc}") from exc
+    if not target.exists():
+        # make_archive always appends .tar.gz/.tar.xz; honour .tgz/.txz too
+        for suffix in (".tar.gz", ".tar.xz"):
+            generated = Path(str(base.with_suffix("")) + suffix)
+            if generated.exists():
+                generated.rename(target)
+                break
+    return {"src": str(source), "dst": str(target),
+            "bytes": target.stat().st_size if target.exists() else 0}
+
+
+def _safe_extract_path(dest: Path, member: str) -> Path:
+    candidate = (dest / member).resolve()
+    root = dest.resolve()
+    if candidate != root and root not in candidate.parents:
+        raise Denied(f"archive member escapes destination: {member}")
+    return candidate
+
+
+def files_extract(archive: str, dest: str) -> dict:
+    import tarfile
+    import zipfile
+    source = resolve_path(archive, must_exist=True)
+    target = resolve_path(dest)
+    target.mkdir(parents=True, exist_ok=True)
+    written = 0
+    try:
+        if source.name.endswith(".zip"):
+            with zipfile.ZipFile(source) as zf:
+                for member in zf.namelist():
+                    _safe_extract_path(target, member)
+                if not DRY:
+                    zf.extractall(target)
+                    written = len(zf.namelist())
+        elif source.suffix in (".tar", ".gz", ".tgz", ".xz", ".bz2"):
+            with tarfile.open(source) as tf:
+                members = tf.getmembers()
+                for member in members:
+                    _safe_extract_path(target, member.name)
+                    if member.issym() or member.islnk():
+                        link = Path(member.linkname)
+                        if link.is_absolute() or ".." in link.parts:
+                            raise Denied(f"unsafe link in archive: {member.name}")
+                if not DRY:
+                    try:
+                        tf.extractall(target, filter="data")
+                    except TypeError:
+                        tf.extractall(target)
+                    written = len(members)
+        else:
+            raise Unsupported("supported archives: .zip, .tar, .tar.gz, .tar.xz, .tgz")
+    except (OSError, tarfile.TarError, zipfile.BadZipFile) as exc:
+        raise CtlError(f"extract failed: {exc}") from exc
+    return {"archive": str(source), "dest": str(target),
+            "entries": written, "dry_run": DRY}
+
+
+def files_du(path: str) -> dict:
+    target = resolve_path(path, must_exist=True)
+    if target.is_file():
+        size = target.stat().st_size
+        return {"path": str(target), "bytes": size, "size_human": _human_size(size)}
+    entries = []
+    total = 0
+    try:
+        children = list(target.iterdir())
+    except OSError as exc:
+        raise CtlError(f"cannot list {target}: {exc}") from exc
+    for child in children:
+        size = _tree_size(child)
+        total += size
+        entries.append({"name": child.name, "bytes": size})
+    entries.sort(key=lambda item: item["bytes"], reverse=True)
+    return {"path": str(target), "bytes": total,
+            "size_human": _human_size(total), "entries": entries[:25]}
+
+
+def files_find_large(root: str | None, min_mb: float = 200,
+                     limit: int = 30) -> list[dict]:
+    base = resolve_path(root or str(HOME), must_exist=True)
+    cutoff = float(min_mb) * 1024 * 1024
+    max_scan = int(POLICY.get("max_file_scan", 20000))
+    found = []
+    scanned = 0
+    for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
+        current = Path(dirpath)
+        dirnames[:] = [d for d in dirnames if not _skip_path(current / d)
+                       and not d.startswith(".") and d not in ("node_modules", ".git")]
+        for name in filenames:
+            path = current / name
+            scanned += 1
+            if scanned > max_scan:
+                break
+            try:
+                size = path.stat().st_size
+            except OSError:
+                continue
+            if size >= cutoff:
+                found.append({"path": str(path), "size": size,
+                              "size_human": _human_size(size)})
+        if scanned > max_scan:
+            break
+    found.sort(key=lambda item: item["size"], reverse=True)
+    return found[:limit]
+
+
+def files_duplicates(root: str | None, limit: int = 20,
+                     min_mb: float = 1) -> list[dict]:
+    import hashlib
+    base = resolve_path(root or str(HOME), must_exist=True)
+    cutoff = float(min_mb) * 1024 * 1024
+    by_size: dict[int, list[Path]] = {}
+    scanned = 0
+    max_scan = int(POLICY.get("max_file_scan", 20000))
+    for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
+        current = Path(dirpath)
+        dirnames[:] = [d for d in dirnames if not _skip_path(current / d)
+                       and not d.startswith(".") and d not in ("node_modules", ".git")]
+        for name in filenames:
+            path = current / name
+            scanned += 1
+            if scanned > max_scan:
+                break
+            try:
+                size = path.stat().st_size
+            except OSError:
+                continue
+            if size >= cutoff:
+                by_size.setdefault(size, []).append(path)
+        if scanned > max_scan:
+            break
+    groups = []
+    for size, paths in by_size.items():
+        if len(paths) < 2:
+            continue
+        hashes: dict[str, list[str]] = {}
+        for path in paths:
+            digest = hashlib.sha256()
+            try:
+                with path.open("rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        digest.update(chunk)
+            except OSError:
+                continue
+            hashes.setdefault(digest.hexdigest(), []).append(str(path))
+        for digest, same in hashes.items():
+            if len(same) > 1:
+                groups.append({"sha256": digest, "size": size,
+                               "size_human": _human_size(size),
+                               "paths": same, "wasted": size * (len(same) - 1)})
+    groups.sort(key=lambda item: item["wasted"], reverse=True)
+    return groups[:limit]
+
+
 # --------------------------------------------------------------------- net
 def _local_ips() -> list[str]:
     ips = set()
@@ -1340,6 +1783,291 @@ def net_status() -> dict:
         _, out, _ = sh(["ipconfig"], check=False)
         info["ipconfig"] = out.strip()[:2000]
     return info
+
+
+def net_wifi_list() -> list[dict]:
+    require("nmcli", "install network-manager")
+    rc, out, err = run(["nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY",
+                        "dev", "wifi", "list", "--rescan", "yes"], timeout=25)
+    if rc != 0:
+        raise CtlError(f"nmcli failed: {(err or out).strip()}")
+    found: dict[str, dict] = {}
+    for line in out.splitlines():
+        parts = line.split(":")
+        if len(parts) < 4 or not parts[1]:
+            continue
+        used, ssid, signal, security = parts[0], parts[1], parts[2], ":".join(parts[3:])
+        try:
+            strength = int(signal)
+        except ValueError:
+            strength = 0
+        key = ssid
+        row = {"ssid": ssid, "signal": strength, "security": security,
+               "active": used.strip() == "*"}
+        if key not in found or strength > found[key]["signal"]:
+            found[key] = row
+    rows = sorted(found.values(), key=lambda r: (-int(r["active"]), -r["signal"]))
+    return rows
+
+
+def net_wifi_connect(ssid: str, password: str = "") -> dict:
+    if not POLICY.get("allow_network_control", True):
+        raise Denied("network control is disabled by policy")
+    if not ssid:
+        raise CtlError("SSID is required")
+    require("nmcli", "install network-manager")
+    argv = ["nmcli", "dev", "wifi", "connect", ssid]
+    if password:
+        argv += ["password", password]
+    rc, out, err = run(argv, timeout=45)
+    if rc != 0:
+        raise CtlError(f"Wi-Fi connection failed: {(err or out).strip()}")
+    return {"connected": ssid, "output": out.strip()[-500:]}
+
+
+def net_wifi_disconnect() -> dict:
+    if not POLICY.get("allow_network_control", True):
+        raise Denied("network control is disabled by policy")
+    require("nmcli", "install network-manager")
+    rc, out, _ = run(["nmcli", "-t", "-f", "DEVICE,TYPE", "dev", "status"], timeout=10)
+    device = ""
+    for line in out.splitlines():
+        parts = line.split(":")
+        if len(parts) >= 2 and parts[1] == "wifi":
+            device = parts[0]
+            break
+    if not device:
+        raise Unsupported("no Wi-Fi device found")
+    rc, out, err = run(["nmcli", "dev", "disconnect", device], timeout=20)
+    if rc != 0:
+        raise CtlError(f"disconnect failed: {(err or out).strip()}")
+    return {"disconnected": device}
+
+
+def net_ping(host: str, count: int = 4) -> dict:
+    if not re.match(r"^[A-Za-z0-9_.:\-]+$", host or ""):
+        raise CtlError("invalid host")
+    count = max(1, min(20, int(count)))
+    rc, out, _ = run(["ping", "-c", str(count), "-W", "2", host],
+                     timeout=max(10, count * 3))
+    lines = [line for line in out.splitlines() if line.strip()]
+    return {"host": host, "reachable": rc == 0,
+            "output": "\n".join(lines[-6:]), "rc": rc}
+
+
+def net_dns() -> dict:
+    servers: list[str] = []
+    search: list[str] = []
+    if which("resolvectl"):
+        rc, out, _ = run(["resolvectl", "status"], timeout=5)
+        if rc == 0:
+            for line in out.splitlines():
+                low = line.strip().lower()
+                if low.startswith(("current dns server", "dns servers:")):
+                    _, _, rest = line.partition(":")
+                    servers.extend(x for x in rest.split() if x)
+                elif low.startswith("dns domain:"):
+                    _, _, rest = line.partition(":")
+                    search.extend(rest.split())
+    if not servers:
+        try:
+            for line in Path("/etc/resolv.conf").read_text(encoding="utf-8").splitlines():
+                parts = line.split()
+                if len(parts) >= 2 and parts[0] == "nameserver":
+                    servers.append(parts[1])
+                elif len(parts) >= 2 and parts[0] == "search":
+                    search.extend(parts[1:])
+        except OSError:
+            pass
+    return {"nameservers": servers, "search": search}
+
+
+def net_ports() -> dict:
+    if which("ss"):
+        rc, out, _ = run(["ss", "-tulpn"], timeout=8)
+    elif which("netstat"):
+        rc, out, _ = run(["netstat", "-tulpn"], timeout=8)
+    else:
+        raise Unsupported("install iproute2 (ss) or net-tools (netstat)")
+    lines = [line for line in out.splitlines() if line.strip()]
+    listeners = [line for line in lines[1:] if "LISTEN" in line or "UNCONN" in line]
+    return {"listeners": listeners[:80], "count": len(listeners)}
+
+
+def net_firewall(action: str) -> dict:
+    require("ufw" if which("ufw") else "firewall-cmd" if which("firewall-cmd")
+            else "nft", "install ufw or firewalld")
+    if action in ("enable", "disable") and not POLICY.get("allow_network_control", True):
+        raise Denied("network control is disabled by policy")
+    if which("ufw"):
+        if action == "status":
+            rc, out, _ = run(["ufw", "status", "verbose"], timeout=8)
+            return {"backend": "ufw", "active": "Status: active" in out,
+                    "output": out.strip()[:2000]}
+        if action == "enable":
+            require_yes("enabling the firewall")
+            rc, out, err = run(["ufw", "--force", "enable"], timeout=20)
+        elif action == "disable":
+            require_yes("disabling the firewall")
+            rc, out, err = run(["ufw", "disable"], timeout=20)
+        else:
+            raise CtlError(f"unknown firewall action: {action}")
+        if rc != 0:
+            raise CtlError(f"ufw {action} failed: {(err or out).strip()}")
+        return {"backend": "ufw", "action": action, "output": out.strip()[:500]}
+    if which("firewall-cmd"):
+        if action == "status":
+            rc, out, _ = run(["firewall-cmd", "--state"], timeout=8)
+            return {"backend": "firewalld", "active": rc == 0, "output": out.strip()}
+        require_yes(f"{action} the firewall")
+        rc, out, err = run(["systemctl", action, "firewalld"], timeout=30)
+        if rc != 0:
+            raise CtlError(f"firewalld {action} failed: {(err or out).strip()}")
+        return {"backend": "firewalld", "action": action}
+    if action == "status":
+        rc, out, _ = run(["nft", "list", "ruleset"], timeout=8)
+        return {"backend": "nftables", "active": bool(out.strip()),
+                "output": out.strip()[:3000]}
+    raise Unsupported("nftables has no enable/disable; use ufw or firewalld")
+
+
+# ------------------------------------------------------------------ packages
+def _pkg_manager() -> tuple[str, dict[str, Any]]:
+    for name, meta in PKG_MANAGERS.items():
+        if which(meta["bin"]):
+            return name, meta
+    raise Unsupported("no supported package manager (apt/dnf/pacman/zypper/apk/brew)")
+
+
+def _elevate() -> list[str]:
+    uid = os.getuid() if hasattr(os, "getuid") else -1
+    if uid == 0:
+        return []
+    if which("sudo"):
+        rc, _, _ = run(["sudo", "-n", "true"], timeout=2)
+        if rc == 0:
+            return ["sudo", "-n"]
+        raise Denied("package changes need root; run with sudo or configure NOPASSWD")
+    if which("doas"):
+        rc, _, _ = run(["doas", "-n", "true"], timeout=2)
+        if rc == 0:
+            return ["doas", "-n"]
+    raise Denied("package changes need root privileges")
+
+
+def pkg_manager() -> dict:
+    name, meta = _pkg_manager()
+    uid = os.getuid() if hasattr(os, "getuid") else -1
+    can_elevate = name == "brew" or uid == 0
+    if uid != 0 and which("sudo"):
+        rc, _, _ = run(["sudo", "-n", "true"], timeout=2)
+        can_elevate = can_elevate or rc == 0
+    return {"manager": name, "binary": which(meta["bin"]),
+            "can_elevate": can_elevate, "is_root": uid == 0,
+            "policy": bool(POLICY.get("allow_package_management", True)),
+            "commands": {k: v for k, v in meta.items() if k != "bin"}}
+
+
+def _pkg_output(argv: list[str], timeout: float = 300) -> dict:
+    rc, out, err = run(argv, timeout=timeout)
+    return {"rc": rc, "output": (out or err).strip()}
+
+
+def pkg_search(query: str, limit: int = 30) -> list[dict]:
+    if not query:
+        raise CtlError("search query required")
+    name, meta = _pkg_manager()
+    rc, out, err = run(list(meta["search"]) + [query], timeout=60)
+    if rc != 0 and not out:
+        raise CtlError(f"{name} search failed: {err.strip()}")
+    rows = []
+    if name == "apt":
+        for line in out.splitlines():
+            package, _, description = line.partition(" - ")
+            if package:
+                rows.append({"name": package.strip(), "description": description.strip()})
+    elif name == "pacman":
+        lines = out.splitlines()
+        for index in range(0, len(lines) - 1, 2):
+            header = lines[index].split()
+            rows.append({"name": header[0] if header else "",
+                         "description": (lines[index + 1].strip()
+                                         if index + 1 < len(lines) else "")})
+    else:
+        for line in out.splitlines():
+            line = line.strip()
+            if not line or line.startswith(("Last metadata", "Available", "Name")):
+                continue
+            rows.append({"name": line.split()[0], "description": line})
+    return rows[:limit]
+
+
+def pkg_info(package: str) -> dict:
+    name, meta = _pkg_manager()
+    rc, out, err = run(list(meta["info"]) + [package], timeout=60)
+    if rc != 0 and not out:
+        raise CtlError(f"{name} info failed: {err.strip()}")
+    return {"package": package, "manager": name, "output": out.strip()[:4000]}
+
+
+def _pkg_mutate(action: str, packages: list[str]) -> dict:
+    if not POLICY.get("allow_package_management", True):
+        raise Denied("package management is disabled by policy")
+    name, meta = _pkg_manager()
+    if action not in ("install", "remove", "update", "upgrade", "clean"):
+        raise CtlError(f"unknown package action: {action}")
+    require_yes(f"package {action}")
+    if action in ("install", "remove") and not packages:
+        raise CtlError("at least one package is required")
+    if DRY:
+        return {"dry_run": True, "would": action, "manager": name,
+                "packages": packages,
+                "argv": list(meta[action]) + (packages if action in
+                                              ("install", "remove") else [])}
+    prefix = [] if name == "brew" else _elevate()
+    argv = prefix + list(meta[action])
+    if action in ("install", "remove"):
+        argv += packages
+    timeout = float(POLICY.get("package_timeout", 1800))
+    rc, out, err = run(argv, timeout=timeout)
+    if rc != 0:
+        raise CtlError(f"{name} {action} failed ({rc}): {(err or out).strip()[-500:]}")
+    return {"manager": name, "action": action, "packages": packages,
+            "output": (out or "").strip()[-2000:]}
+
+
+def pkg_install(packages: list[str]) -> dict:
+    return _pkg_mutate("install", packages)
+
+
+def pkg_remove(packages: list[str]) -> dict:
+    return _pkg_mutate("remove", packages)
+
+
+def pkg_update() -> dict:
+    return _pkg_mutate("update", [])
+
+
+def pkg_upgrade() -> dict:
+    return _pkg_mutate("upgrade", [])
+
+
+def pkg_autoremove() -> dict:
+    return _pkg_mutate("clean", [])
+
+
+def pkg_list_upgradable() -> dict:
+    name, meta = _pkg_manager()
+    rc, out, err = run(list(meta["list_upgradable"]), timeout=120)
+    if rc != 0 and not out:
+        raise CtlError(f"{name} list-upgradable failed: {(err or out).strip()}")
+    if name == "apt":
+        packages = [line for line in out.splitlines()
+                    if "/" in line and not line.startswith("Listing")]
+    else:
+        packages = [line for line in out.splitlines() if line.strip()]
+    return {"manager": name, "count": len(packages),
+            "packages": packages[:100], "raw": out.strip()[:4000]}
 
 
 # ----------------------------------------------------------------- displays
@@ -1537,6 +2265,98 @@ def sysinfo() -> dict:
     return info
 
 
+def sys_time() -> dict:
+    now = time.time()
+    info = {"epoch": now, "local": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now)),
+            "utc": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(now)),
+            "timezone": time.strftime("%Z", time.localtime(now))}
+    if which("timedatectl"):
+        _, out, _ = run(["timedatectl", "show", "--property=Timezone,NTP",
+                         "--value"], timeout=5)
+        if out.strip():
+            info["timedatectl"] = out.strip()
+    return info
+
+
+def sys_timezone() -> dict:
+    zone = ""
+    if which("timedatectl"):
+        _, zone, _ = run(["timedatectl", "show", "--property=Timezone",
+                          "--value"], timeout=5)
+    if not zone:
+        try:
+            zone = Path("/etc/timezone").read_text(encoding="utf-8").strip()
+        except OSError:
+            pass
+    return {"timezone": zone.strip() or time.strftime("%Z")}
+
+
+def sys_set_timezone(zone: str) -> dict:
+    require_yes("changing the timezone")
+    if not re.match(r"^[A-Za-z0-9_+-]+/[A-Za-z0-9_+/-]+$", zone or ""):
+        raise CtlError("invalid timezone name (use e.g. Europe/Ljubljana)")
+    if not which("timedatectl"):
+        raise Unsupported("timedatectl is required to change the timezone")
+    rc, out, err = run(["timedatectl", "set-timezone", zone], timeout=15)
+    if rc != 0:
+        raise CtlError(f"set-timezone failed: {(err or out).strip()}")
+    return {"timezone": zone}
+
+
+def sys_hostname(name: str | None = None) -> dict:
+    if not name:
+        return {"hostname": socket.gethostname()}
+    require_yes("changing the hostname")
+    if not re.match(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$", name):
+        raise CtlError("invalid hostname")
+    if not which("hostnamectl"):
+        raise Unsupported("hostnamectl is required to change the hostname")
+    rc, out, err = run(["hostnamectl", "set-hostname", name], timeout=15)
+    if rc != 0:
+        raise CtlError(f"set-hostname failed: {(err or out).strip()}")
+    return {"hostname": name}
+
+
+def sys_users() -> dict:
+    users = []
+    if which("who"):
+        rc, out, _ = run(["who"], timeout=5)
+        if rc == 0:
+            users = [line for line in out.splitlines() if line.strip()]
+    return {"users": users, "count": len(users), "user": _user()}
+
+
+def sys_locale() -> dict:
+    if which("localectl"):
+        rc, out, _ = run(["localectl", "status"], timeout=5)
+        if rc == 0:
+            return {"status": out.strip()[:2000]}
+    return {"lang": ENV.get("LANG", ""), "lc_all": ENV.get("LC_ALL", "")}
+
+
+def sys_power_profile(action: str | None = None) -> dict:
+    if not which("powerprofilesctl"):
+        raise Unsupported("powerprofilesctl not found (install power-profiles-daemon)")
+    if not action:
+        rc, out, _ = run(["powerprofilesctl", "get"], timeout=5)
+        return {"profile": out.strip()}
+    if action not in ("performance", "balanced", "power-saver"):
+        raise CtlError("profile must be performance, balanced or power-saver")
+    require_yes("changing the power profile")
+    rc, out, err = run(["powerprofilesctl", "set", action], timeout=10)
+    if rc != 0:
+        raise CtlError(f"powerprofilesctl failed: {(err or out).strip()}")
+    return {"profile": action}
+
+
+def sys_failed_services() -> dict:
+    if not which("systemctl"):
+        raise Unsupported("systemd is not available")
+    rc, out, _ = run(["systemctl", "--failed", "--no-legend", "--plain"], timeout=8)
+    lines = [line.strip() for line in out.splitlines() if line.strip()]
+    return {"failed": lines, "count": len(lines)}
+
+
 def capabilities() -> dict:
     tools = ("xdotool", "wmctrl", "grim", "gnome-screenshot", "spectacle", "scrot",
              "import", "wl-copy", "wl-paste", "xclip", "xsel", "notify-send",
@@ -1606,6 +2426,55 @@ def verify_result(action: str, args: argparse.Namespace, data: Any) -> dict:
             count = len(data or [])
             return {"status": "verified", "method": "search_executed",
                     "evidence": {"matches": count}}
+        if action == "files mkdir":
+            path = Path(str((data or {}).get("created", "")))
+            return {"status": "verified" if path.is_dir() else "failed",
+                    "method": "dir_exists", "evidence": str(path)}
+        if action in ("files copy", "files move", "files rename"):
+            dst = Path(str((data or {}).get("dst", "")))
+            return {"status": "verified" if dst.exists() else "failed",
+                    "method": "target_exists", "evidence": str(dst)}
+        if action == "files archive":
+            dst = Path(str((data or {}).get("dst", "")))
+            ok = dst.exists() and dst.stat().st_size > 0
+            return {"status": "verified" if ok else "failed",
+                    "method": "archive_exists", "evidence": str(dst)}
+        if action == "files extract":
+            dst = Path(str((data or {}).get("dest", "")))
+            return {"status": "verified" if dst.is_dir() else "failed",
+                    "method": "dest_exists", "evidence": str(dst)}
+        if action == "files trash":
+            trashed = (data or {}).get("trashed") or []
+            still = [row for row in trashed if Path(row.get("path", "")).exists()]
+            return {"status": "verified" if not still else "failed",
+                    "method": "source_absent", "evidence": trashed}
+        if action == "files delete":
+            deleted = (data or {}).get("deleted") or []
+            still = [row for row in deleted if Path(row.get("path", "")).exists()]
+            return {"status": "verified" if not still else "failed",
+                    "method": "source_absent", "evidence": deleted}
+        if action in ("files info", "files du", "files find-large",
+                      "files duplicates"):
+            return {"status": "verified", "method": "scan_executed",
+                    "evidence": action}
+        if action == "net wifi connect":
+            connected = (data or {}).get("connected", "")
+            return {"status": "verified" if connected else "failed",
+                    "method": "nmcli_connect", "evidence": connected}
+        if action == "net ping":
+            return {"status": "verified", "method": "ping_executed",
+                    "evidence": {"reachable": (data or {}).get("reachable")}}
+        if action in ("net firewall enable", "net firewall disable"):
+            return {"status": "verified", "method": "firewall_command",
+                    "evidence": (data or {}).get("backend")}
+        if action.startswith("pkg ") and action.split()[0] == "pkg" and \
+                action.split()[1] in ("install", "remove", "update", "upgrade",
+                                      "autoremove"):
+            return {"status": "verified", "method": "package_manager",
+                    "evidence": (data or {}).get("action")}
+        if action in ("sys set-timezone", "sys hostname", "sys power-profile"):
+            return {"status": "verified", "method": "system_setting",
+                    "evidence": data}
         if action == "clipboard set":
             expected = args.text
             if getattr(args, "stdin", False) or expected is None:
@@ -1808,7 +2677,7 @@ def build_parser() -> argparse.ArgumentParser:
     sv.add_argument("unit")
     sv.add_argument("--system", action="store_true")
 
-    fl = sub.add_parser("files", help="search, open and reveal files")
+    fl = sub.add_parser("files", help="search, inspect and manage files")
     fla = fl.add_subparsers(dest="action")
     fs = fla.add_parser("search")
     fs.add_argument("query")
@@ -1816,12 +2685,81 @@ def build_parser() -> argparse.ArgumentParser:
     fs.add_argument("--limit", type=int, default=40)
     fr = fla.add_parser("recent")
     fr.add_argument("--limit", type=int, default=20)
-    for name in ("open", "reveal"):
+    for name in ("open", "reveal", "info", "mkdir", "du"):
         fp = fla.add_parser(name)
         fp.add_argument("path")
+    for name in ("copy", "move", "rename", "archive"):
+        fp = fla.add_parser(name)
+        fp.add_argument("src")
+        fp.add_argument("dst")
+        if name != "rename":
+            fp.add_argument("--overwrite", action="store_true")
+    ft = fla.add_parser("trash")
+    ft.add_argument("paths", nargs="+")
+    fd = fla.add_parser("delete")
+    fd.add_argument("paths", nargs="+")
+    fd.add_argument("--recursive", action="store_true")
+    fe = fla.add_parser("extract")
+    fe.add_argument("archive")
+    fe.add_argument("dest")
+    flg = fla.add_parser("find-large")
+    flg.add_argument("--root")
+    flg.add_argument("--min-mb", type=float, default=200)
+    flg.add_argument("--limit", type=int, default=30)
+    fdup = fla.add_parser("duplicates")
+    fdup.add_argument("--root")
+    fdup.add_argument("--limit", type=int, default=20)
+    fdup.add_argument("--min-mb", type=float, default=1)
 
-    nt2 = sub.add_parser("net", help="network status")
-    nt2.add_argument("action", choices=["status"], nargs="?", default="status")
+    nt2 = sub.add_parser("net", help="network status, Wi-Fi, ping, DNS, ports")
+    nta = nt2.add_subparsers(dest="action")
+    nta.add_parser("status")
+    nw = nta.add_parser("wifi")
+    nwa = nw.add_subparsers(dest="wifi_action")
+    nwa.add_parser("list")
+    nwc = nwa.add_parser("connect")
+    nwc.add_argument("ssid")
+    nwc.add_argument("password", nargs="?", default="")
+    nwa.add_parser("disconnect")
+    ng = nta.add_parser("ping")
+    ng.add_argument("host")
+    ng.add_argument("--count", type=int, default=4)
+    nta.add_parser("dns")
+    nta.add_parser("ports")
+    nf = nta.add_parser("firewall")
+    nf.add_argument("fw_action", choices=["status", "enable", "disable"],
+                    nargs="?", default="status")
+
+    pk = sub.add_parser("pkg", help="package management (audited, confirmed)")
+    pka = pk.add_subparsers(dest="action")
+    pka.add_parser("manager")
+    ps = pka.add_parser("search")
+    ps.add_argument("query")
+    ps.add_argument("--limit", type=int, default=30)
+    pi = pka.add_parser("info")
+    pi.add_argument("package")
+    for name in ("install", "remove"):
+        pp = pka.add_parser(name)
+        pp.add_argument("packages", nargs="+")
+    pka.add_parser("update")
+    pka.add_parser("upgrade")
+    pka.add_parser("autoremove")
+    pka.add_parser("list-upgradable")
+
+    sy = sub.add_parser("sys", help="time, timezone, hostname, users, power profile")
+    sya = sy.add_subparsers(dest="action")
+    sya.add_parser("time")
+    sya.add_parser("timezone")
+    sytz = sya.add_parser("set-timezone")
+    sytz.add_argument("zone")
+    syh = sya.add_parser("hostname")
+    syh.add_argument("name", nargs="?", default="")
+    sya.add_parser("users")
+    sya.add_parser("locale")
+    syp = sya.add_parser("power-profile")
+    syp.add_argument("profile", choices=["performance", "balanced", "power-saver"],
+                     nargs="?", default="")
+    sya.add_parser("failed-services")
 
     dp = sub.add_parser("displays", help="list monitors and resolutions")
     dpa = dp.add_subparsers(dest="action")
@@ -1845,6 +2783,65 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _summarize(action: str, data: Any) -> str:
+    if action == "files info":
+        return (f"{data.get('path')} — {data.get('type')}, {data.get('size_human')}, "
+                f"mode {data.get('mode')}")
+    if action == "files du":
+        lines = [f"{_human_size(e['bytes']):>10}  {e['name']}"
+                 for e in (data or {}).get("entries") or []]
+        return (f"{data.get('path')}: {data.get('size_human')}\n" + "\n".join(lines))
+    if action == "files find-large":
+        return "\n".join(f"{row.get('size_human'):>10}  {row.get('path')}"
+                         for row in data or []) or "(nothing large)"
+    if action == "files duplicates":
+        lines = []
+        for group in data or []:
+            lines.append(f"{group.get('size_human')} wasted {_human_size(group.get('wasted', 0))}")
+            lines.extend("  " + path for path in group.get("paths") or [])
+        return "\n".join(lines) or "(no duplicates)"
+    if action in ("files trash", "files delete"):
+        return json.dumps(data, ensure_ascii=False, default=str)
+    if action == "files copy":
+        return f"copied: {data.get('src')} -> {data.get('dst')}"
+    if action == "files move":
+        return f"moved: {data.get('src')} -> {data.get('dst')}"
+    if action == "files rename":
+        return f"renamed: {data.get('src')} -> {data.get('dst')}"
+    if action == "files archive":
+        return f"archive: {data.get('dst')} ({_human_size(data.get('bytes', 0))})"
+    if action == "files extract":
+        return f"extracted {data.get('entries')} entries -> {data.get('dest')}"
+    if action == "files mkdir":
+        return f"created: {data.get('created')}"
+    if action == "net wifi list":
+        return "\n".join(f"{'*' if row.get('active') else ' '} {row.get('ssid')} "
+                         f"({row.get('signal')}%)" for row in data or []) or "(no networks)"
+    if action == "net ping":
+        return (f"{data.get('host')}: {'reachable' if data.get('reachable') else 'unreachable'}\n"
+                + str(data.get("output") or ""))
+    if action == "net dns":
+        return json.dumps(data, ensure_ascii=False, indent=2, default=str)
+    if action == "net ports":
+        return "\n".join(data.get("listeners") or []) or "(no listeners)"
+    if action == "net firewall status":
+        return json.dumps(data, ensure_ascii=False, indent=2, default=str)
+    if action == "net wifi connect":
+        return f"connected: {data.get('connected')}"
+    if action == "pkg manager":
+        return json.dumps(data, ensure_ascii=False, indent=2, default=str)
+    if action == "pkg search":
+        return "\n".join(f"{row.get('name')} — {(row.get('description') or '')[:90]}"
+                         for row in data or []) or "(no matches)"
+    if action == "pkg list-upgradable":
+        return (f"{data.get('count')} upgradable\n"
+                + "\n".join(data.get("packages") or []))
+    if action == "pkg info":
+        return str(data.get("output") or "")
+    if action in ("pkg install", "pkg remove", "pkg update", "pkg upgrade",
+                  "pkg autoremove"):
+        return str(data.get("output") or json.dumps(data, ensure_ascii=False))
+    if action.startswith("sys "):
+        return json.dumps(data, ensure_ascii=False, indent=2, default=str)
     if action == "windows list":
         lines = [f"{w.get('id')}  {w.get('app') or '':<20} {str(w.get('title'))[:70]}"
                  for w in data or []]
@@ -1882,9 +2879,14 @@ def _summarize(action: str, data: Any) -> str:
 _READ_ONLY = {
     "doctor", "capabilities", "sysinfo", "net status", "policy show", "policy check",
     "audit tail", "windows list", "apps list", "process list", "process find",
-    "files search", "files recent", "clipboard get", "media status",
+    "files search", "files recent", "files info", "files du", "files find-large",
+    "files duplicates", "clipboard get", "media status",
     "volume status", "brightness status", "service status", "service is-active",
     "displays list", "resources", "audio devices",
+    "net wifi list", "net dns", "net ports", "net firewall status",
+    "pkg manager", "pkg search", "pkg info", "pkg list-upgradable",
+    "sys time", "sys timezone", "sys hostname", "sys users", "sys locale",
+    "sys failed-services",
 }
 
 
@@ -1892,7 +2894,12 @@ def dispatch(args: argparse.Namespace) -> Any:
     cmd = args.cmd
     action = getattr(args, "action", None) or ""
     full = f"{cmd} {action}".strip()
-    if DRY and full not in _READ_ONLY:
+    read_only = full in _READ_ONLY
+    if full == "sys hostname" and getattr(args, "name", ""):
+        read_only = False
+    if full == "sys power-profile" and getattr(args, "profile", ""):
+        read_only = False
+    if DRY and not read_only:
         planned = {k: v for k, v in vars(args).items()
                    if k not in ("argv", "cmd", "action")}
         return {"dry_run": True, "would": full, "args": planned}
@@ -1969,9 +2976,93 @@ def dispatch(args: argparse.Namespace) -> Any:
             return files_open(args.path)
         if action == "reveal":
             return files_reveal(args.path)
+        if action == "info":
+            return files_info(args.path)
+        if action == "mkdir":
+            return files_mkdir(args.path)
+        if action == "copy":
+            return files_copy(args.src, args.dst, args.overwrite)
+        if action == "move":
+            return files_move(args.src, args.dst, args.overwrite)
+        if action == "rename":
+            return files_rename(args.src, args.dst)
+        if action == "trash":
+            return files_trash(args.paths)
+        if action == "delete":
+            return files_delete(args.paths, args.recursive)
+        if action == "archive":
+            return files_archive(args.src, args.dst, args.overwrite)
+        if action == "extract":
+            return files_extract(args.archive, args.dest)
+        if action == "du":
+            return files_du(args.path)
+        if action == "find-large":
+            return files_find_large(args.root, args.min_mb, args.limit)
+        if action == "duplicates":
+            return files_duplicates(args.root, args.limit, args.min_mb)
         raise CtlError(f"unknown files action: {action}")
     if cmd == "net":
-        return net_status()
+        action = action or "status"
+        if action == "status":
+            return net_status()
+        if action == "wifi":
+            wifi_action = getattr(args, "wifi_action", None) or "list"
+            if wifi_action == "list":
+                return net_wifi_list()
+            if wifi_action == "connect":
+                return net_wifi_connect(args.ssid, args.password)
+            if wifi_action == "disconnect":
+                return net_wifi_disconnect()
+            raise CtlError(f"unknown wifi action: {wifi_action}")
+        if action == "ping":
+            return net_ping(args.host, args.count)
+        if action == "dns":
+            return net_dns()
+        if action == "ports":
+            return net_ports()
+        if action == "firewall":
+            return net_firewall(getattr(args, "fw_action", None) or "status")
+        raise CtlError(f"unknown net action: {action}")
+    if cmd == "pkg":
+        action = action or "manager"
+        if action == "manager":
+            return pkg_manager()
+        if action == "search":
+            return pkg_search(args.query, args.limit)
+        if action == "info":
+            return pkg_info(args.package)
+        if action == "install":
+            return pkg_install(args.packages)
+        if action == "remove":
+            return pkg_remove(args.packages)
+        if action == "update":
+            return pkg_update()
+        if action == "upgrade":
+            return pkg_upgrade()
+        if action == "autoremove":
+            return pkg_autoremove()
+        if action == "list-upgradable":
+            return pkg_list_upgradable()
+        raise CtlError(f"unknown pkg action: {action}")
+    if cmd == "sys":
+        action = action or "time"
+        if action == "time":
+            return sys_time()
+        if action == "timezone":
+            return sys_timezone()
+        if action == "set-timezone":
+            return sys_set_timezone(args.zone)
+        if action == "hostname":
+            return sys_hostname(args.name or None)
+        if action == "users":
+            return sys_users()
+        if action == "locale":
+            return sys_locale()
+        if action == "power-profile":
+            return sys_power_profile(args.profile or None)
+        if action == "failed-services":
+            return sys_failed_services()
+        raise CtlError(f"unknown sys action: {action}")
     if cmd == "displays":
         return displays_list()
     if cmd == "resources":
@@ -2019,6 +3110,7 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit as exc:
         return int(exc.code or 0)
     args.argv = raw
+    audit_args = _audit_args(args)
     action = _action_name(args)
     started = time.perf_counter()
     try:
@@ -2029,14 +3121,14 @@ def main(argv: list[str] | None = None) -> int:
             data["verification"] = verification
         elapsed = (time.perf_counter() - started) * 1000
         summary = _summarize(action, data)
-        audit(action, raw, True, 0, elapsed, summary=summary,
+        audit(action, audit_args, True, 0, elapsed, summary=summary,
               verified=verified, verification=verification)
         if not QUIET:
             emit(True, action, data, summary=summary)
         return 0
     except CtlError as exc:
         elapsed = (time.perf_counter() - started) * 1000
-        audit(action, raw, False, exc.exit_code, elapsed, error=str(exc))
+        audit(action, audit_args, False, exc.exit_code, elapsed, error=str(exc))
         emit(False, action, error=str(exc))
         return exc.exit_code
     except KeyboardInterrupt:
@@ -2044,7 +3136,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:  # never crash without an audit line
         elapsed = (time.perf_counter() - started) * 1000
         message = f"{type(exc).__name__}: {exc}"
-        audit(action, raw, False, 5, elapsed, error=message)
+        audit(action, audit_args, False, 5, elapsed, error=message)
         emit(False, action, error=message)
         return 5
 

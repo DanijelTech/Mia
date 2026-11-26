@@ -301,6 +301,7 @@ footer{
       <button class="btn viewBtn" onclick="openView('KANBAN','/kanban')">▸ KANBAN</button>
       <button class="btn viewBtn" onclick="openView('HERMES DASHBOARD','/')">▸ HERMES NADZORNA PLOŠČA</button>
       <button class="btn viewBtn" onclick="openView('CHAT','/chat')">▸ KLEPET</button>
+      <button class="btn viewBtn" onclick="openView('SAMODEJNOST','/hud/autonomy.html')">▸ SAMODEJNOST</button>
     </div>
     <div class="panel"><h2><span>SEJA</span><span class="num">05</span></h2>
       <div class="kv"><span>Pogovor</span><b>mia-main</b></div>
@@ -369,6 +370,17 @@ footer{
     </div>
     <div class="panel"><h2><span>AVTOMATIZACIJE</span><span class="num">10</span></h2>
       <div id="jobsList"><div>— ni nalog —</div></div>
+    </div>
+    <div class="panel"><h2><span>SAMODEJNOST</span><span class="num">14</span></h2>
+      <div class="kv"><span>Pripravljenost stroja</span><b id="autoScore">—</b></div>
+      <div class="kv"><span>Zdravje</span><b id="autoHealth">—</b></div>
+      <div class="kv"><span>Opravila / pravila</span><b id="autoJobs">—</b></div>
+      <div class="kv"><span>Opozorila</span><b id="autoAlerts">—</b></div>
+      <div class="bar"><i id="autoBar" style="width:0%"></i></div>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button class="btn" style="flex:1" onclick="openView('SAMODEJNOST','/hud/autonomy.html')">ODPRI SAMODEJNOST</button>
+        <button class="btn" id="autoRefreshBtn" title="znova zaznaj stroj in osveži urnik">ZAZNAJ</button>
+      </div>
     </div>
     <div class="panel"><h2><span>ZMOGLJIVOSTI</span><span class="num">12</span></h2>
       <div class="kv"><span>Potrjene/naučene</span><b id="capConfirmed">—</b></div>
@@ -729,6 +741,12 @@ function connect(){
     let e; try{e=JSON.parse(ev.data)}catch{return}
     if(e.type==="summon_panel"){ summonPanel(e); }
     else if(e.type==="dismiss_panels"){ dismissAllPanels(); }
+    else if(e.type==="mia_say"){
+      // Scheduled reminders are spoken without opening a Hermes turn. Use the
+      // browser voice as a fallback when no server TTS audio is attached.
+      addMsg("mia",e.text||"");
+      try{const u=new SpeechSynthesisUtterance(String(e.text||""));u.lang="sl-SI";u.rate=1;speechSynthesis.speak(u)}catch{}
+    }
     else if(e.type==="partial_transcript"){ showLive(e.text); }
     else if(e.type==="transcript"){ clearLive(); if(e.text)addMsg("you",e.text); }
     else if(e.type==="run_started"){ currentRun=e.run_id; showStop(true); }
@@ -1155,10 +1173,28 @@ if($("lMineBtn"))$("lMineBtn").onclick=async()=>{
   try{await fetch("/api/learning/mine",{method:"POST"});}catch{}
   await refreshLearning(); $("lMineBtn").textContent="OSVEŽI";
 };
-refreshHealth();refreshSkills();refreshJobs();refreshMachines();refreshUsage();refreshLearning();refreshCapabilities();refreshSettings();refreshVerifyQueue();checkCalibration();
+
+async function refreshAutonomy(){
+  try{
+    const s=await (await fetch("/api/autonomy/status")).json();
+    const score=s.score||{}, health=s.health||{}, sched=s.scheduler||{};
+    $("autoScore").textContent=(score.percent??"—")+"%";
+    $("autoBar").style.width=(score.percent??0)+"%";
+    $("autoHealth").textContent=health.level?String(health.level).toUpperCase():"—";
+    $("autoHealth").className=health.level==="ok"?"ok":health.level==="critical"?"err":"warn";
+    $("autoJobs").textContent=(sched.enabled??0)+" / "+(sched.total??0)+" ("+(sched.rules??0)+" pravil)";
+    $("autoAlerts").textContent=(s.alerts||[]).length;
+  }catch{ $("autoScore").textContent="—"; }
+}
+if($("autoRefreshBtn"))$("autoRefreshBtn").onclick=async()=>{
+  $("autoRefreshBtn").textContent="…";
+  try{await fetch("/api/autonomy/refresh",{method:"POST"});}catch{}
+  await refreshAutonomy(); $("autoRefreshBtn").textContent="ZAZNAJ";
+};
+refreshHealth();refreshSkills();refreshJobs();refreshMachines();refreshUsage();refreshLearning();refreshCapabilities();refreshSettings();refreshVerifyQueue();refreshAutonomy();checkCalibration();
 setInterval(refreshUsage,60000);
 setInterval(refreshHealth,15000); setInterval(refreshJobs,60000); setInterval(refreshMachines,10000);
-setInterval(refreshSkills,120000); setInterval(refreshLearning,45000); setInterval(refreshVerifyQueue,30000); setInterval(refreshCapabilities,60000); setInterval(refreshSettings,60000);
+setInterval(refreshSkills,120000); setInterval(refreshLearning,45000); setInterval(refreshVerifyQueue,30000); setInterval(refreshCapabilities,60000); setInterval(refreshSettings,60000); setInterval(refreshAutonomy,30000);
 
 /* ====================== holographic media panels ==================== */
 function holoWhoosh(up=true){

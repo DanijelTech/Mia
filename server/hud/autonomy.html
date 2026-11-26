@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MIA // SAMODEJNOST</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+:root{--bg:#050b14;--panel:#081523cc;--line:#0e2c40;--cyan:#00e5ff;--cyan-dim:#0a7f96;
+  --teal:#19f0d8;--amber:#ffb300;--red:#ff4d5e;--txt:#9fd8e8;--txt-dim:#4d7d92}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:radial-gradient(ellipse at 50% 0%,#0a1a2c 0%,var(--bg) 60%);color:var(--txt);
+  font-family:'Rajdhani',sans-serif;padding:14px 18px 30px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line);
+  background:var(--panel);padding:10px 14px;clip-path:polygon(0 0,100% 0,100% 70%,calc(100% - 14px) 100%,14px 100%,0 70%)}
+header h1{font-family:'Orbitron';font-size:15px;letter-spacing:6px;color:var(--cyan)}
+header .sub{font-size:11px;letter-spacing:2px;color:var(--txt-dim)}
+.btns{display:flex;gap:6px;flex-wrap:wrap}
+button{background:#0a2435;color:var(--cyan);border:1px solid var(--cyan-dim);padding:6px 10px;
+  font-family:'Orbitron';font-size:9.5px;letter-spacing:1.2px;cursor:pointer}
+button:hover{background:#0e3448}
+button.danger{color:var(--red);border-color:#5c1f27}
+button.ghost{color:var(--txt-dim);border-color:var(--line)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:12px 0}
+.stat{border:1px solid var(--line);background:var(--panel);padding:10px 12px}
+.stat b{display:block;font-family:'Orbitron';font-size:19px;color:var(--teal)}
+.stat span{font-size:11px;letter-spacing:1.5px;color:var(--txt-dim)}
+.bar{height:7px;background:#06101c;border:1px solid var(--line);margin-top:6px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan-dim),var(--teal))}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 14px}
+.tab{padding:6px 12px;border:1px solid var(--line);background:#06111d;cursor:pointer;
+  font-family:'Orbitron';font-size:10px;letter-spacing:1.5px;color:var(--txt-dim)}
+.tab.on{color:var(--cyan);border-color:var(--cyan-dim);box-shadow:0 0 8px #00e5ff33}
+.pane{display:none}.pane.on{display:block}
+.card{border:1px solid var(--line);background:var(--panel);padding:10px 12px;margin-bottom:8px;
+  clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px))}
+.card h3{font-family:'Orbitron';font-size:11px;letter-spacing:2px;color:var(--cyan);
+  margin-bottom:5px;display:flex;justify-content:space-between;gap:8px}
+.card .meta{font-size:11.5px;color:var(--txt-dim);margin-bottom:4px}
+.row{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+input,textarea,select{background:#06101c;border:1px solid var(--line);color:#cfeefb;
+  padding:7px 9px;font-family:'Rajdhani';font-size:13.5px;outline:none;width:100%}
+input:focus,textarea:focus,select:focus{border-color:var(--cyan-dim)}
+textarea{min-height:70px;resize:vertical}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{text-align:left;padding:6px 7px;border-bottom:1px solid #0b2233;vertical-align:top}
+th{font-family:'Orbitron';font-size:9.5px;letter-spacing:1.5px;color:var(--cyan);font-weight:400}
+tr:hover td{background:#081523}
+.ok{color:var(--teal)}.warn{color:var(--amber)}.err{color:var(--red)}.dim{color:var(--txt-dim)}
+.chip{display:inline-block;font-size:9.5px;padding:2px 6px;border:1px solid var(--line);white-space:nowrap}
+.chip.ready{color:var(--teal);border-color:#0d6b63;background:#041c1a}
+.chip.missing{color:var(--red);border-color:#6b1a22;background:#1a0407}
+.chip.degraded{color:var(--amber);border-color:#6b5310;background:#1a1404}
+.hint{font-size:11.5px;color:var(--txt-dim);margin:6px 0 10px}
+.log{background:#040c15;border:1px solid var(--line);padding:8px;min-height:90px;max-height:280px;
+  overflow:auto;font-size:12.5px;white-space:pre-wrap}
+.log .you{color:var(--amber)}.log .mia{color:#cfeefb}.log .sys{color:var(--txt-dim)}
+.code{font-family:ui-monospace,monospace;font-size:11.5px;color:#bfe9f7;word-break:break-word}
+@media(max-width:860px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>SAMODEJNOST</h1>
+    <div class="sub">PRILAGAJANJE · NAČRTI · OPRAVILA · PRAVILA · ZDRAVJE</div></div>
+  <div class="btns">
+    <button id="refreshBtn">ZAZNAJ SISTEM</button>
+    <button id="healthBtn" class="ghost">ZDRAVJE</button>
+    <button id="tickBtn" class="ghost">PREŽENI URNIK</button>
+    <button id="closeBtn" class="ghost">✕ ZAPRI</button>
+  </div>
+</header>
+
+<div class="stats">
+  <div class="stat"><b id="sScore">—</b><span>PRIPRAVLJENOST</span><div class="bar"><i id="scoreBar" style="width:0%"></i></div></div>
+  <div class="stat"><b id="sHealth">—</b><span>ZDRAVJE</span></div>
+  <div class="stat"><b id="sJobs">—</b><span>OPRAVILA</span></div>
+  <div class="stat"><b id="sAlerts">—</b><span>OPOZORILA</span></div>
+</div>
+
+<div class="tabs">
+  <div class="tab on" data-pane="overview">PREGLED</div>
+  <div class="tab" data-pane="adapt">PRILAGODITEV</div>
+  <div class="tab" data-pane="jobs">OPRAVILA IN PRAVILA</div>
+  <div class="tab" data-pane="tasks">NALOGE</div>
+  <div class="tab" data-pane="command">UKAZ</div>
+  <div class="tab" data-pane="alerts">OPOZORILA</div>
+</div>
+
+<div class="pane on" id="pane-overview">
+  <div class="grid2">
+    <div class="card"><h3>SISTEM</h3><div id="sysInfo" class="meta">nalaganje …</div></div>
+    <div class="card"><h3>ZDRAVJE</h3><div id="healthInfo" class="meta">nalaganje …</div></div>
+  </div>
+  <div class="card"><h3>ZMOGLJIVOSTI NA TEM STROJU</h3><div id="readyList">nalaganje …</div></div>
+</div>
+
+<div class="pane" id="pane-adapt">
+  <div class="hint">Mia predlaga orodja, ki jih na tem stroju še nima. Namestitev gre skozi
+    <span class="code">mia-ctl pkg install</span>, z revizijo in potrditvijo. Samodejna
+    namestitev je izklopljena, dokler je v politiki <span class="code">autonomy.auto_install</span> false.</div>
+  <div id="adaptList">nalaganje …</div>
+</div>
+
+<div class="pane" id="pane-jobs">
+  <div class="card"><h3>NOVO OPRAVILO ALI PRAVILO</h3>
+    <div class="grid2">
+      <div><label class="hint">Ime</label><input id="jName" placeholder="npr. jutranji pregled"></div>
+      <div><label class="hint">Vrsta</label><select id="jKind"><option value="job">opravilo</option><option value="rule">pravilo</option></select></div>
+    </div>
+    <div class="grid2" style="margin-top:6px">
+      <div><label class="hint">Sprožilec</label>
+        <select id="jTrigger">
+          <option value="every">vsakih N sekund</option>
+          <option value="daily">vsak dan ob HH:MM</option>
+          <option value="at">enkrat čez N sekund</option>
+          <option value="condition">ko velja pogoj</option>
+        </select>
+      </div>
+      <div><label class="hint">Vrednost</label><input id="jValue" placeholder="3600 / 08:00 / 600"></div>
+    </div>
+    <div id="condRow" style="display:none;margin-top:6px">
+      <label class="hint">Pogoj: metric op value (npr. disk_free_percent &lt; 10)</label>
+      <div class="grid2">
+        <input id="cMetric" placeholder="disk_free_percent">
+        <div class="row"><input id="cOp" placeholder="<" style="max-width:70px">
+          <input id="cVal" placeholder="10" style="max-width:100px"></div>
+      </div>
+    </div>
+    <div class="grid2" style="margin-top:6px">
+      <div><label class="hint">Dejanje</label>
+        <select id="jAction"><option value="notify">obvestilo</option>
+          <option value="cleanup">čiščenje diska</option>
+          <option value="health_report">zdravstveno poročilo</option>
+          <option value="cold">brez dejanja</option></select></div>
+      <div><label class="hint">Besedilo obvestila</label><input id="jText" placeholder="Opomnik …"></div>
+    </div>
+    <div style="margin-top:8px"><button id="addJobBtn">DODAJ</button></div>
+  </div>
+  <table><thead><tr><th>#</th><th>IME</th><th>VRSTA</th><th>SPROŽILEC</th><th>STANJE</th><th>ZADNJE</th><th></th></tr></thead>
+    <tbody id="jobsRows"><tr><td colspan="7">nalaganje …</td></tr></tbody></table>
+</div>
+
+<div class="pane" id="pane-tasks">
+  <div class="hint">Vsak načrt se izvede kot naloga s koraki, preverjanjem in revizijo. Prekinjena
+    naloga se lahko nadaljuje po ponovnem zagonu.</div>
+  <table><thead><tr><th>#</th><th>IME</th><th>STANJE</th><th>USTVARJENO</th><th></th></tr></thead>
+    <tbody id="tasksRows"><tr><td colspan="5">nalaganje …</td></tr></tbody></table>
+</div>
+
+<div class="pane" id="pane-command">
+  <div class="hint">Ukaz se izvede deterministično, brez modela: glasnost, okna, datoteke,
+    procesi, storitve, omrežje, paketi, opomniki in pravila. Nevarna dejanja zahtevajo »ja«.</div>
+  <div class="row" style="gap:8px">
+    <input id="cmdInput" placeholder="npr. opomni me čez 10 minut, da pijem vodo" autocomplete="off">
+    <button id="cmdBtn">IZVED I</button>
+  </div>
+  <div style="margin-top:8px" class="btns">
+    <button class="ghost" data-example="koliko je prostega prostora">VIRI</button>
+    <button class="ghost" data-example="kaj si avtomatizirala">URNIK</button>
+    <button class="ghost" data-example="kako si">ZDRAVJE</button>
+    <button class="ghost" data-example="preveri posodobitve">POSODOBITVE</button>
+    <button class="ghost" data-example="počisti disk">ČIŠČENJE</button>
+  </div>
+  <div class="log" id="cmdLog" style="margin-top:10px"></div>
+</div>
+
+<div class="pane" id="pane-alerts">
+  <table><thead><tr><th>ČAS</th><th>STOPNJA</th><th>SPOROČILO</th><th></th></tr></thead>
+    <tbody id="alertsRows"><tr><td colspan="4">nalaganje …</td></tr></tbody></table>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const get=async u=>{const r=await fetch(u);if(!r.ok)throw new Error(r.status);return r.json()};
+const post=async(u,b)=>{const r=await fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b||{})});
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||r.status);return j};
+const del=async u=>{const r=await fetch(u,{method:"DELETE"});return r.json()};
+function ts(v){if(!v)return "—";const d=new Date(v*1000);return d.toLocaleString("sl-SI",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}
+function human(n){if(!n&&n!==0)return "—";const u=["B","KB","MB","GB","TB"];let i=0;while(n>=1024&&i<u.length-1){n/=1024;i++}return n.toFixed(1)+" "+u[i]}
+
+let STATE={};
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===t));
+  document.querySelectorAll(".pane").forEach(p=>p.classList.toggle("on",p.id==="pane-"+t.dataset.pane));
+});
+$("closeBtn").onclick=()=>{try{window.parent.closeView()}catch{window.close()}};
+
+async function load(refresh=false){
+  try{
+    if(refresh)await post("/api/autonomy/refresh");
+    STATE.status=await get("/api/autonomy/status");
+    const st=STATE.status, score=st.score||{}, health=st.health||{};
+    $("sScore").textContent=(score.percent??0)+"%";
+    $("scoreBar").style.width=(score.percent??0)+"%";
+    $("sHealth").textContent=health.level?health.level.toUpperCase():"—";
+    $("sHealth").className=(health.level==="ok"?"ok":health.level==="critical"?"err":"warn");
+    $("sJobs").textContent=(st.scheduler?.enabled??0)+"/"+(st.scheduler?.total??0);
+    $("sAlerts").textContent=(st.alerts||[]).length;
+    renderOverview(st);
+    renderJobs(st.scheduler?.jobs||[]);
+    await loadTasks(); await loadAlerts(); await loadAdapt();
+  }catch(e){ $("sysInfo").textContent="samodejnost ni dosegljiva: "+e.message; }
+}
+function renderOverview(st){
+  const p=st.profile||{}, d=p.data||{}, o=d.os||{}, c=d.cpu||{}, m=d.memory||{};
+  $("sysInfo").innerHTML=`<div class="row"><span>${esc(p.summary||"")}</span><b>${esc(d.host||"")}</b></div>
+    <div class="row"><span>Jedro</span><b>${esc(o.kernel||"")}</b></div>
+    <div class="row"><span>Namizje</span><b>${esc((d.desktop||{}).kind||"")}</b></div>
+    <div class="row"><span>Paketi</span><b>${esc((d.package_manager||{}).name||"—")}</b></div>
+    <div class="row"><span>RAM</span><b>${human(m.total)}</b></div>
+    <div class="row"><span>Jeder</span><b>${esc(c.cores||"")}</b></div>`;
+  const h=st.health||{};
+  $("healthInfo").innerHTML=`<div class="row"><span>Ocena</span><b class="${h.level==="ok"?"ok":h.level==="critical"?"err":"warn"}">${h.score??"—"}</b></div>
+    <div class="meta">${esc(h.summary||"zaženi ZDRAVJE")}</div>`;
+  const rows=(d.readiness||[]).map(r=>{
+    const mark={ready:"✓",degraded:"~",missing:"✗"}[r.status]||"·";
+    return `<div class="row" style="border-bottom:1px solid #0b2233;padding:3px 0">
+      <span><span class="chip ${r.status}">${mark} ${esc(r.status)}</span> ${esc(r.label)}</span>
+      <b class="code">${esc(r.backend||"—")}</b></div>`;}).join("");
+  $("readyList").innerHTML=rows||"ni podatkov";
+}
+async function loadAdapt(){
+  const p=STATE.status?.profile?.data||{};
+  const items=(p.adaptation||[]);
+  $("adaptList").innerHTML=items.length?items.map(i=>`<div class="card">
+    <h3><span>${esc(i.label)}</span><span class="chip ${i.installable?"degraded":"missing"}">${i.installable?"namestljivo":"ročno"}</span></h3>
+    <div class="meta">${esc(i.hint)}</div>
+    <div class="code">${esc((i.missing||[]).join(" "))} → ${esc((i.packages||[]).join(" "))}</div>
+  </div>`).join(""):`<div class="card">Vse ključne zmogljivosti so na voljo.</div>`;
+  if(items.some(i=>i.installable)){
+    const btn=document.createElement("button");btn.textContent="NAMESTI MANJKAJOČA ORODJA";
+    btn.onclick=async()=>{btn.disabled=true;try{const r=await post("/api/autonomy/adapt",{apply:true});
+      alert(r.ok?"Namestitev je uspela.":"Ni uspelo: "+(r.error||"neznana napaka"));await load(true);}
+      catch(e){alert("Ni uspelo: "+e.message)}finally{btn.disabled=false}};
+    $("adaptList").appendChild(btn);
+  }
+}
+function renderJobs(jobs){
+  $("jobsRows").innerHTML=jobs.length?jobs.map(j=>`<tr>
+    <td>${j.id}</td><td><b>${esc(j.name)}</b></td><td>${esc(j.kind)}</td>
+    <td class="code">${esc(j.trigger||"")}</td>
+    <td class="${j.enabled?"ok":"dim"}">${j.enabled?"vklopljeno":"izklopljeno"}</td>
+    <td>${esc(j.last_status||"—")}</td>
+    <td><div class="btns"><button data-toggle="${j.id}">${j.enabled?"IZKLOPI":"VKLOPI"}</button>
+      <button class="danger" data-del="${j.id}">✕</button></div></td></tr>`).join(""):
+    `<tr><td colspan="7">ni opravil</td></tr>`;
+  document.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{await del("/api/autonomy/jobs/"+b.dataset.del);await load()});
+  document.querySelectorAll("[data-toggle]").forEach(b=>b.onclick=async()=>{
+    await post("/api/autonomy/jobs/"+b.dataset.toggle+"/toggle",{});
+    await load();
+  });
+}
+async function loadTasks(){
+  const j=await get("/api/autonomy/tasks?limit=20");
+  $("tasksRows").innerHTML=(j.tasks||[]).length?j.tasks.map(t=>`<tr>
+    <td>${t.id}</td><td><b>${esc(t.name)}</b></td>
+    <td class="${t.status==="done"?"ok":t.status==="failed"?"err":"warn"}">${esc(t.status)}</td>
+    <td>${ts(t.created)}</td>
+    <td><div class="btns"><button data-resume="${t.id}">NADALJUJ</button>
+      <button class="danger" data-cancel="${t.id}">PREKLIČI</button></div></td></tr>`).join(""):
+    `<tr><td colspan="5">ni nalog</td></tr>`;
+  document.querySelectorAll("[data-resume]").forEach(b=>b.onclick=async()=>{
+    try{await post("/api/autonomy/tasks/"+b.dataset.resume+"/resume");}catch(e){alert(e.message)} await loadTasks();});
+  document.querySelectorAll("[data-cancel]").forEach(b=>b.onclick=async()=>{
+    await post("/api/autonomy/tasks/"+b.dataset.cancel+"/cancel"); await loadTasks();});
+}
+async function loadAlerts(){
+  const j=await get("/api/autonomy/alerts?limit=40");
+  $("alertsRows").innerHTML=(j.alerts||[]).length?j.alerts.map(a=>`<tr>
+    <td>${ts(a.ts)}</td><td class="${a.level==="critical"?"err":"warn"}">${esc(a.level)}</td>
+    <td>${esc(a.message)}</td><td><button data-ack="${a.id}">✓</button></td></tr>`).join(""):
+    `<tr><td colspan="4">ni opozoril</td></tr>`;
+  document.querySelectorAll("[data-ack]").forEach(b=>b.onclick=async()=>{
+    await post("/api/autonomy/alerts/"+b.dataset.ack+"/ack"); await loadAlerts();});
+}
+$("jTrigger").onchange=()=>{$("condRow").style.display=$("jTrigger").value==="condition"?"block":"none"};
+$("addJobBtn").onclick=async()=>{
+  const kind=$("jKind").value, t=$("jTrigger").value, v=$("jValue").value.trim();
+  let trigger={kind:t};
+  if(t==="every")trigger.seconds=parseInt(v||"3600",10);
+  if(t==="daily")trigger.time=v||"08:00";
+  if(t==="at")trigger.ts=Date.now()/1000+parseInt(v||"600",10);
+  if(t==="condition"){trigger.for_seconds=0;trigger.condition={metric:$("cMetric").value||"disk_free_percent",op:$("cOp").value||"<",value:parseFloat($("cVal").value||"10")}}
+  const body={name:$("jName").value||"opravilo",kind,trigger,max_runs:0};
+  const action=$("jAction").value;
+  if(action==="notify"){body.notify="Mia";body.text=$("jText").value||"Opomnik"}
+  else if(action==="cleanup")body.template="cleanup";
+  else if(action==="health_report")body.template="health_report";
+  else body.plan={steps:[{kind:"python",action:"noop"}]};
+  try{await post("/api/autonomy/jobs",body);$("jName").value="";$("jText").value="";await load();}
+  catch(e){alert("Ni uspelo: "+e.message)}
+};
+function log(kind,text){const d=document.createElement("div");d.className=kind;d.textContent=text;$("cmdLog").appendChild(d);$("cmdLog").scrollTop=1e9}
+async function runCmd(text){
+  if(!text)return;log("you","› "+text);
+  try{const j=await post("/api/autonomy/text",{input:text,conversation:"hud-auto"});
+    if(j.handled){log("mia",j.text||"(brez odgovora)");
+      (j.tools||[]).forEach(t=>log("sys","  · "+(t.name||"")+" "+(t.preview||"")));}
+    else log("sys","(ni sistemski ukaz — pošlji to v klepet)");
+  }catch(e){log("sys","napaka: "+e.message)}
+}
+$("cmdBtn").onclick=async()=>{const v=$("cmdInput").value.trim();$("cmdInput").value="";await runCmd(v)};
+$("cmdInput").addEventListener("keydown",e=>{if(e.key==="Enter")$("cmdBtn").click()});
+document.querySelectorAll("[data-example]").forEach(b=>b.onclick=()=>runCmd(b.dataset.example));
+$("refreshBtn").onclick=async()=>{await load(true)};
+$("healthBtn").onclick=async()=>{try{const r=await get("/api/autonomy/health?force=1");alert(r.summary||"zdravje: "+r.level)}
+  catch(e){alert(e.message)} await load()};
+$("tickBtn").onclick=async()=>{try{await post("/api/autonomy/tick",{});await load()}catch(e){alert(e.message)}};
+load();
+setInterval(()=>load(false),20000);
+</script>
+</body>
+</html>

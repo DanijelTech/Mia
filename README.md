@@ -48,6 +48,10 @@ lokalnim TTS: 5–10 sekund.
 - **Naloge v ozadju** — programiranje v poljubni mapi, datoteke, terminal,
   iskanje po spletu, časovne naloge, kanban; nevarnejša dejanja čakajo na tvoj
   DOVOLI/ZAVRNI v HUD-u
+- **Samodejnost (mini pod-OS)** — `mia-auto` zazna stroj in manjkajoča orodja,
+  izvaja večkoračne načrte s preverjanjem in rollbackom, vztrajna opravila in
+  pravila (»ko bo disk poln …«), zdravstveni nadzor s sanacijo ter deterministične
+  sistemske ukaze v slovenščini (datoteke, paketi, omrežje, opomniki)
 - **Popoln nadzor nad računalnikom** — `mia-ctl` je revidiran, politiko
   preverjen besednjak za okna, aplikacije, tipkanje/klikanje, posnetke zaslona,
   odložišče, medije, glasnost, svetlost, napajanje, procese, storitve in
@@ -120,6 +124,27 @@ mia-learn feedback --verdict negative --note "raje Chromu"
 V HUD-u je panel **SPOMIN IN ZNANJE**; gumb **ODPRI ZNANJE** pokaže drevo
 veščin, navade, recepte, napake, dnevnik in iskanje. Podrobnosti:
 [docs/LEARNING.md](docs/LEARNING.md) in [docs/CONTROL.md](docs/CONTROL.md).
+
+## Samodejnost — mini pod-OS
+
+Mia se zna prilagoditi stroju, načrtovati več korakov, izvajati opravila po
+urniku ali ob pogoju ter opaziti in odpraviti težave. Vse gre skozi revidiran
+`mia-ctl`, s politiko in potrditvami.
+
+```bash
+mia-auto profile                  # kaj je ta stroj, kaj mu manjka
+mia-auto adapt                    # predlog namestitve manjkajočih orodij
+mia-auto health                   # ocena zdravja + varna sanacija
+mia-auto status                   # stroj, zdravje, opravila, naloge
+mia-auto do "opomni me čez 10 minut, da pijem vodo"
+mia-auto jobs add "jutranji pregled" --daily 08:00 --template health_report
+mia-auto tasks list                # dnevnik nalog z nadaljevanjem
+mia-auto daemon --interval 30      # urnik brez glasovnega strežnika
+```
+
+V HUD-u sta panel **SAMODEJNOST** in stran `/hud/autonomy.html` (pregled,
+prilagoditev, opravila in pravila, naloge, ukaz, opozorila). Podrobnosti:
+[docs/AUTONOMY.md](docs/AUTONOMY.md).
 
 ## Arhitektura
 
@@ -286,24 +311,31 @@ server/speaker_gate.py  prepoznava govornika (ECAPA-TDNN odtisi, SpeechBrain)
 server/tts.py    lokalni TTS pogoni: piper, http (Gepard/Maya1), command, elevenlabs
 server/mia_core/ učenje in znanje (stdlib-only): SQLite, navade, recepti, napake,
                  drevo veščin, zmogljivosti, kontekstni brief, CLI (mia-learn)
+server/mia_core/autonomy/  mini pod-OS: profil stroja, načrti, urnik, pravila,
+                 zdravje, deterministični ukazi, CLI (mia-auto)
 server/speaker_gate.py  oddaljenostni glasovni odtisi (bližina/sredina/daleč)
 server/calibration.py   vodena kalibracija prek HUD WebSocketa
 server/hud/settings.html      NASTAVITVE (budnica, prag, učenje, kalibracija)
 server/hud/capabilities.html  ZMOGLJIVOSTI (potrjeno/naučeno/prazno)
+server/hud/autonomy.html      SAMODEJNOST (profil, načrti, opravila, naloge, zdravje)
 server/scripts/  mia-start/stop/health + enroll_voice.py (glasovna kalibracija)
                  + gepard_tts.py (TTS storitev s per-request višino tona)
 client/          opcijski Windows/Linux odjemalec za pritisk na tipko (z zaznavo budnice)
 worker/          opcijska GPU sidecarja: STT strežnik z velikim modelom + statistika
-hermes-plugin/   Hermes vtičnika: hud_display (medijski paneli) in mia_learning
+hermes-plugin/   Hermes vtičniki: hud_display (medijski paneli), mia_learning
                  (memory_brief/search/feedback/remember/fact/mistake/status/skill_tree)
+                 in mia_autonomy (system_status/profile/health/adapt/plans/run_plan/
+                 command/jobs/tasks/alerts)
 skills/          drevo veščin: mia-companion (koren) + mia-desktop, mia-learning,
-                 mia-music, mia-browser, mia-productivity, mia-diagnostics
+                 mia-music, mia-browser, mia-productivity, mia-diagnostics,
+                 mia-autonomy
 skills/mia-companion/bin/  mia-open, mia-close, mia-volume, mia-artists,
-                 mia-learn, mia-skill, mia-ctl (revidiran nadzor računalnika)
+                 mia-learn, mia-skill, mia-ctl (revidiran nadzor računalnika),
+                 mia-auto (samodejnost: profil, načrti, urnik, zdravje)
 tests/           unittest suite za mia_core, mia-ctl in drevo veščin
 launchd/         predloge za samodejni zagon na macOS (pripombe o TCC in FD limitih)
 docs/            slovenska dokumentacija: SETUP, ARCHITECTURE, LEARNING, CONTROL,
-                 CALIBRATION, CAPABILITIES, TROUBLESHOOTING
+                 AUTONOMY, CALIBRATION, CAPABILITIES, TROUBLESHOOTING
 docs/en/         ista dokumentacija v angleščini
 install.sh       namestitev (brez venv, root ali uporabnik) + manifest
 start-mia.sh     zbudi cel sklad (stack: llama → Hermes → dashboard → Mia + TTS), odpre HUD

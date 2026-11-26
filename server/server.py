@@ -58,6 +58,7 @@ from mia_core.integration import (detect_feedback, detect_remember,
                                   music_play_request, time_answer)
 from mia_core import capabilities as capability_core
 from mia_core.learning import get_core
+from mia_core.autonomy.service import AutonomyService
 
 try:
     import psutil
@@ -1114,6 +1115,31 @@ load_env()
 CFG = load_config()
 HERMES = HermesAPI(CFG)   # lightweight API client - independent of the STT pipeline
 LEARNING = get_core(CFG)  # durable memory, habits, recipes, skill tree
+
+
+# Autonomy is created lazily: a broken profile or DB must never prevent the
+# voice server from starting. The same SQLite store as learning is reused.
+AUTONOMY = None
+_AUTONOMY_LOCK = threading.Lock()
+
+
+def get_autonomy() -> AutonomyService | None:
+    global AUTONOMY
+    if AUTONOMY is not None:
+        return AUTONOMY
+    with _AUTONOMY_LOCK:
+        if AUTONOMY is None:
+            try:
+                AUTONOMY = AutonomyService(
+                    store=LEARNING.store, cfg=CFG,
+                    logger=lambda msg: print(f"[mia-auto] {msg}", flush=True))
+            except Exception as exc:
+                print(f"autonomy unavailable: {type(exc).__name__}: {exc}",
+                      flush=True)
+                return None
+    return AUTONOMY
+
+
 PIPELINE: VoicePipelineServer | None = None
 
 # live voice settings (HUD pitch slider) — persisted across restarts
@@ -1233,6 +1259,61 @@ async def start_learning_loop() -> None:
 
     asyncio.get_running_loop().create_task(warm())
     asyncio.get_running_loop().create_task(loop())
+
+
+_AUTONOMY_STARTED = False
+
+
+@app.on_event("startup")
+async def start_autonomy_loop() -> None:
+    """Detect the machine, then run scheduled jobs and health checks."""
+    global _AUTONOMY_STARTED
+    if _AUTONOMY_STARTED:
+        return
+    _AUTONOMY_STARTED = True
+    service = get_autonomy()
+    if service is None:
+        return
+    interval = max(10, int((service.cfg.get("autonomy") or {}).get(
+        "interval_seconds", 30) or 30))
+
+    async def warm() -> None:
+        try:
+            await asyncio.to_thread(service.refresh_profile, True)
+            await asyncio.to_thread(service.tick)
+        except Exception as exc:
+            print(f"autonomy warm skipped: {exc}", flush=True)
+
+    async def loop() -> None:
+        await asyncio.sleep(20)
+        while True:
+            try:
+                await asyncio.to_thread(service.tick)
+            except Exception as exc:
+                print(f"autonomy loop error: {exc}", flush=True)
+            await asyncio.sleep(interval)
+
+    loop_handle = asyncio.get_running_loop()
+    speech_queue: asyncio.Queue = asyncio.Queue()
+
+    def _queue_speech(text: str) -> None:
+        loop_handle.call_soon_threadsafe(speech_queue.put_nowait, text)
+
+    service.set_speak(_queue_speech)
+
+    async def announce() -> None:
+        while True:
+            text = await speech_queue.get()
+            payload = {"type": "mia_say", "text": str(text)[:600]}
+            for client in list(WS_CLIENTS):
+                try:
+                    await client.send_json(payload)
+                except Exception:
+                    WS_CLIENTS.discard(client)
+
+    asyncio.get_running_loop().create_task(warm())
+    asyncio.get_running_loop().create_task(loop())
+    asyncio.get_running_loop().create_task(announce())
 
 
 # ------------------------------------------------------------------ Auth
@@ -1379,6 +1460,22 @@ async def hud_chat(request: Request) -> JSONResponse:
         confirm = (f"Glasnost {last.split(':', 1)[1].strip()}, šefe."
                    if "glasnost:" in last else "Zvok preklopljen, šefe.")
         return quick(confirm, [{"name": "mia-volume", "preview": " ".join(volume)}])
+
+    autonomy = get_autonomy()
+    if autonomy is not None:
+        try:
+            handled = await asyncio.to_thread(
+                autonomy.handle, chat_text, conversation, "chat")
+        except Exception as exc:
+            print(f"AUTONOMY chat skipped: {type(exc).__name__}: {exc}", flush=True)
+            handled = None
+        if handled:
+            print(f"AUTONOMY chat: {handled.get('intent')} -> "
+                  f"{(handled.get('text') or '')[:100]!r}", flush=True)
+            return quick(handled.get("text") or "",
+                         handled.get("tools") or
+                         [{"name": "mia-auto",
+                           "preview": str(handled.get("intent") or "")}])
 
     google_mode, google_query = google_request(chat_text)
     agent_text = text
@@ -2073,6 +2170,264 @@ def _local_desktop_info() -> dict:
     return info
 
 
+def _autonomy_or_503() -> AutonomyService | None:
+    return get_autonomy()
+
+
+@app.get("/api/autonomy/status")
+async def autonomy_status() -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    return JSONResponse(await asyncio.to_thread(service.status))
+
+
+@app.get("/api/autonomy/plans")
+async def autonomy_plans() -> JSONResponse:
+    from mia_core.autonomy.planner import TEMPLATES, build_template
+    plans = []
+    for name in sorted(TEMPLATES):
+        try:
+            plan = build_template(name)
+            plans.append({"name": name, "description": plan.get("description"),
+                          "destructive": plan.get("destructive"),
+                          "steps": [{"kind": s["kind"], "label": s.get("label")}
+                                    for s in plan.get("steps") or []]})
+        except Exception as exc:
+            plans.append({"name": name, "error": str(exc)})
+    return JSONResponse({"plans": plans})
+
+
+@app.get("/api/autonomy/profile")
+async def autonomy_profile(request: Request) -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    refresh = request.query_params.get("refresh") in ("1", "true", "yes")
+    profile = await asyncio.to_thread(
+        service.refresh_profile if refresh else service.profile)
+    return JSONResponse(profile.data)
+
+
+@app.post("/api/autonomy/refresh")
+async def autonomy_refresh() -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    profile = await asyncio.to_thread(service.refresh_profile, True)
+    try:
+        await asyncio.to_thread(capability_core.refresh, LEARNING.store,
+                                LEARNING.cfg, _capability_extra())
+    except Exception:
+        pass
+    return JSONResponse({"ok": True, "profile": profile.data,
+                         "score": profile.data.get("score")})
+
+
+@app.post("/api/autonomy/adapt")
+async def autonomy_adapt(request: Request) -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    body = await request.json()
+    result = await asyncio.to_thread(service.adaptation, bool(body.get("apply")))
+    return JSONResponse(result, status_code=200 if result.get("ok") else 409)
+
+
+@app.get("/api/autonomy/health")
+async def autonomy_health(request: Request) -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    force = request.query_params.get("force") in ("1", "true", "yes")
+    return JSONResponse(await asyncio.to_thread(service.health, force))
+
+
+@app.post("/api/autonomy/remediate")
+async def autonomy_remediate() -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    return JSONResponse(await asyncio.to_thread(service.remediate, force=True))
+
+
+@app.get("/api/autonomy/jobs")
+async def autonomy_jobs(request: Request) -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    kind = request.query_params.get("kind") or None
+    jobs = await asyncio.to_thread(service.store.list_jobs, 200, None, kind)
+    return JSONResponse({"jobs": jobs})
+
+
+@app.post("/api/autonomy/jobs")
+async def autonomy_job_add(request: Request) -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    body = await request.json()
+    from mia_core.autonomy.planner import build_template, make_plan, step_notify
+    plan = body.get("plan")
+    if not plan and body.get("template"):
+        plan = build_template(str(body["template"]))
+    if not plan:
+        plan = make_plan([step_notify(str(body.get("notify") or body.get("name") or "Mia"),
+                                      str(body.get("text") or ""))],
+                         name=str(body.get("name") or "opravilo"))
+    try:
+        job_id = await asyncio.to_thread(
+            service.scheduler.add_job,
+            str(body.get("name") or "opravilo"),
+            body.get("trigger") or {"kind": "every", "seconds": 3600},
+            plan,
+            conditions=body.get("conditions") or [],
+            kind=str(body.get("kind") or "job"),
+            enabled=bool(body.get("enabled", True)),
+            max_runs=int(body.get("max_runs") or 0),
+            source="hud")
+    except Exception as exc:
+        return JSONResponse({"error": f"{type(exc).__name__}: {exc}"},
+                            status_code=400)
+    return JSONResponse({"ok": True, "job": service.store.get_job(job_id)})
+
+
+@app.delete("/api/autonomy/jobs/{job_id}")
+async def autonomy_job_delete(job_id: int) -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    ok = await asyncio.to_thread(service.scheduler.remove_job, job_id)
+    return JSONResponse({"ok": ok})
+
+
+@app.post("/api/autonomy/jobs/{job_id}/toggle")
+async def autonomy_job_toggle(job_id: int) -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    job = await asyncio.to_thread(service.store.get_job, job_id)
+    if not job:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    ok = await asyncio.to_thread(service.store.update_job, job_id,
+                                 enabled=not job.get("enabled"))
+    return JSONResponse({"ok": ok, "enabled": not job.get("enabled")})
+
+
+@app.post("/api/autonomy/tick")
+async def autonomy_tick() -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    return JSONResponse(await asyncio.to_thread(service.tick))
+
+
+@app.get("/api/autonomy/tasks")
+async def autonomy_tasks(request: Request) -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    limit = int(request.query_params.get("limit") or 30)
+    return JSONResponse({"tasks": await asyncio.to_thread(
+        service.store.list_tasks, limit)})
+
+
+@app.get("/api/autonomy/tasks/{task_id}")
+async def autonomy_task(task_id: int) -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    task = await asyncio.to_thread(service.store.get_task, task_id)
+    if not task:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    steps = await asyncio.to_thread(service.store.list_task_steps, task_id)
+    return JSONResponse({"task": task, "steps": steps})
+
+
+@app.post("/api/autonomy/tasks/{task_id}/resume")
+async def autonomy_task_resume(task_id: int) -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    result = await asyncio.to_thread(service.planner.resume, task_id)
+    return JSONResponse(result, status_code=200 if result.get("ok") else 409)
+
+
+@app.post("/api/autonomy/tasks/{task_id}/cancel")
+async def autonomy_task_cancel(task_id: int) -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    await asyncio.to_thread(service.store.update_task, task_id,
+                            status="cancelled", finished=time.time())
+    service.planner.cancel()
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/autonomy/run")
+async def autonomy_run(request: Request) -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    body = await request.json()
+    from mia_core.autonomy.planner import build_template, sanitize_plan
+    plan = body.get("plan")
+    if not plan and body.get("template"):
+        plan = build_template(str(body["template"]))
+    if not plan:
+        return JSONResponse({"error": "plan or template required"}, status_code=400)
+    try:
+        clean = sanitize_plan(plan)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    if clean.get("destructive") and not (body.get("confirm") or
+                                         service.planner.destructive_allowed()):
+        return JSONResponse({"needs_confirmation": True, "plan": clean},
+                            status_code=409)
+    clean["confirmed"] = True
+    result = await asyncio.to_thread(
+        service.planner.execute, clean,
+        name=plan.get("name") or "hud", source="hud")
+    return JSONResponse(result, status_code=200 if result.get("ok") else 409)
+
+
+@app.post("/api/autonomy/text")
+async def autonomy_text(request: Request) -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    body = await request.json()
+    text = (body.get("input") or "").strip()
+    if not text:
+        return JSONResponse({"error": "empty input"}, status_code=400)
+    result = await asyncio.to_thread(service.handle, text,
+                                     body.get("conversation") or "mia-main",
+                                     "hud")
+    if result is None:
+        return JSONResponse({"handled": False, "text": ""})
+    result["handled"] = True
+    return JSONResponse(result)
+
+
+@app.get("/api/autonomy/alerts")
+async def autonomy_alerts(request: Request) -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    limit = int(request.query_params.get("limit") or 30)
+    return JSONResponse({"alerts": await asyncio.to_thread(
+        service.store.list_alerts, limit, False)})
+
+
+@app.post("/api/autonomy/alerts/{alert_id}/ack")
+async def autonomy_alert_ack(alert_id: int) -> JSONResponse:
+    service = _autonomy_or_503()
+    if service is None:
+        return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
+    ok = await asyncio.to_thread(service.store.acknowledge_alert, alert_id)
+    return JSONResponse({"ok": ok})
+
+
 @app.get("/api/machines")
 async def machines() -> JSONResponse:
     """Local (Mac) stats + configured remote workers.
@@ -2642,6 +2997,27 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
                                     "Evo šefe." if opened
                                     else "Našla sem, a nisem mogla odpreti, šefe.")
             return
+
+        if said_wake:
+            autonomy = get_autonomy()
+            if autonomy is not None:
+                try:
+                    handled = await asyncio.to_thread(
+                        autonomy.handle, stripped, conn.conversation, "voice")
+                except Exception as exc:
+                    print(f"AUTONOMY voice skipped: {type(exc).__name__}: {exc}",
+                          flush=True)
+                    handled = None
+                if handled:
+                    for tool in handled.get("tools") or []:
+                        name = tool.get("name") or "mia-ctl"
+                        if name not in timing.tools_used:
+                            timing.tools_used.append(name)
+                    print(f"AUTONOMY voice: {handled.get('intent')} -> "
+                          f"{(handled.get('text') or '')[:100]!r}", flush=True)
+                    await _speak_and_finish(ws, pipeline, conn, timing,
+                                            handled.get("text") or "Narejeno.")
+                    return
 
         if not speaker_ok:
             if said_wake and override_ok:

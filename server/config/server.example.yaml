@@ -195,6 +195,18 @@ persona:                     # used only by the anthropic fallback path
     ena do tri kratke povedi, brez markdowna, brez seznamov. Številke, datume in
     ure izgovarjaj z besedami. Nikoli ne izgovori skrivnosti, ključev ali gesel.
 
+# ---------------------------------------------------------------- autonomy
+# Samodejno prilagajanje, načrti, opravila in zdravje sistema.
+autonomy:
+  enabled: true
+  interval_seconds: 30          # kako pogosto teče urnik v ozadju
+  health_interval: 300          # zdravstveni pregled vsakih 5 minut
+  max_jobs_per_tick: 3          # varovalka pred plazom opravil
+  allow_destructive: false      # true = tudi nevarna dejanja brez potrditve
+  auto_install: false           # true = samodejno namesti manjkajoča orodja
+  auto_remediate: false         # true = samodejno popravi varna opozorila
+  temp_max_age_hours: 48
+
 # ---------------------------------------------------------------- learning
 # Trajni spomin, navade, recepti in drevo veščin. Brez te sekcije veljajo
 # privzete vrednosti (vklopljeno, baza v ~/.local/state/mia/learning.db).

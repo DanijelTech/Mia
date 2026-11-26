@@ -25,7 +25,15 @@ The current major addition is the **learning/knowledge core** and the
 - `hermes-plugin/mia_learning/` — first-class Hermes tools
   (`memory_brief/search/feedback/remember/fact/mistake/status`, `skill_tree`)
   that call `/api/learning/*`; `hermes-plugin/hud_display/` remains the media
-  panel plugin.
+  panel plugin; `hermes-plugin/mia_autonomy/` exposes
+  `system_status/profile/health/adapt/plans/run_plan/command/jobs/tasks/alerts`
+  over `/api/autonomy/*`.
+- `server/mia_core/autonomy/` — the mini sub-OS layer: adaptive machine
+  profile/backends (`profile.py`), declarative conditions, plan execution with
+  verification/retry/rollback/journal (`planner.py`), persistent jobs and rules
+  (`scheduler.py`), health watchdog (`health.py`), deterministic Slovenian
+  system-command router (`intents.py`), shared facade (`service.py`) and the
+  `mia-auto` CLI. HUD: `/hud/autonomy.html`; API: `/api/autonomy/*`.
 
 ## Commands
 
@@ -40,6 +48,12 @@ python3 -c "import sys; sys.path.insert(0,'server'); import mia_core; print(mia_
 ./skills/mia-companion/bin/mia-skill validate
 ./skills/mia-companion/bin/mia-ctl doctor --json
 ./skills/mia-companion/bin/mia-learn capabilities --refresh
+./skills/mia-companion/bin/mia-auto profile --json
+./skills/mia-companion/bin/mia-auto status
+./skills/mia-companion/bin/mia-auto health --json
+./skills/mia-companion/bin/mia-auto route "opomni me čez 5 minut, da pijem vodo"
+./skills/mia-companion/bin/mia-auto jobs add "test" --every 3600 --plan '{"steps":[{"kind":"python","action":"noop"}]}'
+./skills/mia-companion/bin/mia-auto tasks list
 python3 server/scripts/calibrate_voice.py --help
 
 # installer / runtime
@@ -65,6 +79,15 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   `~/.local/state/mia/control-audit.jsonl` and refreshes the skill index every
   `auto_mine_interval_seconds` (default 900).
 - Learning is fail-open: never let a DB/tree error break the voice loop.
+- Autonomy shares `LEARNING.store`; the server ticks the scheduler every
+  `autonomy.interval_seconds` (30 s) and health every `health_interval` (300 s).
+  `mia-auto daemon` is the headless equivalent.
+- The deterministic router in `autonomy/intents.py` runs before Hermes in both
+  `/api/chat` and the voice turn; unmatched text always falls through to the
+  agent.
+- Plan steps are argv lists executed through `mia-ctl`; `--yes` is appended only
+  after a real confirmation or for a user-created automation. Destructive plans
+  raise `NeedsConfirmation` otherwise.
 
 ## Conventions
 
@@ -88,6 +111,9 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
 - `tests/test_capabilities.py` — catalog, detection, confirmation, learned.
 - `tests/test_voice_calibration.py` — strict wake, calibration state machine,
   Google answer/show split (numpy-dependent tests skip if numpy is absent).
+- `tests/test_autonomy.py` — profile/metrics, planner verification/retries/
+  rollback/confirmation, scheduler edge triggers and events, health, alerts,
+  intent router, service confirmations and `mia-auto` CLI.
 - Keep tests hermetic: use `tempfile`, set `HOME`/`XDG_*` for `mia-ctl`.
 
 ## Known pitfalls (hard-won)
@@ -109,6 +135,14 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
 - Only verified episodes (or user-confirmed) become recipes. Do not relax this
   without a deliberate migration.
 - `server/logs/settings.json` is runtime state; do not commit it.
+- Plans are executable state: never run `privacy.redact_obj()` over a plan in
+  place (it corrupts argv). Redact audit/output only.
+- Event rules must baseline on first observation; otherwise a rule fires just
+  because Mia started. `normalize_trigger()` uses the `__unset__` sentinel.
+- A condition rule is edge-triggered (`armed`/`since`); do not turn it into a
+  level trigger or every tick will repeat the action.
+- `mia-ctl net firewall` uses `dest` `fw_action` because `action` is already
+  the subcommand name; keep that split.
 - Capabilities live in `server/mia_core/capabilities.py`; adding an item means
   also wiring `mark_learned()` if it has a `mia-ctl` action.
 - Never commit `server/config/server.yaml`, `server/logs/`, `server/voices/`,
@@ -123,3 +157,12 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   `server.py`; add a unit test.
 - New HUD view: add a panel in `server/hud/index.html` and a page under
   `server/hud/`; protect it with the existing token middleware.
+- New autonomy capability: add it to `autonomy/profile.py` BACKEND_CHAINS +
+  READINESS_GROUPS, to `capabilities.py` CATALOG/mark_learned, and (if it has a
+  `mia-ctl` verb) to the `mia-ctl` parser + dispatch + `verify_result`.
+- New plan step kind: `planner.STEP_KINDS`, `sanitize_plan` and
+  `_execute_step`; add a test.
+- New trigger: `scheduler.TRIGGER_KINDS`, `normalize_trigger`, `_is_due` and
+  `next_run`; keep condition rules edge-triggered.
+- New natural command: add an anchored rule to `autonomy/intents.py` and a
+  handler in `autonomy/service.py`; add it to the intent test table.

@@ -121,6 +121,25 @@ tree, habits, recipes, mistakes, episode log and search. Details:
 [docs/en/LEARNING.md](docs/en/LEARNING.md) and
 [docs/en/CONTROL.md](docs/en/CONTROL.md).
 
+## Autonomy — a mini sub-OS
+
+```bash
+mia-auto profile                   # what this machine is, what it lacks
+mia-auto adapt                     # install plan for missing tools
+mia-auto health                    # scored health + safe remediation
+mia-auto status                    # machine, health, jobs, tasks
+mia-auto do "remind me in 10 minutes to drink water"
+mia-auto jobs add "morning" --daily 08:00 --template health_report
+mia-auto tasks list                # resumable task journal
+mia-auto daemon --interval 30      # scheduler without the voice server
+```
+
+It detects OS/distro/init/package manager/desktop/backends, executes multi-step
+plans with verification, retries and rollback, keeps persistent jobs and
+reactive rules (“when the disk is full …”), watches health, and understands
+deterministic system commands before the LLM. HUD: `/hud/autonomy.html`.
+Details: [docs/en/AUTONOMY.md](docs/en/AUTONOMY.md).
+
 ## Architecture
 
 ```
@@ -298,24 +317,31 @@ server/speaker_gate.py  speaker verification (ECAPA-TDNN voiceprints, SpeechBrai
 server/tts.py    local TTS backends: piper, http (Gepard/Maya1), command, elevenlabs
 server/mia_core/ learning and knowledge (stdlib-only): SQLite, habits, recipes,
                  anti-patterns, skill tree, capabilities, context brief, mia-learn CLI
+server/mia_core/autonomy/  mini sub-OS: machine profile, plans, scheduler,
+                 rules, health, deterministic commands, mia-auto CLI
 server/speaker_gate.py  distance-aware voiceprints (near/mid/far)
 server/calibration.py   guided calibration over the HUD WebSocket
 server/hud/settings.html      SETTINGS (wake, threshold, learning, calibration)
 server/hud/capabilities.html  CAPABILITIES (confirmed/learned/empty)
+server/hud/autonomy.html      AUTONOMY (profile, plans, jobs, tasks, health)
 server/scripts/  mia-start/stop/health + enroll_voice.py (voice calibration)
                  + gepard_tts.py (TTS service with per-request pitch)
 client/          optional Windows/Linux push-to-talk Python client (wake word capable)
 worker/          optional GPU sidecars: big-model STT server + stats agent
-hermes-plugin/   Hermes plugins: hud_display (media panels) and mia_learning
+hermes-plugin/   Hermes plugins: hud_display (media panels), mia_learning
                  (memory_brief/search/feedback/remember/fact/mistake/status/skill_tree)
+                 and mia_autonomy (system_status/profile/health/adapt/plans/run_plan/
+                 command/jobs/tasks/alerts)
 skills/          skill tree: mia-companion (root) + mia-desktop, mia-learning,
-                 mia-music, mia-browser, mia-productivity, mia-diagnostics
+                 mia-music, mia-browser, mia-productivity, mia-diagnostics,
+                 mia-autonomy
 skills/mia-companion/bin/  mia-open, mia-close, mia-volume, mia-artists,
-                 mia-learn, mia-skill, mia-ctl (audited computer control)
+                 mia-learn, mia-skill, mia-ctl (audited computer control),
+                 mia-auto (profile, plans, jobs, health)
 tests/           unittest suite for mia_core, mia-ctl and the skill tree
 launchd/         macOS auto-start templates with hard-won TCC + FD-limit notes
 docs/            Slovenian docs; docs/en/ the English copies
-                 (SETUP, ARCHITECTURE, LEARNING, CONTROL, CALIBRATION, CAPABILITIES)
+                 (SETUP, ARCHITECTURE, LEARNING, CONTROL, AUTONOMY, CALIBRATION, CAPABILITIES)
 install.sh       install (no venv, root or user) + manifest
 start-mia.sh     boots the whole stack (stack: llama → Hermes → dashboard → Mia + TTS), opens HUD
 stop-mia.sh      stops everything and frees RAM/VRAM; status, --restart, --free-ports

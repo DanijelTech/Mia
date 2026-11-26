@@ -16,6 +16,7 @@ skills:
   - mia-browser
   - mia-productivity
   - mia-diagnostics
+  - mia-autonomy
 
 # Rules the validator and the agent both follow:
 rules:

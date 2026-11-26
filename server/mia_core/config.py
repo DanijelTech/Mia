@@ -56,6 +56,17 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_text_chars": 4000,
         "max_response_chars": 2000,
     },
+    "autonomy": {
+        "enabled": True,
+        "interval_seconds": 30,
+        "health_interval": 300,
+        "profile_ttl": 300,
+        "max_jobs_per_tick": 3,
+        "temp_max_age_hours": 48,
+        "allow_destructive": False,
+        "auto_install": False,
+        "auto_remediate": False,
+    },
 }
 
 _ENV_MAP = {

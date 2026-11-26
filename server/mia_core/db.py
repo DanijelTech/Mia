@@ -21,7 +21,7 @@ from typing import Any, Iterable
 
 from . import privacy
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -158,6 +158,98 @@ CREATE TABLE IF NOT EXISTS audit_ingest (
     offset INTEGER NOT NULL DEFAULT 0,
     updated REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    source TEXT DEFAULT 'manual',
+    status TEXT DEFAULT 'pending',
+    plan TEXT,
+    result TEXT,
+    error TEXT,
+    job_id INTEGER,
+    dry_run INTEGER DEFAULT 0,
+    created REAL NOT NULL,
+    started REAL,
+    finished REAL,
+    current_step INTEGER DEFAULT 0,
+    steps_total INTEGER DEFAULT 0,
+    origin TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, created DESC);
+CREATE TABLE IF NOT EXISTS task_steps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL,
+    idx INTEGER NOT NULL,
+    kind TEXT,
+    label TEXT,
+    status TEXT DEFAULT 'pending',
+    action TEXT,
+    started REAL,
+    finished REAL,
+    rc INTEGER,
+    output TEXT,
+    error TEXT,
+    attempts INTEGER DEFAULT 0,
+    verification TEXT,
+    UNIQUE(task_id, idx)
+);
+CREATE INDEX IF NOT EXISTS idx_task_steps ON task_steps(task_id, idx);
+CREATE TABLE IF NOT EXISTS jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    kind TEXT DEFAULT 'job',
+    enabled INTEGER DEFAULT 1,
+    trigger TEXT,
+    conditions TEXT,
+    plan TEXT,
+    max_runs INTEGER DEFAULT 0,
+    run_count INTEGER DEFAULT 0,
+    last_run REAL,
+    next_run REAL,
+    last_status TEXT,
+    last_error TEXT,
+    created REAL NOT NULL,
+    updated REAL NOT NULL,
+    source TEXT DEFAULT 'user',
+    tags TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_next ON jobs(enabled, next_run);
+CREATE TABLE IF NOT EXISTS job_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id INTEGER NOT NULL,
+    task_id INTEGER,
+    started REAL NOT NULL,
+    finished REAL,
+    status TEXT,
+    detail TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_job_runs ON job_runs(job_id, started DESC);
+CREATE TABLE IF NOT EXISTS pending_actions (
+    key TEXT PRIMARY KEY,
+    created REAL NOT NULL,
+    expires REAL NOT NULL,
+    action TEXT NOT NULL,
+    prompt TEXT
+);
+CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts REAL NOT NULL,
+    level TEXT,
+    source TEXT,
+    key TEXT,
+    message TEXT,
+    detail TEXT,
+    acknowledged INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_alerts_ts ON alerts(acknowledged, ts DESC);
+CREATE TABLE IF NOT EXISTS profile_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts REAL NOT NULL,
+    fingerprint TEXT,
+    data TEXT,
+    changes TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_profile_ts ON profile_snapshots(ts DESC);
 """
 
 _FTS_SCHEMA = """
@@ -749,6 +841,342 @@ class Store:
         for row in rows:
             d = dict(row)
             d["detail"] = _loads(d.get("detail"), {})
+            out.append(d)
+        return out
+
+    # ---------------------------------------------------------- autonomy
+    def create_task(self, plan: dict, name: str = "", source: str = "manual",
+                    job_id: int | None = None, dry_run: bool = False,
+                    origin: str = "") -> int:
+        now = time.time()
+        cur = self._execute(
+            """INSERT INTO tasks(name, source, status, plan, job_id, dry_run,
+               created, steps_total, origin)
+               VALUES(?,?, 'pending', ?, ?, ?, ?, ?, ?)""",
+            # The plan is executable state, not prose: redacting it in place
+            # would corrupt step arguments. Secrets are kept out of plans by
+            # the intent layer; the audit log still redacts every argv.
+            (self._safe(name, 200), self._safe(source, 60), _dumps(plan),
+             job_id, 1 if dry_run else 0, now,
+             len(plan.get("steps") or []), self._safe(origin, 200)),
+        )
+        return int(cur.lastrowid)
+
+    def update_task(self, task_id: int, **fields: Any) -> bool:
+        if not fields:
+            return False
+        allowed = {"status", "result", "error", "started", "finished",
+                   "current_step", "steps_total", "plan"}
+        sets, params = [], []
+        for key, value in fields.items():
+            if key not in allowed:
+                continue
+            sets.append(f"{key}=?")
+            params.append(_dumps(value) if isinstance(value, (dict, list)) else value)
+        if not sets:
+            return False
+        params.append(task_id)
+        self._execute(f"UPDATE tasks SET {', '.join(sets)} WHERE id=?", params)
+        return True
+
+    @staticmethod
+    def _task_dict(row: sqlite3.Row) -> dict:
+        d = dict(row)
+        d["plan"] = _loads(d.get("plan"), {})
+        d["result"] = _loads(d.get("result"), {})
+        d["dry_run"] = bool(d.get("dry_run"))
+        return d
+
+    def get_task(self, task_id: int) -> dict | None:
+        row = self._one("SELECT * FROM tasks WHERE id=?", (int(task_id),))
+        return self._task_dict(row) if row else None
+
+    def list_tasks(self, limit: int = 50, status: str | None = None,
+                   job_id: int | None = None) -> list[dict]:
+        sql = "SELECT * FROM tasks WHERE 1=1"
+        params: list[Any] = []
+        if status:
+            sql += " AND status=?"
+            params.append(status)
+        if job_id is not None:
+            sql += " AND job_id=?"
+            params.append(job_id)
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(max(1, int(limit)))
+        return [self._task_dict(r) for r in self._query(sql, params)]
+
+    def add_task_step(self, task_id: int, idx: int, kind: str = "",
+                      label: str = "", action: Any = None) -> int:
+        cur = self._execute(
+            """INSERT INTO task_steps(task_id, idx, kind, label, status, action)
+               VALUES(?,?,?,?, 'pending', ?)
+               ON CONFLICT(task_id, idx) DO UPDATE SET kind=excluded.kind,
+                 label=excluded.label, action=excluded.action""",
+            (int(task_id), int(idx), self._safe(kind, 40), self._safe(label, 200),
+             _dumps(action) if action is not None else "null"),
+        )
+        return int(cur.lastrowid or 0)
+
+    def update_task_step(self, task_id: int, idx: int, **fields: Any) -> bool:
+        allowed = {"status", "started", "finished", "rc", "output", "error",
+                   "attempts", "verification"}
+        sets, params = [], []
+        for key, value in fields.items():
+            if key not in allowed:
+                continue
+            sets.append(f"{key}=?")
+            if key == "verification":
+                params.append(_dumps(value) if value is not None else "null")
+            else:
+                params.append(value)
+        if not sets:
+            return False
+        params.extend([int(task_id), int(idx)])
+        self._execute(
+            f"UPDATE task_steps SET {', '.join(sets)} WHERE task_id=? AND idx=?",
+            params)
+        return True
+
+    def list_task_steps(self, task_id: int) -> list[dict]:
+        rows = self._query(
+            "SELECT * FROM task_steps WHERE task_id=? ORDER BY idx", (int(task_id),))
+        out = []
+        for row in rows:
+            d = dict(row)
+            d["action"] = _loads(d.get("action"), None)
+            d["verification"] = _loads(d.get("verification"), {})
+            out.append(d)
+        return out
+
+    def recover_tasks(self) -> int:
+        """Tasks interrupted by a restart are marked for explicit resume."""
+        cur = self._execute(
+            "UPDATE tasks SET status='interrupted', finished=? "
+            "WHERE status='running'", (time.time(),))
+        return int(cur.rowcount or 0)
+
+    # ---------------------------------------------------------------- jobs
+    def upsert_job(self, name: str, trigger: dict, plan: dict,
+                   conditions: list | None = None, kind: str = "job",
+                   enabled: bool = True, max_runs: int = 0,
+                   source: str = "user", tags: list | None = None,
+                   job_id: int | None = None,
+                   next_run: float | None = None) -> int:
+        now = time.time()
+        if job_id:
+            self._execute(
+                """UPDATE jobs SET name=?, kind=?, enabled=?, trigger=?,
+                   conditions=?, plan=?, max_runs=?, next_run=?, updated=?
+                   WHERE id=?""",
+                (self._safe(name, 200), kind, 1 if enabled else 0,
+                 _dumps(trigger), _dumps(conditions or []), _dumps(plan),
+                 int(max_runs), next_run, now, int(job_id)),
+            )
+            return int(job_id)
+        cur = self._execute(
+            """INSERT INTO jobs(name, kind, enabled, trigger, conditions, plan,
+               max_runs, next_run, created, updated, source, tags)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (self._safe(name, 200), kind, 1 if enabled else 0, _dumps(trigger),
+             _dumps(conditions or []), _dumps(plan), int(max_runs), next_run,
+             now, now, self._safe(source, 60), _dumps(tags or [])),
+        )
+        return int(cur.lastrowid)
+
+    @staticmethod
+    def _job_dict(row: sqlite3.Row) -> dict:
+        d = dict(row)
+        d["trigger"] = _loads(d.get("trigger"), {})
+        d["conditions"] = _loads(d.get("conditions"), [])
+        d["plan"] = _loads(d.get("plan"), {})
+        d["tags"] = _loads(d.get("tags"), [])
+        d["enabled"] = bool(d.get("enabled"))
+        return d
+
+    def get_job(self, job_id: int) -> dict | None:
+        row = self._one("SELECT * FROM jobs WHERE id=?", (int(job_id),))
+        return self._job_dict(row) if row else None
+
+    def list_jobs(self, limit: int = 200, enabled: bool | None = None,
+                  kind: str | None = None) -> list[dict]:
+        sql = "SELECT * FROM jobs WHERE 1=1"
+        params: list[Any] = []
+        if enabled is not None:
+            sql += " AND enabled=?"
+            params.append(1 if enabled else 0)
+        if kind:
+            sql += " AND kind=?"
+            params.append(kind)
+        sql += " ORDER BY COALESCE(next_run, 1e18), id LIMIT ?"
+        params.append(max(1, int(limit)))
+        return [self._job_dict(r) for r in self._query(sql, params)]
+
+    def update_job(self, job_id: int, **fields: Any) -> bool:
+        allowed = {"name", "kind", "enabled", "trigger", "conditions", "plan",
+                   "max_runs", "run_count", "last_run", "next_run",
+                   "last_status", "last_error", "tags"}
+        sets, params = [], []
+        for key, value in fields.items():
+            if key not in allowed:
+                continue
+            sets.append(f"{key}=?")
+            if key in ("trigger", "conditions", "plan", "tags"):
+                params.append(_dumps(value))
+            elif key == "enabled":
+                params.append(1 if value else 0)
+            else:
+                params.append(value)
+        if not sets:
+            return False
+        sets.append("updated=?")
+        params.append(time.time())
+        params.append(int(job_id))
+        self._execute(f"UPDATE jobs SET {', '.join(sets)} WHERE id=?", params)
+        return True
+
+    def delete_job(self, job_id: int) -> bool:
+        cur = self._execute("DELETE FROM jobs WHERE id=?", (int(job_id),))
+        return bool(cur.rowcount)
+
+    def record_job_run(self, job_id: int, task_id: int | None = None,
+                       status: str = "running", detail: Any = None) -> int:
+        cur = self._execute(
+            """INSERT INTO job_runs(job_id, task_id, started, status, detail)
+               VALUES(?,?,?,?,?)""",
+            (int(job_id), task_id, time.time(), status, _dumps(detail or {})))
+        return int(cur.lastrowid)
+
+    def finish_job_run(self, run_id: int, status: str = "",
+                       detail: Any = None) -> bool:
+        self._execute(
+            "UPDATE job_runs SET finished=?, status=?, detail=? WHERE id=?",
+            (time.time(), status, _dumps(detail or {}), int(run_id)))
+        return True
+
+    def list_job_runs(self, job_id: int, limit: int = 20) -> list[dict]:
+        rows = self._query(
+            "SELECT * FROM job_runs WHERE job_id=? ORDER BY id DESC LIMIT ?",
+            (int(job_id), max(1, int(limit))))
+        out = []
+        for row in rows:
+            d = dict(row)
+            d["detail"] = _loads(d.get("detail"), {})
+            out.append(d)
+        return out
+
+    # ------------------------------------------------------- pending actions
+    def set_pending(self, key: str, action: Any, prompt: str = "",
+                    ttl: float = 600) -> bool:
+        now = time.time()
+        self._execute(
+            """INSERT INTO pending_actions(key, created, expires, action, prompt)
+               VALUES(?,?,?,?,?)
+               ON CONFLICT(key) DO UPDATE SET created=excluded.created,
+                 expires=excluded.expires, action=excluded.action,
+                 prompt=excluded.prompt""",
+            (self._safe(key, 200), now, now + float(ttl), _dumps(action),
+             self._safe(prompt, 400)))
+        return True
+
+    def get_pending(self, key: str) -> dict | None:
+        row = self._one("SELECT * FROM pending_actions WHERE key=?",
+                        (self._safe(key, 200),))
+        if not row:
+            return None
+        d = dict(row)
+        if d.get("expires") and float(d["expires"]) < time.time():
+            self.delete_pending(key)
+            return None
+        d["action"] = _loads(d.get("action"), {})
+        return d
+
+    def list_pending(self, limit: int = 50) -> list[dict]:
+        self.purge_pending()
+        rows = self._query(
+            "SELECT * FROM pending_actions ORDER BY created DESC LIMIT ?",
+            (max(1, int(limit)),))
+        out = []
+        for row in rows:
+            d = dict(row)
+            d["action"] = _loads(d.get("action"), {})
+            out.append(d)
+        return out
+
+    def delete_pending(self, key: str) -> bool:
+        cur = self._execute("DELETE FROM pending_actions WHERE key=?",
+                            (self._safe(key, 200),))
+        return bool(cur.rowcount)
+
+    def purge_pending(self) -> int:
+        cur = self._execute("DELETE FROM pending_actions WHERE expires<?",
+                            (time.time(),))
+        return int(cur.rowcount or 0)
+
+    # -------------------------------------------------------------- alerts
+    def add_alert(self, level: str, source: str, key: str, message: str,
+                  detail: Any = None) -> int:
+        cur = self._execute(
+            """INSERT INTO alerts(ts, level, source, key, message, detail)
+               VALUES(?,?,?,?,?,?)""",
+            (time.time(), self._safe(level, 20), self._safe(source, 60),
+             self._safe(key, 120), self._safe(message, 500),
+             _dumps(privacy.redact_obj(detail, 500)
+                    if self.privacy_cfg.get("redact", True) else (detail or {}))))
+        return int(cur.lastrowid)
+
+    def list_alerts(self, limit: int = 50,
+                    acknowledged: bool | None = None) -> list[dict]:
+        sql = "SELECT * FROM alerts WHERE 1=1"
+        params: list[Any] = []
+        if acknowledged is not None:
+            sql += " AND acknowledged=?"
+            params.append(1 if acknowledged else 0)
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(max(1, int(limit)))
+        out = []
+        for row in self._query(sql, params):
+            d = dict(row)
+            d["detail"] = _loads(d.get("detail"), {})
+            d["acknowledged"] = bool(d.get("acknowledged"))
+            out.append(d)
+        return out
+
+    def acknowledge_alert(self, alert_id: int) -> bool:
+        cur = self._execute("UPDATE alerts SET acknowledged=1 WHERE id=?",
+                            (int(alert_id),))
+        return bool(cur.rowcount)
+
+    # ---------------------------------------------------- profile snapshots
+    def save_profile(self, data: dict, fingerprint: str = "",
+                     changes: Any = None) -> int:
+        cur = self._execute(
+            "INSERT INTO profile_snapshots(ts, fingerprint, data, changes) "
+            "VALUES(?,?,?,?)",
+            (time.time(), self._safe(fingerprint, 64), _dumps(data),
+             _dumps(changes or {})))
+        self._execute(
+            "DELETE FROM profile_snapshots WHERE id NOT IN "
+            "(SELECT id FROM profile_snapshots ORDER BY id DESC LIMIT 50)")
+        return int(cur.lastrowid)
+
+    def load_profile(self) -> dict | None:
+        row = self._one(
+            "SELECT * FROM profile_snapshots ORDER BY id DESC LIMIT 1")
+        if not row:
+            return None
+        d = dict(row)
+        d["data"] = _loads(d.get("data"), {})
+        d["changes"] = _loads(d.get("changes"), {})
+        return d
+
+    def list_profiles(self, limit: int = 20) -> list[dict]:
+        out = []
+        for row in self._query(
+                "SELECT * FROM profile_snapshots ORDER BY id DESC LIMIT ?",
+                (max(1, int(limit)),)):
+            d = dict(row)
+            d["data"] = _loads(d.get("data"), {})
+            d["changes"] = _loads(d.get("changes"), {})
             out.append(d)
         return out
 

@@ -131,12 +131,25 @@ Dovoljene so le storitve iz `allow_service_control` (privzeto `mia-*`,
 ```bash
 mia-ctl files search "pogodba" --root ~/Documents --limit 20
 mia-ctl files recent --limit 15
+mia-ctl files info ~/Documents/pogodba.pdf
 mia-ctl files open ~/Documents/pogodba.pdf
 mia-ctl files reveal ~/Documents/pogodba.pdf
+mia-ctl files mkdir ~/Projekti
+mia-ctl files copy ~/a.txt ~/b.txt
+mia-ctl files move ~/a.txt ~/Projekti/ --yes
+mia-ctl files rename ~/a.txt ~/b.txt --yes
+mia-ctl files trash ~/a.txt --yes          # XDG koš, ne trajno
+mia-ctl files delete ~/a.txt --yes         # trajno, le z --yes
+mia-ctl files archive ~/Projekti ~/projekti.zip
+mia-ctl files extract ~/projekti.zip ~/izhod
+mia-ctl files du ~/Projekti
+mia-ctl files find-large --min-mb 500
+mia-ctl files duplicates --min-mb 1
 ```
 
 Iskanje je omejeno na `allowed_roots` in nikoli ne vstopa v `deny_paths`
-(`~/.ssh`, `~/.hermes`, …).
+(`~/.ssh`, `~/.hermes`, …). `trash`/`delete`/`move`/`rename` zahtevajo `--yes`;
+`extract` zavrne člane, ki bi ušli ciljni mapi (path traversal).
 
 ### Zasloni, viri, zvok
 
@@ -163,11 +176,45 @@ Vsak rezultat vsebuje `verification`:
 Samo `verified` dejanja (ali uporabnikovo ✓) postanejo zaupanja vredni
 recepti. Podrobnosti: [CAPABILITIES.md](CAPABILITIES.md).
 
-### Omrežje in sistem
+### Omrežje
 
 ```bash
 mia-ctl net status
+mia-ctl net wifi list
+mia-ctl net wifi connect "Domače" "geslo"     # geslo se v reviziji prekrije
+mia-ctl net wifi disconnect
+mia-ctl net ping 8.8.8.8 --count 4
+mia-ctl net dns
+mia-ctl net ports
+mia-ctl net firewall status
+mia-ctl net firewall enable --yes
+```
+
+### Paketi
+
+```bash
+mia-ctl pkg manager                    # apt/dnf/pacman/zypper/apk/brew
+mia-ctl pkg search htop
+mia-ctl pkg info htop
+mia-ctl pkg list-upgradable
+mia-ctl pkg update --yes
+mia-ctl pkg upgrade --yes
+mia-ctl pkg install htop --yes
+mia-ctl pkg remove htop --yes
+```
+
+### Sistem
+
+```bash
 mia-ctl sysinfo --json
+mia-ctl sys time
+mia-ctl sys timezone
+mia-ctl sys set-timezone Europe/Ljubljana --yes
+mia-ctl sys hostname
+mia-ctl sys users
+mia-ctl sys locale
+mia-ctl sys power-profile
+mia-ctl sys failed-services
 mia-ctl audit tail --limit 20
 mia-ctl policy show
 mia-ctl policy check ~/Documents
@@ -185,17 +232,31 @@ mia-ctl policy check ~/Documents
   "allow_power": true,
   "allow_process_kill": true,
   "allow_service_control": ["mia-", "hermes-"],
+  "allow_package_management": true,
+  "allow_network_control": true,
+  "allow_file_delete": true,
   "require_confirmation": true,
   "max_text_length": 5000,
   "max_file_scan": 20000,
+  "package_timeout": 1800,
   "audit": true,
-  "audit_max_mb": 20
+  "audit_max_mb": 20,
+  "autonomy": {
+    "allow_destructive": false,
+    "auto_install": false,
+    "auto_remediate": false
+  }
 }
 ```
 
 - `allowed_roots` in `deny_paths` se razrešita na absolutne poti; `deny_paths`
   ima prednost.
 - `require_confirmation` zahteva `--yes` za uničujoča dejanja.
+- `allow_package_management`, `allow_network_control`, `allow_file_delete`
+  vklopijo/izklopijo celotne družine dejanj.
+- `autonomy.allow_destructive` dovoli nevarna dejanja brez potrditve,
+  `auto_install` samodejno namestitev manjkajočih orodij, `auto_remediate`
+  samodejno sanacijo privilegiranih težav. Privzeto vse izklopljeno.
 - `audit_max_mb` ob preseženju obrne datoteko v `.1`.
 - Če politika zavrne dejanje, agent **ne sme** obiti z lupino; mora razložiti
   pravilo in predlagati spremembo.

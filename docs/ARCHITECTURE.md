@@ -50,6 +50,33 @@ Drevo veščin (`skills/`) je eksplicitno: `mia-companion` je koren, otroci
 `mia-productivity`, `mia-diagnostics`) pa lastijo posamezna področja.
 `mia-skill validate` preveri imena, starše in `references/`.
 
+## Samodejnost (mini pod-OS)
+
+`server/mia_core/autonomy/` je stdlib-only plast nad `mia-ctl`:
+
+- `profile.py` zazna stroj (OS, distro, init, paketni upravitelj, namizje,
+  orodja, GPU, baterijo, omrežje, privilegije, container), izbere backend za
+  vsako zmogljivost, izračuna pripravljenost in pripravi načrt prilagoditve z
+  imeni paketov za ta distribucijski sistem. Snapshoti in razlike se shranijo.
+- `planner.py` izvaja načrte (koraki `ctl`/`python`/`notify`/`sleep`/`probe`/
+  `wait_for`/`plan`) s preflight politike, preverjanjem post-conditionov,
+  retryji, rollbackom in dnevnikom v SQLite. Nalogo je mogoče nadaljevati.
+- `scheduler.py` hrani vztrajna opravila (`at`, `every`, `daily`) in pravila
+  (`condition`, `event`, `idle`). Pogojna pravila so edge-triggered, z
+  `for_seconds`, da ne nastane plaz obvestil.
+- `health.py` preverja disk, RAM, swap, load, temperaturo, baterijo, omrežje,
+  systemd napake, certifikat, učno bazo in zagozdene naloge; vrača oceno,
+  opozorila in varno sanacijo.
+- `intents.py` je deterministični router slovenskih/angleških sistemskih
+  ukazov; ujame samo sidrane vzorce, sicer stavek gre Hermesu.
+- `service.py` je skupna fasada; strežnik jo pokliče pred Hermesom
+  (`/api/chat` in glasovni krog), `/api/autonomy/*` in HUD jo uporabljata
+  neposredno.
+
+Strežnik požene `tick` vsakih `autonomy.interval_seconds` (privzeto 30 s) in
+zdravstveni pregled vsakih `health_interval` (300 s). Vse je fail-open: če
+profil ali baza odpove, glasovna zanka teče naprej.
+
 ## Kalibracija, stroga budnica in preverjanje
 
 - `server/speaker_gate.py` hrani oddaljenostne odtise (bližina/sredina/daleč)
@@ -136,6 +163,9 @@ approval_request{data,run_id} · error · done{timing}
 | `/api/learning/remember` | shrani zadnjo epizodo kot recept |
 | `/api/learning/recipe`, `/mistake`, `/fact` | ročni vnos |
 | `/api/learning/mine`, `/prune`, `/sysinfo`, `/delete`, `/export` | vzdrževanje |
+| `/api/autonomy/status`, `/profile`, `/health`, `/jobs`, `/tasks`, `/alerts` | stanje samodejnosti, profil stroja, zdravje, opravila, naloge, opozorila |
+| `/api/autonomy/refresh`, `/adapt`, `/remediate`, `/tick`, `/run`, `/text` | zaznava/prilagoditev, sanacija, en cikel urnika, izvedba načrta, naravni ukaz |
+| `/api/autonomy/jobs` (POST/DELETE), `/jobs/{id}/toggle`, `/tasks/{id}/resume`, `/cancel` | upravljanje opravil in nalog iz HUD-a |
 | `/api/machines` | psutil statistika gostitelja + oddaljeni delavci iz konfiguracije |
 | `/api/usage` | lokalno štetje žetonov/znakov; kvota ElevenLabs le, kadar je TTS v oblaku |
 | `/api/hud-config` | stikala HUD-a: `allow_external_media`, jezik odgovorov, `tts_provider` |

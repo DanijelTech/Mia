@@ -61,11 +61,48 @@ mia-ctl process kill 12345 --yes
 mia-ctl service restart mia-voice --yes
 mia-ctl files search "invoice" --root ~/Documents
 mia-ctl files recent
+mia-ctl files info ~/Documents/invoice.pdf
+mia-ctl files mkdir ~/Projects
+mia-ctl files copy ~/a.txt ~/b.txt
+mia-ctl files move ~/a.txt ~/Projects/ --yes
+mia-ctl files rename ~/a.txt ~/b.txt --yes
+mia-ctl files trash ~/a.txt --yes          # XDG trash
+mia-ctl files delete ~/a.txt --yes         # permanent, needs --yes
+mia-ctl files archive ~/Projects ~/projects.zip
+mia-ctl files extract ~/projects.zip ~/out
+mia-ctl files du ~/Projects
+mia-ctl files find-large --min-mb 500
+mia-ctl files duplicates --min-mb 1
 mia-ctl net status
+mia-ctl net wifi list
+mia-ctl net wifi connect "Home" "secret"   # password is redacted from audit
+mia-ctl net ping 8.8.8.8
+mia-ctl net dns
+mia-ctl net ports
+mia-ctl net firewall status
+mia-ctl net firewall enable --yes
+mia-ctl pkg manager
+mia-ctl pkg search htop
+mia-ctl pkg list-upgradable
+mia-ctl pkg update --yes
+mia-ctl pkg upgrade --yes
+mia-ctl pkg install htop --yes
+mia-ctl pkg remove htop --yes
 mia-ctl sysinfo --json
+mia-ctl sys time
+mia-ctl sys timezone
+mia-ctl sys set-timezone Europe/Ljubljana --yes
+mia-ctl sys hostname
+mia-ctl sys users
+mia-ctl sys locale
+mia-ctl sys power-profile
+mia-ctl sys failed-services
 mia-ctl audit tail --limit 20
 mia-ctl policy show
 ```
+
+`trash`/`delete`/`move`/`rename` require `--yes`; `extract` rejects archive
+members that would escape the destination (path traversal).
 
 ## Displays, resources, audio
 
@@ -99,16 +136,30 @@ user ✓ in the HUD) become trusted recipes.
   "allow_power": true,
   "allow_process_kill": true,
   "allow_service_control": ["mia-", "hermes-"],
+  "allow_package_management": true,
+  "allow_network_control": true,
+  "allow_file_delete": true,
   "require_confirmation": true,
   "max_text_length": 5000,
   "max_file_scan": 20000,
+  "package_timeout": 1800,
   "audit": true,
-  "audit_max_mb": 20
+  "audit_max_mb": 20,
+  "autonomy": {
+    "allow_destructive": false,
+    "auto_install": false,
+    "auto_remediate": false
+  }
 }
 ```
 
 - `deny_paths` wins over `allowed_roots`.
 - `require_confirmation` requires `--yes` for destructive actions.
+- `allow_package_management`, `allow_network_control`, `allow_file_delete`
+  switch whole families of actions on or off.
+- `autonomy.allow_destructive` permits destructive actions without
+  confirmation, `auto_install` installs missing tools, and `auto_remediate`
+  fixes privileged issues automatically. All three are off by default.
 - If policy denies an action, the agent must explain the rule and ask the user
   to change the policy — never bypass it with a shell.
 

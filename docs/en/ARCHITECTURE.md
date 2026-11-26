@@ -60,6 +60,32 @@ actions on the machine. Every call checks the policy
 `~/.local/state/mia/control-audit.jsonl`. The audit is ingested into the
 learning store, so control actions become part of habits and recipes.
 
+## Autonomy (mini sub-OS)
+
+`server/mia_core/autonomy/` is a stdlib-only layer above `mia-ctl`:
+
+- `profile.py` detects the machine (OS, distro, init, package manager, desktop,
+  tools, GPU, battery, network, privileges, container), picks a backend per
+  capability, scores readiness and produces an adaptation plan with package
+  names for this distribution. Snapshots and diffs are persisted.
+- `planner.py` executes plans (`ctl`/`python`/`notify`/`sleep`/`probe`/
+  `wait_for`/`plan` steps) with policy preflight, post-condition verification,
+  retries, rollback and a SQLite journal. Tasks can be resumed.
+- `scheduler.py` stores persistent jobs (`at`, `every`, `daily`) and rules
+  (`condition`, `event`, `idle`). Condition rules are edge-triggered with
+  `for_seconds`, preventing notification storms.
+- `health.py` checks disk, RAM, swap, load, temperature, battery, network,
+  systemd failures, certificate, learning DB and stale tasks; it returns a
+  score, alerts and safe remediation.
+- `intents.py` is the deterministic Slovenian/English system command router; it
+  only catches anchored patterns, otherwise the sentence reaches Hermes.
+- `service.py` is the shared facade used by the voice loop, `/api/chat`,
+  `/api/autonomy/*` and the HUD.
+
+The server ticks the scheduler every `autonomy.interval_seconds` (30 s) and the
+health check every `health_interval` (300 s). The whole layer is fail-open: a
+broken profile or DB never stops the voice loop.
+
 ## Calibration, settings and verification
 
 - The HUD can start a guided distance calibration over the same WebSocket:
@@ -112,6 +138,9 @@ approval_request{data,run_id} · error · done{timing}
 | `/api/learning/feedback`, `/remember` | ✓/✗ feedback and recipe promotion |
 | `/api/learning/recipe`, `/mistake`, `/fact` | manual entries |
 | `/api/learning/mine`, `/prune`, `/sysinfo`, `/delete`, `/export` | maintenance |
+| `/api/autonomy/status`, `/profile`, `/health`, `/jobs`, `/tasks`, `/alerts` | autonomy state, machine profile, health, jobs, tasks, alerts |
+| `/api/autonomy/refresh`, `/adapt`, `/remediate`, `/tick`, `/run`, `/text` | detect/adapt, remediate, one scheduler cycle, run a plan, natural command |
+| `/api/autonomy/jobs` (POST/DELETE), `/jobs/{id}/toggle`, `/tasks/{id}/resume`, `/cancel` | manage jobs and tasks from the HUD |
 | `/api/machines` | host psutil stats + remote workers from config |
 | `/api/usage` | local token/char tally; ElevenLabs quota only when TTS is cloud-based |
 | `/api/hud-config` | HUD switches: `allow_external_media`, reply `language`, `tts_provider` |

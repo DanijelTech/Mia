@@ -607,8 +607,8 @@ if [ "$DRY_RUN" = 0 ]; then
   info "hermes pointer:     $HOME/.config/mia/hermes_home -> $HERMES_HOME"
 fi
 
-# command-line tools (windows, volume, artists, learning, skills, control)
-for tool in mia-open mia-close mia-volume mia-artists mia-learn mia-skill mia-ctl; do
+# command-line tools (windows, volume, artists, learning, skills, control, autonomy)
+for tool in mia-open mia-close mia-volume mia-artists mia-learn mia-skill mia-ctl mia-auto; do
   src="$REPO_DIR/skills/mia-companion/bin/$tool"
   [ -f "$src" ] || continue
   run install -m 0755 "$src" "$BIN_DIR/$tool"
@@ -648,27 +648,28 @@ else
   warn "skills/ not found — skipping skill installation"
 fi
 
-# Hermes plugin: first-class memory tools (memory_brief/search/feedback/...)
-if [ -d "$REPO_DIR/hermes-plugin/mia_learning" ]; then
+# Hermes plugins: first-class memory tools and first-class autonomy tools.
+for PLUGIN in mia_learning mia_autonomy; do
+  [ -d "$REPO_DIR/hermes-plugin/$PLUGIN" ] || continue
   if [ "$DRY_RUN" = 0 ]; then
-    run mkdir -p "$HERMES_HOME/plugins/mia_learning"
-    run cp -R "$REPO_DIR/hermes-plugin/mia_learning/." "$HERMES_HOME/plugins/mia_learning/"
-    add_dir "$HERMES_HOME/plugins/mia_learning"
-    while IFS= read -r f; do add_file "$f"; done < <(find "$HERMES_HOME/plugins/mia_learning" -type f 2>/dev/null)
-    info "plugin mia_learning copied"
+    run mkdir -p "$HERMES_HOME/plugins/$PLUGIN"
+    run cp -R "$REPO_DIR/hermes-plugin/$PLUGIN/." "$HERMES_HOME/plugins/$PLUGIN/"
+    add_dir "$HERMES_HOME/plugins/$PLUGIN"
+    while IFS= read -r f; do add_file "$f"; done < <(find "$HERMES_HOME/plugins/$PLUGIN" -type f 2>/dev/null)
+    info "plugin $PLUGIN copied"
     if command -v hermes >/dev/null 2>&1; then
-      if HERMES_HOME="$HERMES_HOME" hermes plugins enable mia_learning >/dev/null 2>&1; then
-        info "plugin mia_learning enabled"
+      if HERMES_HOME="$HERMES_HOME" hermes plugins enable "$PLUGIN" >/dev/null 2>&1; then
+        info "plugin $PLUGIN enabled"
       else
-        warn "plugin copied but not enabled — run: hermes plugins enable mia_learning"
+        warn "plugin copied but not enabled — run: hermes plugins enable $PLUGIN"
       fi
     else
-      info "Hermes CLI not found — enable later with: hermes plugins enable mia_learning"
+      info "Hermes CLI not found — enable later with: hermes plugins enable $PLUGIN"
     fi
   else
-    printf '    [dry-run] would copy the mia_learning plugin into %s/plugins\n' "$HERMES_HOME"
+    printf '    [dry-run] would copy the %s plugin into %s/plugins\n' "$PLUGIN" "$HERMES_HOME"
   fi
-fi
+done
 
 # seed the machine inventory once (best effort; the server refreshes it too)
 if [ "$DRY_RUN" = 0 ] && [ -x "$BIN_DIR/mia-learn" ]; then
@@ -730,8 +731,9 @@ $([ "$DRY_RUN" = 1 ] && printf '\033[1;33mDry run complete — nothing was chang
   tts engine  $TTS_ENGINE
   tts deps    $TTS_DEPS
   learning    ${BIN_DIR:-$HOME/.local/bin}/mia-learn  ·  $HOME/.local/state/mia/learning.db
+  autonomy    ${BIN_DIR:-$HOME/.local/bin}/mia-auto  ·  jobs, rules, health, adaptation
   control     $HOME/.config/mia/control.json  ·  $HOME/.local/state/mia/control-audit.jsonl
-  skills      $HERMES_HOME/skills (7 skills, validated)
+  skills      $HERMES_HOME/skills (8 skills, validated)
   stt device  $(grep -m1 -E '^  device:' "$CFG" 2>/dev/null | awk '{print $2}')$( [ "$(grep -m1 -E '^  device:' "$CFG" 2>/dev/null | awk '{print $2}')" = "cpu" ] && echo " (GPU free for the LLM)" || echo " — if your LLM launcher says 'GPU busy', run: ./install.sh --stt-device cpu" )
   HUD URL     $(hud_url)
 
