@@ -590,19 +590,44 @@ function calibPromptUI(e){
   setState("listening","KALIBRACIJA","GOVORI, KO SE PRIKAŽE BESEDILO");
 }
 async function startCalibration(){
-  if(!wsReady){addMsg("sys","glasovni strežnik ni dosegljiv");return}
-  try{await initMic()}catch(err){addMsg("sys","mikrofon blokiran: "+err.message);return}
-  if(continuous){ try{ws.send(JSON.stringify({type:"stop"}))}catch{}; continuous=false; }
-  stopPlayback();
-  capturing=true;
-  ws.send(JSON.stringify({type:"calibration_start"}));
-  calibActive=true;
   showCalib(true);
   $("calibStart").style.display="none";
   $("calibCancel").style.display="";
   $("calibStage").textContent="PRIPRAVLJAM …";
-  $("calibPrompt").textContent="Počakaj na navodilo.";
+  $("calibPrompt").textContent="Preverjam mikrofon in strežnik …";
+  $("calibMeta").textContent="Počakaj trenutek.";
+  if(!wsReady){
+    $("calibStage").textContent="STREŽNIK NI POVEZAN";
+    $("calibPrompt").textContent="Glasovni strežnik ni povezan. Preveri, da Mia teče, in osveži stran (Ctrl+Shift+R).";
+    $("calibStart").style.display="";
+    return;
+  }
+  try{await initMic()}catch(err){
+    $("calibStage").textContent="MIKROFON NI NA VOLJO";
+    $("calibPrompt").textContent="Brskalnik ni dovolil mikrofona: "+err.message;
+    $("calibStart").style.display="";
+    return;
+  }
+  if(continuous){ try{ws.send(JSON.stringify({type:"stop"}))}catch{}; continuous=false; }
+  stopPlayback();
+  capturing=true;
+  calibActive=true;
+  try{ ws.send(JSON.stringify({type:"calibration_start"})); }
+  catch(err){
+    calibActive=false; capturing=false;
+    $("calibStage").textContent="NAPAKA POVEZAVE";
+    $("calibPrompt").textContent="Ukaza nisem mogla poslati: "+err.message;
+    $("calibStart").style.display="";
+    return;
+  }
   $("calibMeta").textContent="Mia bo govorila; ti ponavljaj za njo.";
+  setTimeout(()=>{
+    if(calibActive && $("calibStage").textContent.startsWith("PRIPRAVLJAM")){
+      $("calibStage").textContent="NI ODGOVORA STREŽNIKA";
+      $("calibPrompt").textContent="Mia se ni odzvala v 5 s. Najverjetneje teče stara različica strežnika. Zaženi: ./stop-mia.sh && ./start-mia.sh, nato osveži stran.";
+      $("calibStart").style.display="";
+    }
+  },5000);
 }
 function cancelCalibration(){
   try{ws.send(JSON.stringify({type:"calibration_cancel"}))}catch{}
@@ -718,7 +743,15 @@ function connect(){
         setState("listening", e.state==="speech" ? "SLIŠIM …" : "POSLUŠAM",
                  "GOVORI NARAVNO · ODGOVOR PRIPRAVIM SAMA");
     }
-    else if(e.type==="error"){ clearLive(); addMsg("sys","napaka: "+e.message); setState("standby","PRIPRAVLJEN"); showStop(false); }
+    else if(e.type==="error"){
+      clearLive(); addMsg("sys","napaka: "+e.message); setState("standby","PRIPRAVLJEN"); showStop(false);
+      if(calibActive){
+        calibActive=false; capturing=false;
+        $("calibStage").textContent="NAPAKA KALIBRACIJE";
+        $("calibPrompt").textContent=e.message||"Strežnik je vrnil napako.";
+        $("calibStart").style.display="";
+      }
+    }
     else if(e.type==="done"){
       currentRun=null; showStop(false);
       const tm=e.timing||{};

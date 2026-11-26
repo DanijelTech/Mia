@@ -2094,15 +2094,27 @@ async def _speak_calibration(ws: WebSocket, pipeline: VoicePipelineServer,
 
 async def _calibration_start(ws: WebSocket, pipeline: VoicePipelineServer,
                              conn: ConnState) -> None:
-    await _cancel_active_turn(ws, pipeline, conn)
-    conn.calibration = CalibrationSession(stages=_calibration_stages())
-    conn.recording = True
-    conn.continuous = False
-    conn.segmenter = None
-    conn.audio_chunks = []
-    payload = conn.calibration.payload()
-    await ws.send_json({"type": "calibration_state", **payload})
-    await _speak_calibration(ws, pipeline, conn, payload.get("prompt", ""))
+    try:
+        await _cancel_active_turn(ws, pipeline, conn)
+        conn.calibration = CalibrationSession(stages=_calibration_stages())
+        conn.recording = True
+        conn.continuous = False
+        conn.segmenter = None
+        conn.audio_chunks = []
+        payload = conn.calibration.payload()
+        print(f"CALIBRATION started: {payload.get('stage')} "
+              f"({payload.get('index')}/{payload.get('total')})", flush=True)
+        await ws.send_json({"type": "calibration_state", **payload})
+        await _speak_calibration(ws, pipeline, conn, payload.get("prompt", ""))
+    except Exception as exc:
+        print(f"CALIBRATION start failed: {type(exc).__name__}: {exc}", flush=True)
+        conn.calibration = None
+        conn.recording = False
+        try:
+            await ws.send_json({"type": "calibration_error",
+                                "error": f"{type(exc).__name__}: {exc}"})
+        except Exception:
+            pass
 
 
 async def _calibration_process(ws: WebSocket, pipeline: VoicePipelineServer,
