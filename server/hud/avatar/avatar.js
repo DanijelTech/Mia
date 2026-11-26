@@ -10,27 +10,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-
-const DEFAULTS = {
-  enabled: true,
-  model: '/hud/avatar/models/mia-female.glb',
-  idle: '/hud/avatar/models/mia-female-idle.glb',
-  hair: true,
-  hairStyle: 'default',
-  glasses: false,
-  top: true,
-  bottom: true,
-  footwear: true,
-  hairColor: '#3b2418',
-  topColor: '#1d3f52',
-  bottomColor: '#101820',
-  footwearColor: '#101820',
-  glassesColor: '#101820',
-  skinTone: '#ffffff',
-  camera: 'bust',
-  quality: 'high',
-  mood: 'neutral',
-};
+import {
+  DEFAULTS, PRESETS, OUTFIT_PRESETS, LIGHT_PRESETS, CAMERA_PRESETS,
+  HAIR_LOOKS, BODY_SHAPES, HAIR_COLORS, SKIN_TONES, EYE_COLORS, TOP_STYLES,
+} from './presets.js';
 
 const VISEMES = ['sil', 'PP', 'FF', 'TH', 'DD', 'kk', 'CH', 'SS', 'nn', 'RR',
   'aa', 'E', 'I', 'O', 'U'];
@@ -81,6 +64,30 @@ const LOOKS = {
 
 function clamp(v, lo = 0, hi = 1) { return Math.min(hi, Math.max(lo, v)); }
 function lerp(a, b, t) { return a + (b - a) * t; }
+function num(v, fallback = 0) { const n = Number(v); return Number.isFinite(n) ? n : fallback; }
+function color(value, fallback = '#ffffff') {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+}
+
+const MESH_NAMES = {
+  top: [/outfit_top/i, /shirt/i, /^top$/i],
+  bottom: [/outfit_bottom/i, /pants/i, /^bottom$/i],
+  footwear: [/outfit_footwear/i, /footwear/i, /shoes?/i],
+  glasses: [/glasses/i, /^avaturn_look_0$/i],
+  body: [/^wolf3d_body$/i, /body/i],
+  head: [/^wolf3d_head$/i, /^head$/i],
+  eyes: [/^eyeleft$/i, /^eyeright$/i],
+  teeth: [/^wolf3d_teeth$/i, /teeth/i],
+};
+
+const SHAPE_BONES = {
+  head: ['Head'], neck: ['Neck'],
+  arm: ['LeftArm', 'RightArm'], forearm: ['LeftForeArm', 'RightForeArm'],
+  shoulder: ['LeftShoulder', 'RightShoulder'], hips: ['Hips'],
+  upperLeg: ['LeftUpLeg', 'RightUpLeg'], leg: ['LeftLeg', 'RightLeg'],
+  hand: ['LeftHand', 'RightHand'], foot: ['LeftFoot', 'RightFoot'],
+  eyes: ['LeftEye', 'RightEye'],
+};
 
 function cacheBust(url) {
   const sep = url.includes('?') ? '&' : '?';
@@ -130,6 +137,14 @@ class MiaAvatar {
     this.failed = false;
     this.frameTime = 16;
     this.qualityScale = 1;
+    this.lights = null;
+    this.cameraBase = null;
+    this._baseBoneScale = null;
+    this._baseHairScale = null;
+    this._baseModelScale = null;
+    this._bgKey = '';
+    this._shapeTick = 0;
+    this.forcePreview = /avatar\.html$/.test(location.pathname);
     this._bindEvents();
   }
 
@@ -154,7 +169,7 @@ class MiaAvatar {
       this.config = await this.loadConfig();
       const qp = new URLSearchParams(location.search);
       if (qp.get('model')) this.config.model = qp.get('model');
-      if (!this.config.enabled) return;
+      if (!this.config.enabled && !this.forcePreview) return;
       this.setupRenderer();
       this.scene = new THREE.Scene();
       this.camera = new THREE.PerspectiveCamera(32, 1, 0.01, 30);
@@ -235,6 +250,7 @@ class MiaAvatar {
     const fill = new THREE.PointLight(0x19f0d8, 2.2, 6);
     fill.position.set(-1.1, 1.3, 1.4);
     this.scene.add(fill);
+    this.lights = { hemi, key, rim, fill };
   }
 
   async loadModel() {
@@ -269,6 +285,11 @@ class MiaAvatar {
         this.hairMeshes.push(o);
     });
     this.hairMeshes.sort((a, b) => a.name.localeCompare(b.name));
+    this._baseBoneScale = new Map();
+    for (const b of Object.values(this.bones)) this._baseBoneScale.set(b, b.scale.clone());
+    this._baseHairScale = new Map();
+    for (const m of this.hairMeshes) this._baseHairScale.set(m, m.scale.clone());
+    this._baseModelScale = this.model.scale.clone();
     this.scene.add(this.model);
     this.frameModel();
   }
@@ -309,6 +330,15 @@ class MiaAvatar {
     } finally {
       this._loading = null;
     }
+  }
+
+  /* Load a different idle clip without rebuilding the model. */
+  async reloadIdle(url) {
+    if (!this.ready || !this.model) return false;
+    this.config.idle = url || '';
+    if (this.mixer) { this.mixer.stopAllAction(); this.mixer = null; }
+    await this.loadIdle();
+    return !!this.mixer;
   }
 
   /* Hair styles available in the loaded GLB, in selection order. */
@@ -369,18 +399,36 @@ class MiaAvatar {
 
   setCamera(view) {
     if (!this.camera || !this.modelSize) return;
-    const c = this.modelCenter;
-    const y = c.y;
+    const cfg = this.config;
+    const h = num(cfg.height, 1);
+    const b = num(cfg.build, 1);
+    const sizeY = this.modelSize.y * h;
+    const cx = this.modelCenter.x * b;
+    const cy = this.modelCenter.y * h;
+    const cz = this.modelCenter.z * b;
     const views = {
-      full: { y: y, z: Math.max(3.2, this.modelSize.y * 1.75), look: y },
-      bust: { y: y + this.modelSize.y * 0.22, z: Math.max(2.35, this.modelSize.y * 1.32),
-              look: y + this.modelSize.y * 0.22 },
-      head: { y: y + this.modelSize.y * 0.32, z: 1.05,
-              look: y + this.modelSize.y * 0.32 },
+      full: { dist: Math.max(3.15, sizeY * 1.8), look: cy, yaw: 0, abs: false },
+      bust: { dist: Math.max(1.55, sizeY * 0.88), look: cy + sizeY * 0.26, yaw: 0, abs: false },
+      head: { dist: 0.75, look: cy + sizeY * 0.32, yaw: 0, abs: true },
+      face: { dist: 0.55, look: cy + sizeY * 0.34, yaw: 0, abs: true },
+      profile: { dist: 0.8, look: cy + sizeY * 0.32, yaw: 38, abs: true },
+      hero: { dist: Math.max(1.45, sizeY * 0.95), look: cy + sizeY * 0.26, yaw: -18, abs: false },
+      cinematic: { dist: Math.max(2.6, sizeY * 1.4), look: cy + sizeY * 0.1, yaw: 22, abs: false },
     };
     const v = views[view] || views.bust;
-    this.camera.position.set(c.x, v.y, v.z);
-    this.camera.lookAt(c.x, v.look, c.z * 0.02);
+    const yaw = (v.yaw + num(cfg.cameraYaw, 0)) * Math.PI / 180;
+    const dist = v.dist * num(cfg.cameraDistance, 1) * (v.abs ? h : 1);
+    const lookY = v.look + num(cfg.cameraHeight, 0) * sizeY;
+    this.cameraBase = {
+      x: cx + Math.sin(yaw) * dist,
+      y: lookY + sizeY * 0.03,
+      z: cz + Math.cos(yaw) * dist,
+      lx: cx, ly: lookY, lz: cz,
+      cx, cz, yaw, dist,
+    };
+    this.camera.position.set(this.cameraBase.x, this.cameraBase.y, this.cameraBase.z);
+    this.camera.lookAt(cx, lookY, cz);
+    this.camera.fov = num(cfg.cameraFov, 32);
     this.camera.updateProjectionMatrix();
     this.resize();
   }
@@ -390,8 +438,9 @@ class MiaAvatar {
     const parent = this.canvas.parentElement;
     const w = Math.max(64, parent ? parent.clientWidth : window.innerWidth);
     const h = Math.max(64, parent ? parent.clientHeight : window.innerHeight);
-    const dpr = Math.min(window.devicePixelRatio || 1,
-      this.qualityScale >= 1 ? 2 : 1.25);
+    const want = num(this.config.pixelRatio, 0);
+    const cap = this.qualityScale >= 1 ? 2 : 1.25;
+    const dpr = want > 0 ? Math.min(3, want) : Math.min(window.devicePixelRatio || 1, cap);
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
@@ -401,44 +450,212 @@ class MiaAvatar {
   applyConfig(cfg) {
     this.config = { ...this.config, ...cfg };
     if (!this.model) return;
-    const vis = (name, on) => {
-      const o = this.model.getObjectByName(name);
-      if (o) o.visible = !!on;
-    };
-    this._applyHair();
-    vis('Wolf3D_Glasses', !!this.config.glasses);
-    vis('Wolf3D_Outfit_Top', this.config.top !== false);
-    vis('Wolf3D_Outfit_Bottom', this.config.bottom !== false);
-    vis('Wolf3D_Outfit_Footwear', this.config.footwear !== false);
-    for (const m of this.hairMeshes) this.tintMesh(m, this.config.hairColor);
-    this.tint('Wolf3D_Glasses', this.config.glassesColor);
-    this.tint('Wolf3D_Outfit_Top', this.config.topColor);
-    this.tint('Wolf3D_Outfit_Bottom', this.config.bottomColor);
-    this.tint('Wolf3D_Outfit_Footwear', this.config.footwearColor);
-    this.tint('Wolf3D_Body', this.config.skinTone);
-    this.tint('Wolf3D_Head', this.config.skinTone);
+    this._applyWardrobe();
+    this._applyColors();
+    this._applyShape();
+    this._applyLighting();
+    this._applyBackground();
     this.setMood(this.config.mood || this.mood);
-    if (this.config.camera) this.setCamera(this.config.camera);
-    this.qualityScale = this.config.quality === 'balanced' ? .75 :
-      this.config.quality === 'high' ? 1 : 1.25;
-    this.resize();
+    this.setCamera(this.config.camera || 'bust');
+    this._applyQuality();
+    if (this.mixer) this.mixer.timeScale = num(this.config.idleSpeed, 1);
     document.body.classList.toggle('avatar-hair-off',
       this.config.hair === false || this.config.hairStyle === 'none');
+    document.body.classList.toggle('avatar-disabled', this.config.enabled === false);
   }
 
-  tint(name, color) {
-    const o = this.model && this.model.getObjectByName(name);
-    if (o) this.tintMesh(o, color);
+  _meshesFor(kind) {
+    const out = [];
+    const pats = MESH_NAMES[kind] || [];
+    if (!this.model || !pats.length) return out;
+    this.model.traverse((o) => {
+      if (!(o.isMesh || o.isSkinnedMesh) || !o.material) return;
+      if (pats.some((re) => re.test(o.name))) out.push(o);
+    });
+    return out;
   }
 
-  tintMesh(o, color) {
-    if (!o || !color) return;
-    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
-      if (!m) continue;
-      if (m.userData.__baseColor === undefined) {
-        m.userData.__baseColor = m.color ? m.color.clone() : null;
+  _setVisible(kind, on) {
+    for (const m of this._meshesFor(kind)) m.visible = !!on;
+  }
+
+  _applyWardrobe() {
+    this._applyHair();
+    this._setVisible('glasses', this.config.glasses === true);
+    this._setVisible('top', this.config.top !== false);
+    this._setVisible('bottom', this.config.bottom !== false);
+    this._setVisible('footwear', this.config.footwear !== false);
+    const style = TOP_STYLES[this.config.topStyle];
+    const roughness = num(this.config.topRoughness, style ? style.roughness : 0.8);
+    const metalness = num(this.config.topMetalness, style ? style.metalness : 0);
+    for (const m of this._meshesFor('top'))
+      this._setMaterial(m, { roughness, metalness });
+  }
+
+  _tintKind(kind, value, blend = 1) {
+    if (!value) return;
+    for (const m of this._meshesFor(kind)) this.tintMesh(m, value, blend);
+  }
+
+  _applyColors() {
+    const cfg = this.config;
+    for (const m of this.hairMeshes) this.tintMesh(m, cfg.hairColor);
+    this._tintKind('glasses', cfg.glassesColor);
+    this._tintKind('top', cfg.topColor);
+    this._tintKind('bottom', cfg.bottomColor);
+    this._tintKind('footwear', cfg.footwearColor);
+    this._tintKind('body', cfg.skinTone);
+    this._tintKind('head', cfg.skinTone);
+    this._tintKind('eyes', cfg.eyeColor, 0.55);
+  }
+
+  _applyShape() {
+    const cfg = this.config;
+    const h = num(cfg.height, 1);
+    const b = num(cfg.build, 1);
+    if (this._baseModelScale) {
+      this.model.scale.set(this._baseModelScale.x * b, this._baseModelScale.y * h,
+        this._baseModelScale.z * b);
+    }
+    if (this._baseBoneScale) {
+      for (const [bone, scale] of this._baseBoneScale) bone.scale.copy(scale);
+    }
+    const scaleBone = (names, x, y, z) => {
+      for (const name of names) {
+        const bone = this.bones[name];
+        if (bone) bone.scale.set(bone.scale.x * x, bone.scale.y * y, bone.scale.z * z);
       }
-      if (m.color) m.color.set(color);
+    };
+    const head = num(cfg.headSize, 1);
+    const headW = num(cfg.headWidth, 1);
+    scaleBone(SHAPE_BONES.head, head * headW, head, head * headW);
+    scaleBone(SHAPE_BONES.neck, 1, num(cfg.neckLength, 1), 1);
+    const eye = num(cfg.eyeSize, 1);
+    scaleBone(SHAPE_BONES.eyes, eye, eye, eye);
+    const arm = num(cfg.armLength, 1);
+    scaleBone(SHAPE_BONES.arm, 1, arm, 1);
+    scaleBone(SHAPE_BONES.forearm, 1, arm, 1);
+    const leg = num(cfg.legLength, 1);
+    scaleBone(SHAPE_BONES.upperLeg, 1, leg, 1);
+    scaleBone(SHAPE_BONES.leg, 1, leg, 1);
+    const shoulder = num(cfg.shoulderWidth, 1);
+    scaleBone(SHAPE_BONES.shoulder, shoulder, 1, shoulder);
+    const hip = num(cfg.hipWidth, 1);
+    scaleBone(SHAPE_BONES.hips, hip, 1, hip);
+    if (hip !== 1) {
+      // Hips scale propagates to the whole spine; undo it above the pelvis.
+      scaleBone(['Spine'], 1 / hip, 1, 1 / hip);
+    }
+    const hand = num(cfg.handSize, 1);
+    scaleBone(SHAPE_BONES.hand, hand, hand, hand);
+    const foot = num(cfg.footSize, 1);
+    scaleBone(SHAPE_BONES.foot, foot, foot, foot);
+    if (this._baseHairScale) {
+      const hs = num(cfg.hairScale, 1);
+      const hv = num(cfg.hairVolume, 1);
+      for (const [mesh, scale] of this._baseHairScale)
+        mesh.scale.set(scale.x * hv, scale.y * hs, scale.z * hv);
+    }
+  }
+
+  _applyLighting() {
+    const cfg = this.config;
+    const L = this.lights;
+    const set = (light, value, intensity) => {
+      if (!light) return;
+      if (value) light.color.set(color(value, '#' + light.color.getHexString()));
+      if (intensity !== undefined) light.intensity = num(intensity, light.intensity);
+    };
+    if (L) {
+      set(L.hemi, cfg.ambientColor, cfg.ambientIntensity);
+      set(L.key, cfg.keyColor, cfg.keyIntensity);
+      set(L.rim, cfg.rimColor, cfg.rimIntensity);
+      set(L.fill, cfg.fillColor, cfg.fillIntensity);
+    }
+    if (this.renderer) this.renderer.toneMappingExposure = num(cfg.exposure, 1.05);
+    const env = num(cfg.envIntensity, 1);
+    if (this.scene && 'environmentIntensity' in this.scene) this.scene.environmentIntensity = env;
+    if (this.model) {
+      this.model.traverse((o) => {
+        if (!o.material) return;
+        for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+          if (m && m.envMapIntensity !== undefined) m.envMapIntensity = 0.65 * env;
+        }
+      });
+    }
+  }
+
+  _applyBackground() {
+    const cfg = this.config;
+    const mode = cfg.background || 'transparent';
+    if (mode === 'transparent') {
+      this.scene.background = null;
+      this._bgKey = '';
+      return;
+    }
+    if (mode === 'dark') {
+      this.scene.background = new THREE.Color('#050b14');
+    } else if (mode === 'studio') {
+      this.scene.background = new THREE.Color('#0a1a2c');
+    } else if (mode === 'color') {
+      this.scene.background = new THREE.Color(color(cfg.backgroundColor, '#050b14'));
+    } else if (mode === 'gradient') {
+      const key = 'grad:' + color(cfg.backgroundColor, '#050b14');
+      if (this._bgKey !== key) {
+        this.scene.background = this._gradientTexture(cfg.backgroundColor);
+        this._bgKey = key;
+      }
+    }
+  }
+
+  _gradientTexture(hex) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 4;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0, color(hex, '#050b14'));
+    grad.addColorStop(1, '#02060b');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 4, 256);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
+  _applyQuality() {
+    const cfg = this.config;
+    const q = cfg.quality || 'high';
+    this.qualityScale = q === 'balanced' ? .75 : q === 'high' ? 1 : 1.25;
+    const shadows = cfg.shadows !== false && q !== 'balanced';
+    if (this.renderer) this.renderer.shadowMap.enabled = shadows;
+    if (this.lights && this.lights.key) this.lights.key.castShadow = shadows;
+    this.resize();
+  }
+
+  _setMaterial(mesh, props) {
+    for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      if (!m) continue;
+      if (props.roughness !== undefined && 'roughness' in m) m.roughness = props.roughness;
+      if (props.metalness !== undefined && 'metalness' in m) m.metalness = props.metalness;
+      m.needsUpdate = true;
+    }
+  }
+
+  tint(name, value, blend = 1) {
+    const o = this.model && this.model.getObjectByName(name);
+    if (o) this.tintMesh(o, value, blend);
+  }
+
+  tintMesh(o, value, blend = 1) {
+    if (!o || !value) return;
+    const target = new THREE.Color(value);
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (!m || !m.color) continue;
+      if (m.userData.__baseColor === undefined) m.userData.__baseColor = m.color.clone();
+      const base = m.userData.__baseColor || m.color.clone();
+      if (blend >= 1) m.color.copy(target);
+      else m.color.copy(base).lerp(target, blend);
       m.needsUpdate = true;
     }
   }
@@ -475,6 +692,63 @@ class MiaAvatar {
   configure(patch, save = true) {
     this.applyConfig(patch || {});
     if (save) this.saveConfig();
+  }
+
+  getConfig() {
+    return { ...this.config };
+  }
+
+  resetConfig(save = true) {
+    this.configure({ ...DEFAULTS }, save);
+  }
+
+  /* Apply a named preset group: outfit / camera / light / mood. */
+  applyPreset(kind, name, save = true) {
+    const group = PRESETS[kind];
+    if (!group || !group[name]) return false;
+    this.configure({ ...group[name], [kind]: name }, save);
+    return true;
+  }
+
+  randomizeConfig(save = true) {
+    const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+    const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+    const outfit = pick(Object.keys(OUTFIT_PRESETS));
+    const light = pick(Object.keys(LIGHT_PRESETS));
+    const camera = pick(Object.keys(CAMERA_PRESETS));
+    const hairLook = pick(Object.keys(HAIR_LOOKS));
+    const bodyShape = pick(Object.keys(BODY_SHAPES));
+    const patch = {
+      ...OUTFIT_PRESETS[outfit], outfit,
+      ...LIGHT_PRESETS[light], light,
+      ...CAMERA_PRESETS[camera], camera,
+      ...HAIR_LOOKS[hairLook], hairLook,
+      ...BODY_SHAPES[bodyShape], bodyShape,
+      hairColor: pick(HAIR_COLORS),
+      skinTone: pick(SKIN_TONES),
+      eyeColor: pick(EYE_COLORS),
+      hairStyle: this.hairStyles().length > 1
+        ? pick(this.hairStyles().filter((s) => s.id !== 'none')).id : 'default',
+      headSize: rand(0.93, 1.07),
+      cameraDistance: rand(0.88, 1.12),
+    };
+    this.configure(patch, save);
+    return this.getConfig();
+  }
+
+  importConfig(data, save = true) {
+    if (!data || typeof data !== 'object') return false;
+    const patch = {};
+    for (const key of Object.keys(DEFAULTS)) {
+      if (data[key] !== undefined) patch[key] = data[key];
+    }
+    if (!Object.keys(patch).length) return false;
+    this.configure(patch, save);
+    return true;
+  }
+
+  exportConfig() {
+    return JSON.stringify(this.getConfig(), null, 2);
   }
 
   /* payload: {visemes, times, durations, duration_ms, text, mood, gesture, look} */
@@ -516,7 +790,7 @@ class MiaAvatar {
     if (p >= 1) { this.gesture = null; return null; }
     const env = Math.sin(Math.PI * Math.min(1, Math.max(0, p)));
     const wave = g.cycles ? Math.cos(2 * Math.PI * g.cycles * p) : 1;
-    const scale = env * wave;
+    const scale = env * wave * num(this.config.gestureAmount, 1);
     return {
       head: { x: (g.head?.x || 0) * scale, y: (g.head?.y || 0) * scale,
         z: (g.head?.z || 0) * scale },
@@ -527,22 +801,41 @@ class MiaAvatar {
 
   update(dt, now) {
     if (!this.ready) return;
-    if (this.mixer) this.mixer.update(dt);
+    const cfg = this.config;
+    if (this.mixer) {
+      this.mixer.timeScale = num(cfg.idleSpeed, 1);
+      this.mixer.update(dt);
+    }
     const t = now;
 
-    // blinking: Poisson-ish gaps, plus a double blink sometimes
-    if (t > this.nextBlink && t > this.blinkUntil + .2) {
-      this.blinkUntil = t + .11;
-      this.nextBlink = t + 2.2 + Math.random() * 4.8;
-      if (Math.random() < .18) this.nextBlink = t + .28;
+    // Bone scales can be touched by an animation clip; re-assert shape now and then.
+    this._shapeTick++;
+    if (this._shapeTick % 20 === 0 &&
+        (num(cfg.height, 1) !== 1 || num(cfg.build, 1) !== 1 ||
+         num(cfg.headSize, 1) !== 1 || num(cfg.headWidth, 1) !== 1 ||
+         num(cfg.neckLength, 1) !== 1 || num(cfg.eyeSize, 1) !== 1 ||
+         num(cfg.armLength, 1) !== 1 || num(cfg.legLength, 1) !== 1 ||
+         num(cfg.shoulderWidth, 1) !== 1 || num(cfg.hipWidth, 1) !== 1 ||
+         num(cfg.handSize, 1) !== 1 || num(cfg.footSize, 1) !== 1 ||
+         num(cfg.hairScale, 1) !== 1 || num(cfg.hairVolume, 1) !== 1)) {
+      this._applyShape();
     }
-    const blink = t < this.blinkUntil ? 1 : 0;
+
+    // blinking: Poisson-ish gaps, plus a double blink sometimes
+    const blinkSpeed = Math.max(.1, num(cfg.blinkSpeed, 1));
+    if (cfg.autoBlink !== false && t > this.nextBlink && t > this.blinkUntil + .2) {
+      this.blinkUntil = t + .11;
+      this.nextBlink = t + (2.2 + Math.random() * 4.8) / blinkSpeed;
+      if (Math.random() < .18) this.nextBlink = t + .28 / blinkSpeed;
+    }
+    const blink = cfg.autoBlink === false ? 0 : (t < this.blinkUntil ? 1 : 0);
 
     // gaze target: pointer while listening/speaking; away while thinking/tool,
     // unless the sentence carried an explicit [look:…] tag
+    const follow = num(cfg.gazeFollow, 1);
     const think = this.state === 'thinking' || this.state === 'tool';
-    let targetX = think ? (this.state === 'tool' ? .35 : -.25) : this.pointer.x * .22;
-    let targetY = think ? (this.state === 'tool' ? -.1 : .18) : -this.pointer.y * .12;
+    let targetX = think ? (this.state === 'tool' ? .35 : -.25) : this.pointer.x * .22 * follow;
+    let targetY = think ? (this.state === 'tool' ? -.1 : .18) : -this.pointer.y * .12 * follow;
     const look = this.look ? LOOKS[this.look] : null;
     if (Array.isArray(look)) { targetX = look[0]; targetY = look[1]; }
     else if (look === 'camera') { targetX = 0; targetY = 0; }
@@ -551,25 +844,54 @@ class MiaAvatar {
     this.gazeY = lerp(this.gazeY || 0, targetY, 1 - Math.pow(.001, dt));
 
     const gest = this._gestureOffsets(now);
+    const swayAmount = num(cfg.swayAmount, 1);
     const head = this.bones.Head || this.bones.head;
     if (head) {
-      const sway = Math.sin(t * .6) * .012 + (this.state === 'speaking' ? Math.sin(t * 3.1) * .008 : 0);
+      const sway = (Math.sin(t * .6) * .012 +
+        (this.state === 'speaking' ? Math.sin(t * 3.1) * .008 : 0)) * swayAmount;
       head.rotation.y = lerp(head.rotation.y, this.gazeX + (gest ? gest.head.y : 0), .08);
       head.rotation.x = lerp(head.rotation.x, this.gazeY * .6 + sway + (gest ? gest.head.x : 0), .06);
-      head.rotation.z = lerp(head.rotation.z, Math.sin(t * .35) * .01 + (gest ? gest.head.z : 0), .05);
+      head.rotation.z = lerp(head.rotation.z, Math.sin(t * .35) * .01 * swayAmount + (gest ? gest.head.z : 0), .05);
     }
     const chest = this.bones.Spine2 || this.bones.Spine1 || this.bones.Spine;
     if (chest) {
-      const breath = Math.sin(t * 1.25) * .012;
+      const breathAmount = num(cfg.breathAmount, 1);
+      const breath = Math.sin(t * 1.25) * .012 * breathAmount;
       chest.rotation.x = lerp(chest.rotation.x, breath + (gest ? gest.chest.x : 0), .05);
       chest.rotation.y = lerp(chest.rotation.y, gest ? gest.chest.y : 0, .05);
       chest.rotation.z = lerp(chest.rotation.z, gest ? gest.chest.z : 0, .05);
-      chest.scale.y = 1 + Math.sin(t * 1.25) * .006;
+      chest.scale.y = 1 + Math.sin(t * 1.25) * .006 * breathAmount;
+    }
+
+    if (this.camera && this.cameraBase) {
+      const parallax = num(cfg.cameraParallax, 1);
+      const orbit = cfg.autoOrbit ? Math.sin(t * .3) * .4 : 0;
+      const dx = this.cameraBase.x - this.cameraBase.cx;
+      const dz = this.cameraBase.z - this.cameraBase.cz;
+      const cos = Math.cos(orbit);
+      const sin = Math.sin(orbit);
+      this.camera.position.x = this.cameraBase.cx + dx * cos - dz * sin + this.pointer.x * .05 * parallax;
+      this.camera.position.y = this.cameraBase.y - this.pointer.y * .03 * parallax;
+      this.camera.position.z = this.cameraBase.cz + dx * sin + dz * cos;
+      this.camera.lookAt(this.cameraBase.lx, this.cameraBase.ly, this.cameraBase.lz);
     }
 
     const desired = new Map();
     const mood = MOODS[this.mood] || MOODS.neutral;
     for (const [k, v] of Object.entries(mood)) desired.set(k, v);
+    const add = (name, value) => desired.set(name, clamp((desired.get(name) || 0) + value));
+    const smile = num(cfg.smile, 0);
+    if (smile) {
+      add('mouthSmileLeft', smile); add('mouthSmileRight', smile);
+      add('cheekSquintLeft', smile * .4); add('cheekSquintRight', smile * .4);
+    }
+    const brow = num(cfg.browRaise, 0);
+    if (brow) {
+      add('browInnerUp', brow);
+      add('browOuterUpLeft', brow * .8); add('browOuterUpRight', brow * .8);
+    }
+    const wide = num(cfg.eyeWide, 0);
+    if (wide) { add('eyeWideLeft', wide); add('eyeWideRight', wide); }
     const moodClosed = desired.get('eyesClosed') || 0;
     const shut = Math.max(blink, moodClosed);
     desired.set('eyesClosed', shut);
@@ -650,6 +972,11 @@ class MiaAvatar {
   loop() {
     if (!this.ready) return;
     requestAnimationFrame(() => this.loop());
+    if (this.config.enabled === false && !this.forcePreview) return;
+    const cap = num(this.config.fpsCap, 0);
+    const stamp = performance.now();
+    if (cap > 0 && stamp - (this._lastRender || 0) < 1000 / cap) return;
+    this._lastRender = stamp;
     const dt = Math.min(.05, this.clock.getDelta());
     this.frameTime = lerp(this.frameTime, dt * 1000, .05);
     if (this.qualityScale > .8 && this.frameTime > 30) {
@@ -721,4 +1048,4 @@ if (document.readyState === 'loading') {
   boot();
 }
 
-export { MiaAvatar, textTimeline, DEFAULTS, GESTURES, LOOKS };
+export { MiaAvatar, textTimeline, DEFAULTS, GESTURES, LOOKS, MOODS, PRESETS };

@@ -167,8 +167,12 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   There is no mocap/gesture clip in the free model, so do not claim real hand
   animation; arms stay in the idle clip.
 - Hair styles come from the meshes present in the loaded GLB
-  (`hairStyles()`), so the page never offers a style that cannot be shown.
-  Adding a style means shipping another mesh/GLB, not a new CSS class.
+  (`hairStyles()`), so the page never offers a mesh style that cannot be
+  shown. `HAIR_LOOKS` (long/short/volume/sleek/wild) only rescales that mesh;
+  a genuinely new hairstyle still means shipping another mesh/GLB.
+- `BODY_SHAPES` and the shape sliders scale the rig's existing bones (Head,
+  Neck, Shoulders, Hips, arms, legs, hands, feet). They are proportion controls,
+  not a different body mesh; keep the ranges modest so joints do not tear.
 - Avatar models are not committed. `server/hud/avatar/models/*.glb` is ignored;
   use `fetch-avatar-assets.sh` or `install.sh --with-avatar`. Keep the
   `ASSET_LICENSE` provenance in models/README.md.
@@ -190,6 +194,11 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   `server.py`; add a unit test.
 - New HUD view: add a panel in `server/hud/index.html` and a page under
   `server/hud/`; protect it with the existing token middleware.
+- New avatar setting: add it to `server/hud/avatar/presets.js` (`DEFAULTS`,
+  `SCHEMA`, optionally a preset group), mirror the default and its
+  colour/bool/string/range in `server/avatar_config.py`, and use it in
+  `avatar.js`; `tests/test_avatar.py` enforces parity. `/hud/avatar.html` is
+  generated from `SCHEMA`, so no per-field HTML is needed.
 - New autonomy capability: add it to `autonomy/profile.py` BACKEND_CHAINS +
   READINESS_GROUPS, to `capabilities.py` CATALOG/mark_learned, and (if it has a
   `mia-ctl` verb) to the `mia-ctl` parser + dispatch + `verify_result`.

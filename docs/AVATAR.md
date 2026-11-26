@@ -436,11 +436,19 @@ Implementirano:
 kose: lasje, očala, zgornji/spodnji del, obutev. Model se ne commit-a; prenese
 se z `server/scripts/fetch-avatar-assets.sh` (ali `install.sh --with-avatar`).
 
-**Kaj uporabnik lahko nastavi:** lasje (pričeska iz seznama tistih, ki jih
-model vsebuje, ali brez), barva las, očala, zgornji del, spodnji del, obutev,
-barve, odtenek kože, kamera (doprsni/obraz/cel), kakovost, razpoloženje, model
-(zamenjava brez osvežitve strani). Nastavitve se shranijo v
-`server/logs/avatar.json` in takoj veljajo v glavnem HUD-u.
+**Kaj uporabnik lahko nastavi (71 nastavitev):** garderoba (8 presetov,
+barve in material vsakega kosa, očala), lasje (pričeska iz modela ali brez,
+6 variant oblike, barva, dolžina, volumen), koža in oči (paleti), oblika
+(6 telesnih tipov in 12 drsnikov: višina, postava, glava, oči, vrat, rame,
+boki, roke, stopala), obraz (razpoloženje, nasmeh, obrvi, široke oči), vedenje
+(utripanje, dihanje, zibanje, sledenje kazalcu, idle, moč gest), kamera
+(7 kadrov ter oddaljenost, višina, kot, FOV, paralaksa, kroženje), luči
+(8 presetov, barve in moč vsake luči, osvetlitev, okoljski odsev), ozadje in
+render (kakovost, sence, FPS, pixel ratio), model in idle animacija. Vse se
+shrani v `server/logs/avatar.json`, velja takoj v glavnem HUD-u, izvozi/uvozi
+kot JSON, naključno izbere ali ponastavi. Shema je v
+`server/hud/avatar/presets.js`; `server/avatar_config.py` jo zrcali in
+validira, test pa preveri, da se seznama ne razideta.
 
 **Sinhronizacija:** vsak TTS stavek pošlje `avatar_speech` z
 `visemes/times/durations` in `duration_ms`; HUD jih veže na dejanski

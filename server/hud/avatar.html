@@ -11,225 +11,576 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{min-height:100%}
 body{background:radial-gradient(ellipse at 50% 0%,#0a1a2c 0%,var(--bg) 60%);color:var(--txt);
-  font-family:'Rajdhani',sans-serif;padding:14px 18px 28px}
+  font-family:'Rajdhani',sans-serif;padding:12px 16px 28px}
 header{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line);
-  background:var(--panel);padding:10px 14px;clip-path:polygon(0 0,100% 0,100% 70%,calc(100% - 14px) 100%,14px 100%,0 70%)}
+  background:var(--panel);padding:10px 14px;clip-path:polygon(0 0,100% 0,100% 70%,calc(100% - 14px) 100%,14px 100%,0 70%);
+  position:sticky;top:0;z-index:20;backdrop-filter:blur(6px)}
 header h1{font-family:'Orbitron';font-size:15px;letter-spacing:6px;color:var(--cyan)}
 header .sub{font-size:11px;letter-spacing:2px;color:var(--txt-dim)}
+.topActions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.status{font-size:11px;color:var(--teal);letter-spacing:1px;max-width:340px;text-align:right}
 button{background:#0a2435;color:var(--cyan);border:1px solid var(--cyan-dim);padding:6px 10px;
   font-family:'Orbitron';font-size:9.5px;letter-spacing:1.2px;cursor:pointer}
 button:hover{background:#0e3448}
 button.ghost{color:var(--txt-dim);border-color:var(--line)}
-.layout{display:grid;grid-template-columns:minmax(280px,420px) 1fr;gap:14px;margin-top:12px}
-@media(max-width:860px){.layout{grid-template-columns:1fr}}
-.stage{border:1px solid var(--line);background:#06111d;min-height:520px;position:relative;
+button.wide{flex:1}
+.layout{display:grid;grid-template-columns:minmax(300px,440px) 1fr;gap:14px;margin-top:12px;align-items:start}
+@media(max-width:900px){.layout{grid-template-columns:1fr}}
+.stageCol{position:sticky;top:64px}
+@media(max-width:900px){.stageCol{position:static}}
+.stage{border:1px solid var(--line);background:#06111d;height:min(62vh,560px);min-height:420px;position:relative;
   clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,16px 100%,0 calc(100% - 16px))}
-#avatar{width:100%;height:100%;display:block;min-height:520px}
+#avatar{width:100%;height:100%;display:block}
 #stageHint{position:absolute;left:10px;bottom:8px;font:11px 'Orbitron';letter-spacing:2px;color:var(--txt-dim)}
+.stageBadges{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:4px;align-items:flex-end}
+.badge{display:inline-block;font-size:10px;padding:2px 7px;border:1px solid var(--line);color:var(--teal);background:#06111dcc}
 .panel{border:1px solid var(--line);background:var(--panel);padding:12px 14px;margin-bottom:10px}
 .panel h2{font-family:'Orbitron';font-size:10px;letter-spacing:2px;color:var(--cyan);margin-bottom:8px}
 .row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 0;
-  border-bottom:1px solid #0b2233;font-size:13px}
+  border-bottom:1px solid #0b2233;font-size:13px;min-height:30px}
 .row:last-child{border-bottom:0}
 label{display:flex;align-items:center;gap:8px;cursor:pointer}
-input[type=checkbox]{width:16px;height:16px;accent-color:var(--cyan)}
-input[type=color]{width:42px;height:26px;border:1px solid var(--line);background:#06101c;padding:1px;cursor:pointer}
-select,input[type=range]{background:#06101c;border:1px solid var(--line);color:#cfeefb;padding:5px 7px;
-  font-family:'Rajdhani';font-size:13px;outline:none}
-input[type=range]{padding:0;accent-color:var(--teal);width:130px}
-.hint{font-size:11.5px;color:var(--txt-dim);margin:4px 0 8px}
-.badge{display:inline-block;font-size:10px;padding:2px 7px;border:1px solid var(--line);color:var(--teal)}
+.clabel{flex:1;min-width:0}
+input[type=checkbox]{width:16px;height:16px;accent-color:var(--cyan);flex:none}
+input[type=color]{width:42px;height:26px;border:1px solid var(--line);background:#06101c;padding:1px;cursor:pointer;flex:none}
+select,input[type=range],input[type=text],input[type=search]{background:#06101c;border:1px solid var(--line);color:#cfeefb;padding:5px 7px;
+  font-family:'Rajdhani';font-size:13px;outline:none;max-width:210px}
+input[type=range]{padding:0;accent-color:var(--teal);width:132px}
+input[type=search]{width:100%;max-width:none;margin-bottom:10px}
+.hint{font-size:11.5px;color:var(--txt-dim);margin:4px 0 8px;line-height:1.35}
+.inline{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.rangeWrap output{font-size:11px;color:var(--teal);min-width:52px;text-align:right}
+.controls{display:grid;grid-template-columns:1fr;gap:0 18px}
+@media(min-width:1180px){.controls{grid-template-columns:1fr 1fr}}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.chip{font-family:'Rajdhani';font-size:11px;letter-spacing:.4px;padding:3px 9px;color:var(--txt);
+  background:#06111d;border:1px solid var(--line);cursor:pointer}
+.chip:hover{color:var(--cyan);border-color:var(--cyan-dim)}
+.chip.active{color:var(--cyan);border-color:var(--cyan);background:#0e3448;box-shadow:0 0 8px #00e5ff33}
+.swatches{display:flex;flex-wrap:wrap;gap:2px;max-width:160px}
+.swatch{width:13px;height:13px;border:1px solid #0e2c40;padding:0;cursor:pointer}
+.swatch:hover{outline:1px solid var(--cyan)}
+textarea{width:100%;min-height:150px;background:#06101c;border:1px solid var(--line);color:#cfeefb;
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;padding:8px;resize:vertical}
+.fileBtn{display:inline-flex;align-items:center;border:1px solid var(--line);color:var(--txt-dim);
+  padding:6px 10px;font-family:'Orbitron';font-size:9.5px;letter-spacing:1.2px;cursor:pointer}
+.fileBtn:hover{background:#0e3448;color:var(--cyan)}
 </style>
 </head>
 <body>
 <header>
-  <div><h1>LIK</h1><div class="sub">3D MIA · GARDEROBA · LASJE · ČUSTVA · KAMERA</div></div>
-  <div><button id="closeBtn" class="ghost">✕ ZAPRI</button></div>
-</header>
-<div class="layout">
-  <div class="stage">
-    <canvas id="avatar"></canvas>
-    <div id="stageHint">3D · MIA PRESENCE</div>
+  <div><h1>LIK</h1><div class="sub">3D MIA · GARDEROBA · OBLIKA · LASJE · LUČI · KAMERA</div></div>
+  <div class="topActions">
+    <span id="status" class="status">—</span>
+    <button id="saveBtn">SHRANI</button>
+    <button id="randomBtn" class="ghost">NAKLJUČNO</button>
+    <button id="resetBtn" class="ghost">PONASTAVI</button>
+    <button id="ioBtn" class="ghost">IZVOZ/UVOZ</button>
+    <button id="closeBtn" class="ghost">✕ ZAPRI</button>
   </div>
-  <div>
-    <div class="panel">
-      <h2>OBLEKA IN DODATKI</h2>
-      <div class="row"><label><input type="checkbox" id="top"> Zgornji del</label><input type="color" id="topColor"></div>
-      <div class="row"><label><input type="checkbox" id="bottom"> Spodnji del</label><input type="color" id="bottomColor"></div>
-      <div class="row"><label><input type="checkbox" id="footwear"> Obutev</label><input type="color" id="footwearColor"></div>
-      <div class="row"><label><input type="checkbox" id="glasses"> Očala</label><input type="color" id="glassesColor"></div>
+</header>
+
+<div class="layout">
+  <aside class="stageCol">
+    <div class="stage">
+      <canvas id="avatar"></canvas>
+      <div id="stageHint">3D · MIA PRESENCE</div>
+      <div class="stageBadges">
+        <span id="modelBadge" class="badge">3D se nalaga…</span>
+        <span id="fpsBadge" class="badge">— fps</span>
+        <span id="countBadge" class="badge">— nastavitev</span>
+      </div>
     </div>
-    <div class="panel">
-      <h2>LASJE IN KOŽA</h2>
-      <div class="row"><label><input type="checkbox" id="hair"> Lasje</label><div style="display:flex;gap:6px;align-items:center"><select id="hairStyle"></select><input type="color" id="hairColor"></div></div>
-      <div class="row"><span>Odtenek kože</span><input type="color" id="skinTone"></div>
-      <div class="hint">Barva se meša s teksturo modela. Pričeske, ki jih model
-        vsebuje, se pojavijo v seznamu; za novo pričesko dodaj drug GLB v
-        <code>server/hud/avatar/models/</code> in ga izberi spodaj.</div>
-      <div class="row"><span>Model</span><select id="model"></select></div>
-    </div>
-    <div class="panel">
-      <h2>KAMERA IN KAKOVOST</h2>
-      <div class="row"><span>Kader</span>
-        <select id="camera"><option value="bust">doprsni</option><option value="head">obraz</option><option value="full">cel lik</option></select></div>
-      <div class="row"><span>Kakovost</span>
-        <select id="quality"><option value="ultra">ultra</option><option value="high">visoka</option><option value="balanced">varčna</option></select></div>
-      <div class="row"><span>Razpoloženje</span>
-        <select id="mood"><option value="neutral">nevtralno</option><option value="warm">toplo</option>
-          <option value="happy">veselo</option><option value="sad">žalostno</option>
-          <option value="angry">jezno</option><option value="fearful">prestrašeno</option>
-          <option value="disgust">gnus</option><option value="love">ljubezen</option>
-          <option value="sleep">spanje</option></select></div>
-    </div>
-    <div class="panel">
-      <h2>GESTE IN GOVOR</h2>
+
+    <section class="panel">
+      <h2>HITRE AKCIJE</h2>
       <div class="row"><span>Gesta</span>
-        <div style="display:flex;gap:6px;align-items:center">
-          <select id="gesture"></select>
-          <button id="gestureBtn" class="ghost">IZVED</button>
-        </div></div>
+        <div class="inline"><select id="gesture"></select><button id="gestureBtn">IZVED</button></div></div>
       <div class="row"><span>Pogled</span>
         <select id="look"><option value="">prosto</option><option value="user">v uporabnika</option>
           <option value="camera">v kamero</option><option value="away">stran</option>
           <option value="left">levo</option><option value="right">desno</option>
           <option value="up">gor</option><option value="down">dol</option></select></div>
-    </div>
-    <div class="panel">
-      <h2>UKREPI</h2>
-      <div class="row"><button id="saveBtn">SHRANI</button><button id="testBtn" class="ghost">TEST GOVOR</button><button id="resetBtn" class="ghost">PONASTAVI</button></div>
-      <div class="hint" id="status">—</div>
-    </div>
-  </div>
+      <div class="row"><button id="testBtn" class="wide">TEST GOVOR</button>
+        <button id="stopBtn" class="ghost">USTAVI</button></div>
+    </section>
+  </aside>
+
+  <main>
+    <input type="search" id="search" placeholder="Filtriraj nastavitve …">
+
+    <section class="panel">
+      <h2>MODEL IN ANIMACIJA</h2>
+      <div class="row"><label><input type="checkbox" id="f_enabled"> Avatar vklopljen</label>
+        <span class="badge">globalno</span></div>
+      <div class="row"><span>Model</span><select id="model"></select></div>
+      <div class="row"><span>Idle animacija</span><select id="idle"></select></div>
+      <div class="row"><button id="reloadModelBtn" class="ghost">PONOVNO NALOŽI MODEL</button></div>
+      <div class="hint">Modeli so v <code>server/hud/avatar/models/</code>. Za novo obleko ali
+        pričesko dodaj drug GLB (npr. Avaturn T2 ali RPM) in ga izberi tukaj; seznam pričesk
+        se zamenja glede na kose v modelu.</div>
+    </section>
+
+    <div id="groups"></div>
+
+    <section class="panel" id="ioPanel" hidden>
+      <h2>IZVOZ / UVOZ NASTAVITEV</h2>
+      <textarea id="ioBox" spellcheck="false" placeholder="JSON nastavitve …"></textarea>
+      <div class="row">
+        <button id="exportBtn">V POLJE</button>
+        <button id="importBtn" class="ghost">IZ POLJA</button>
+        <button id="downloadBtn" class="ghost">PRENESI .JSON</button>
+        <label class="fileBtn">NALOŽI .JSON<input type="file" id="fileInput" accept="application/json,.json" hidden></label>
+      </div>
+      <div class="hint">JSON vsebuje vse nastavitve (barve, obliko, vedenje, kamero, luči,
+        ozadje, render in model). Uporabno za varnostno kopijo ali prenos na drug stroj.</div>
+    </section>
+  </main>
 </div>
+
 <script type="importmap">
 {"imports":{"three":"/hud/avatar/vendor/three/three.module.js","three/addons/":"/hud/avatar/vendor/three/addons/"}}
 </script>
 <script type="module">
-import { DEFAULTS, GESTURES } from '/hud/avatar/avatar.js';
-const $=id=>document.getElementById(id);
-const fields=['top','bottom','footwear','glasses','hair'];
-const GESTURE_LABELS={nod:'prikima',shake:'odkima',tilt:'nagne glavo',
-  look:'pogled',wave:'maha',shrug:'skomigne',point:'pokaže',bow:'poklon'};
-function fillGestures(){
-  const sel=$('gesture'); sel.innerHTML='';
-  for(const name of Object.keys(GESTURES)){
-    const o=document.createElement('option');
-    o.value=name; o.textContent=GESTURE_LABELS[name]||name;
-    sel.appendChild(o);
+import {
+  DEFAULTS, SCHEMA, PRESETS, MOOD_OPTIONS, SETTINGS_COUNT,
+} from '/hud/avatar/presets.js';
+import { GESTURES } from '/hud/avatar/avatar.js';
+
+const $ = (id) => document.getElementById(id);
+const state = { config: { ...DEFAULTS }, models: [] };
+
+const GESTURE_LABELS = { nod: 'prikima', shake: 'odkima', tilt: 'nagne glavo',
+  look: 'pogled', wave: 'maha', shrug: 'skomigne', point: 'pokaže', bow: 'poklon' };
+
+const PRESET_LABELS = {
+  outfit: { casual: 'vsakdanji', business: 'poslovni', sport: 'športni',
+    evening: 'večerni', cyber: 'cyber', minimal: 'minimal', warm: 'topel', mono: 'mono' },
+  light: { studio: 'studio', cyan: 'cyan', warm: 'toplo', cinema: 'kino',
+    night: 'noč', soft: 'mehko', neon: 'neon', flat: 'ravno' },
+  camera: { bust: 'doprsni', head: 'glava', face: 'obraz', full: 'cel lik',
+    profile: 'profil', hero: 'heroj', cinematic: 'filmski' },
+  mood: Object.fromEntries(MOOD_OPTIONS.map((m) => [m.value, m.label])),
+  hairLook: { natural: 'naravna', long: 'dolga', short: 'kratka',
+    volume: 'volumna', sleek: 'gladka', wild: 'divja' },
+  bodyShape: { natural: 'naravna', slim: 'vitka', athletic: 'atletska',
+    curvy: 'oblina', petite: 'drobna', tall: 'visoka' },
+};
+
+function status(message) { $('status').textContent = message; }
+function stamp() { return new Date().toLocaleTimeString('sl-SI'); }
+
+function fillSelect(select, items, value) {
+  select.innerHTML = '';
+  for (const item of items) select.appendChild(new Option(item.label, item.value));
+  if (value !== undefined && [...select.options].some((o) => o.value === value)) {
+    select.value = value;
+  } else if (select.options.length) {
+    select.value = select.options[0].value;
   }
 }
-function fillHair(){
-  const sel=$('hairStyle');
-  const styles=window.MiaAvatar?.hairStyles?.()||[{id:'default',label:'pričeska 1'},{id:'none',label:'brez'}];
-  const cur=sel.value||'default';
-  sel.innerHTML='';
-  for(const s of styles){
-    const o=document.createElement('option');
-    o.value=s.id; o.textContent=s.label;
-    sel.appendChild(o);
+
+function buildChips(kind) {
+  const wrap = document.createElement('div');
+  wrap.className = 'chips';
+  for (const name of Object.keys(PRESETS[kind] || {})) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'chip';
+    button.dataset.kind = kind;
+    button.dataset.name = name;
+    button.textContent = (PRESET_LABELS[kind] || {})[name] || name;
+    button.onclick = () => applyPreset(kind, name);
+    wrap.appendChild(button);
   }
-  sel.value=styles.some(s=>s.id===cur)?cur:'default';
+  return wrap;
 }
-function fill(cfg){
-  for(const f of fields) $(f).checked=!!cfg[f];
-  for(const k of ['topColor','bottomColor','footwearColor','glassesColor','hairColor','skinTone']){
-    if(cfg[k]) $(k).value=cfg[k];
-  }
-  $('camera').value=cfg.camera||'bust';
-  $('quality').value=cfg.quality||'high';
-  $('mood').value=cfg.mood||'neutral';
-  $('model').innerHTML='';
-  const opt=document.createElement('option');
-  opt.value=cfg.model||DEFAULTS.model; opt.textContent=(cfg.model||DEFAULTS.model).split('/').pop();
-  $('model').appendChild(opt);
-  fillHair();
-  $('hairStyle').value=cfg.hairStyle||'default';
-}
-async function load(){
-  let cfg={...DEFAULTS};
-  try{
-    const j=await (await fetch('/api/avatar/config',{cache:'no-store'})).json();
-    cfg={...DEFAULTS,...(j.config||j||{})};
-  }catch{}
-  fill(cfg);
-  try{
-    const m=await (await fetch('/api/avatar/models',{cache:'no-store'})).json();
-    const models=(m.models||[]).filter(x=>!/idle/i.test(x.name));
-    if(models.length){
-      const sel=$('model'); sel.innerHTML='';
-      for(const item of models){
-        const opt=document.createElement('option');
-        opt.value=item.url;
-        opt.textContent=item.name.replace(/\.glb$/,'');
-        sel.appendChild(opt);
+
+function makeControl(control) {
+  const row = document.createElement('div');
+  row.className = 'row control';
+  const label = document.createElement('label');
+  label.className = 'clabel';
+  label.textContent = control.label;
+  row.appendChild(label);
+
+  const id = 'f_' + control.key;
+  if (control.type === 'toggle') {
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.id = id;
+    row.appendChild(input);
+  } else if (control.type === 'color') {
+    const wrap = document.createElement('div');
+    wrap.className = 'inline';
+    const input = document.createElement('input');
+    input.type = 'color';
+    input.id = id;
+    wrap.appendChild(input);
+    if (control.palette) {
+      const swatches = document.createElement('div');
+      swatches.className = 'swatches';
+      for (const color of control.palette) {
+        const swatch = document.createElement('button');
+        swatch.type = 'button';
+        swatch.className = 'swatch';
+        swatch.style.background = color;
+        swatch.title = color;
+        swatch.onclick = () => {
+          input.value = color;
+          updateOutput(input);
+          queueApply();
+        };
+        swatches.appendChild(swatch);
       }
-      sel.value=cfg.model;
+      wrap.appendChild(swatches);
     }
-  }catch{}
+    row.appendChild(wrap);
+  } else if (control.type === 'range') {
+    const wrap = document.createElement('div');
+    wrap.className = 'inline rangeWrap';
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.id = id;
+    input.min = control.min;
+    input.max = control.max;
+    input.step = control.step;
+    input.dataset.unit = control.unit || '';
+    const output = document.createElement('output');
+    output.id = id + '_out';
+    wrap.appendChild(input);
+    wrap.appendChild(output);
+    row.appendChild(wrap);
+  } else if (control.type === 'select') {
+    const select = document.createElement('select');
+    select.id = id;
+    if (control.dynamic) select.dataset.dynamic = control.dynamic;
+    if (control.options) {
+      for (const option of control.options)
+        select.appendChild(new Option(option.label, option.value));
+    }
+    row.appendChild(select);
+  }
+  return row;
 }
-function patch(){
-  return {
-    top:$('top').checked,bottom:$('bottom').checked,footwear:$('footwear').checked,
-    glasses:$('glasses').checked,hair:$('hair').checked,hairStyle:$('hairStyle').value,
-    topColor:$('topColor').value,bottomColor:$('bottomColor').value,
-    footwearColor:$('footwearColor').value,glassesColor:$('glassesColor').value,
-    hairColor:$('hairColor').value,skinTone:$('skinTone').value,
-    camera:$('camera').value,quality:$('quality').value,mood:$('mood').value,
-    model:$('model').value,
-  };
+
+function buildGroups() {
+  const host = $('groups');
+  host.innerHTML = '';
+  for (const group of SCHEMA) {
+    const panel = document.createElement('section');
+    panel.className = 'panel';
+    const heading = document.createElement('h2');
+    heading.textContent = group.title;
+    panel.appendChild(heading);
+    if (group.preset) panel.appendChild(buildChips(group.preset));
+    const controls = document.createElement('div');
+    controls.className = 'controls';
+    for (const control of group.controls) controls.appendChild(makeControl(control));
+    panel.appendChild(controls);
+    host.appendChild(panel);
+  }
 }
-function apply(save=true){
-  const p=patch();
-  window.MiaAvatar?.configure(p, save);
-  $('status').textContent=save?'shranjeno · '+new Date().toLocaleTimeString('sl-SI'):'predogled';
+
+function refreshChips() {
+  for (const chip of document.querySelectorAll('.chip')) {
+    const kind = chip.dataset.kind;
+    const name = chip.dataset.name;
+    chip.classList.toggle('active', state.config[kind] === name);
+  }
 }
-for(const f of fields) $(f).addEventListener('change',()=>apply(false));
-for(const k of ['topColor','bottomColor','footwearColor','glassesColor','hairColor','skinTone','camera','quality','mood','hairStyle'])
-  $(k).addEventListener('input',()=>apply(false));
-$('model').addEventListener('change',async()=>{
-  $('status').textContent='nalagam model…';
-  const ok=await window.MiaAvatar?.reloadModel($('model').value);
-  if(ok) apply(true);
-  fillHair();
-  $('status').textContent=ok?'model naložen · '+new Date().toLocaleTimeString('sl-SI')
-    :'modela ni bilo mogoče naložiti';
-});
-$('gestureBtn').onclick=()=>{
-  const g=$('gesture').value;
-  const ok=window.MiaAvatar?.playGesture(g);
-  $('status').textContent=ok?'gesta: '+(GESTURE_LABELS[g]||g):'gesta ni na voljo';
-};
-$('look').addEventListener('change',()=>{
-  window.MiaAvatar?.setLook($('look').value||null);
-  $('status').textContent=$('look').value?'pogled: '+$('look').value:'pogled: prosto';
-});
-$('saveBtn').onclick=()=>apply(true);
-$('testBtn').onclick=()=>{
-  window.MiaAvatar?.speakText('Dober dan, šefe. Kako si? Lepo te vidim.',1800,
-    { gesture: $('gesture').value, look: $('look').value || null });
-};
-$('resetBtn').onclick=()=>{fill({...DEFAULTS});apply(true)};
-$('closeBtn').onclick=()=>{try{window.parent.closeView()}catch{window.close()}};
-addEventListener('mia-avatar-ready',()=>{fillHair();updateStatus()});
-addEventListener('mia-avatar-failed',(e)=>{
-  $('status').textContent='3D model se ni naložil: '+(e.detail||'neznana napaka')+
-    ' · zaženi server/scripts/fetch-avatar-assets.sh';
-});
-function hairWord(n){
-  if(n===1) return 'pričeska';
-  if(n===2) return 'pričeski';
-  if(n===3||n===4) return 'pričeske';
-  return 'pričesk';
+
+function updateOutput(input) {
+  if (!input || input.type !== 'range') return;
+  const output = $(input.id + '_out');
+  if (!output) return;
+  const step = Number(input.step) || 0.01;
+  const decimals = (String(step).split('.')[1] || '').length;
+  output.textContent = Number(input.value).toFixed(decimals) + (input.dataset.unit || '');
 }
-function updateStatus(){
-  const a=window.MiaAvatar;
-  if(!a) return;
-  const n=a.ready?a.hairStyles().length-1:0;
-  $('status').textContent=a.ready?'3D pripravljen · '+n+' '+hairWord(n):'3D se nalaga…';
+
+function setInputs(patch) {
+  for (const key of Object.keys(patch)) {
+    const input = $('f_' + key);
+    if (!input) continue;
+    if (input.type === 'checkbox') input.checked = !!patch[key];
+    else if (input.type === 'range') input.value = Number(patch[key]);
+    else input.value = patch[key];
+    updateOutput(input);
+  }
+  if (patch.enabled !== undefined) $('f_enabled').checked = !!patch.enabled;
+  if (patch.model !== undefined && $('model')) $('model').value = patch.model;
+  if (patch.idle !== undefined && $('idle')) $('idle').value = patch.idle;
 }
+
+function readConfig() {
+  const cfg = { ...DEFAULTS, ...state.config };
+  for (const group of SCHEMA) {
+    for (const control of group.controls) {
+      const input = $('f_' + control.key);
+      if (!input) continue;
+      if (control.type === 'toggle') cfg[control.key] = input.checked;
+      else if (control.type === 'range') cfg[control.key] = Number(input.value);
+      else cfg[control.key] = input.value || DEFAULTS[control.key];
+    }
+  }
+  cfg.enabled = $('f_enabled').checked;
+  cfg.model = $('model').value || DEFAULTS.model;
+  cfg.idle = $('idle').value || '';
+  return cfg;
+}
+
+function apply(save) {
+  const cfg = readConfig();
+  state.config = cfg;
+  if (window.MiaAvatar) window.MiaAvatar.configure(cfg, save);
+  refreshChips();
+  status(save ? 'shranjeno · ' + stamp() : 'predogled · ' + stamp());
+}
+
+let saveTimer = null;
+let rafId = null;
+function queueApply() {
+  if (!rafId) {
+    rafId = requestAnimationFrame(() => { rafId = null; apply(false); });
+  }
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => apply(true), 650);
+}
+
+function applyPreset(kind, name) {
+  const group = PRESETS[kind];
+  if (!group || !group[name]) return;
+  const patch = { ...group[name], [kind]: name };
+  Object.assign(state.config, patch);
+  setInputs(patch);
+  queueApply();
+  refreshChips();
+  status('prednastavitev: ' + ((PRESET_LABELS[kind] || {})[name] || name));
+}
+
+function fillGestures() {
+  const select = $('gesture');
+  select.innerHTML = '';
+  for (const name of Object.keys(GESTURES)) {
+    select.appendChild(new Option(GESTURE_LABELS[name] || name, name));
+  }
+}
+
+function fillHairStyles() {
+  const select = $('f_hairStyle');
+  if (!select) return;
+  const ready = !!window.MiaAvatar?.ready;
+  const styles = ready
+    ? window.MiaAvatar.hairStyles()
+    : [{ id: 'default', label: 'pričeska 1' }, { id: 'none', label: 'brez' }];
+  const current = state.config.hairStyle || 'default';
+  select.innerHTML = '';
+  for (const style of styles) select.appendChild(new Option(style.label, style.id));
+  const chosen = styles.some((s) => s.id === current) ? current : (styles[0]?.id || 'default');
+  select.value = chosen;
+  state.config.hairStyle = chosen;
+}
+
+function fillModels(cfg) {
+  const models = state.models;
+  const avatars = models.filter((m) => !/idle/i.test(m.name));
+  const idles = models.filter((m) => /idle/i.test(m.name));
+  const modelItems = avatars.map((m) => ({ label: m.name.replace(/\.glb$/i, ''), value: m.url }));
+  if (!modelItems.length) {
+    modelItems.push({ label: (cfg.model || DEFAULTS.model).split('/').pop(), value: cfg.model || DEFAULTS.model });
+  }
+  fillSelect($('model'), modelItems, cfg.model || DEFAULTS.model);
+  const idleItems = [{ label: 'brez (statična drža)', value: '' }]
+    .concat(idles.map((m) => ({ label: m.name.replace(/\.glb$/i, ''), value: m.url })));
+  if (cfg.idle && !idleItems.some((i) => i.value === cfg.idle)) {
+    idleItems.push({ label: cfg.idle.split('/').pop(), value: cfg.idle });
+  }
+  fillSelect($('idle'), idleItems, cfg.idle || '');
+}
+
+async function load() {
+  let cfg = { ...DEFAULTS };
+  try {
+    const response = await fetch('/api/avatar/config', { cache: 'no-store' });
+    if (response.ok) {
+      const data = await response.json();
+      cfg = { ...DEFAULTS, ...(data.config || data || {}) };
+    }
+  } catch {}
+  state.config = cfg;
+  try {
+    const response = await fetch('/api/avatar/models', { cache: 'no-store' });
+    if (response.ok) state.models = (await response.json()).models || [];
+  } catch {}
+  fillModels(cfg);
+  setInputs(cfg);
+  fillHairStyles();
+  refreshChips();
+  updateStatus();
+}
+
+function updateStatus() {
+  const avatar = window.MiaAvatar;
+  const ready = !!avatar?.ready;
+  const hair = ready ? avatar.hairStyles().filter((s) => s.id !== 'none').length : 0;
+  $('modelBadge').textContent = ready ? '3D · ' + hair + ' pričesk' : '3D se nalaga…';
+  $('countBadge').textContent = SETTINGS_COUNT + ' nastavitev';
+  if (!ready) status('3D se nalaga…');
+  else status('3D pripravljen · ' + SETTINGS_COUNT + ' nastavitev · ' + stamp());
+}
+
+function randomize() {
+  const cfg = window.MiaAvatar?.randomizeConfig?.(false);
+  if (cfg) {
+    state.config = cfg;
+    setInputs(cfg);
+    fillHairStyles();
+    queueApply();
+    refreshChips();
+  }
+  status('naključni videz · ' + stamp());
+}
+
+function resetAll() {
+  window.MiaAvatar?.resetConfig?.(false);
+  state.config = { ...DEFAULTS };
+  setInputs({ ...DEFAULTS });
+  fillHairStyles();
+  queueApply();
+  refreshChips();
+  status('ponastavljeno · ' + stamp());
+}
+
+function exportToBox() {
+  $('ioBox').value = window.MiaAvatar?.exportConfig?.()
+    || JSON.stringify(readConfig(), null, 2);
+  status('nastavitve izvožene v polje');
+}
+
+function importFromBox() {
+  try {
+    const data = JSON.parse($('ioBox').value || '{}');
+    if (!data || typeof data !== 'object' || Array.isArray(data))
+      throw new Error('JSON mora biti objekt');
+    Object.assign(state.config, data);
+    window.MiaAvatar?.importConfig?.(data, false);
+    setInputs(data);
+    fillHairStyles();
+    queueApply();
+    refreshChips();
+    status('nastavitve uvožene · ' + stamp());
+  } catch (error) {
+    status('napaka pri uvozu: ' + (error.message || error));
+  }
+}
+
+function downloadConfig() {
+  const text = window.MiaAvatar?.exportConfig?.() || JSON.stringify(readConfig(), null, 2);
+  const blob = new Blob([text], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'mia-avatar.json';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+}
+
+buildGroups();
 fillGestures();
+
+for (const input of document.querySelectorAll('#groups input, #groups select'))
+  updateOutput(input);
+
+$('groups').addEventListener('input', (event) => {
+  if (!event.target.id.startsWith('f_')) return;
+  updateOutput(event.target);
+  queueApply();
+});
+$('groups').addEventListener('change', (event) => {
+  if (!event.target.id.startsWith('f_')) return;
+  updateOutput(event.target);
+  queueApply();
+});
+$('f_enabled').addEventListener('change', queueApply);
+$('search').addEventListener('input', () => {
+  const query = $('search').value.trim().toLowerCase();
+  for (const row of document.querySelectorAll('.control')) {
+    row.style.display = !query || row.textContent.toLowerCase().includes(query) ? '' : 'none';
+  }
+});
+
+$('saveBtn').onclick = () => apply(true);
+$('randomBtn').onclick = randomize;
+$('resetBtn').onclick = resetAll;
+$('ioBtn').onclick = () => { $('ioPanel').hidden = !$('ioPanel').hidden; };
+$('exportBtn').onclick = exportToBox;
+$('importBtn').onclick = importFromBox;
+$('downloadBtn').onclick = downloadConfig;
+$('fileInput').onchange = async (event) => {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  $('ioBox').value = await file.text();
+  importFromBox();
+  event.target.value = '';
+};
+$('closeBtn').onclick = () => { try { window.parent.closeView(); } catch { window.close(); } };
+
+$('model').onchange = async () => {
+  status('nalagam model…');
+  const ok = await window.MiaAvatar?.reloadModel($('model').value);
+  if (ok) apply(true);
+  fillHairStyles();
+  status(ok ? 'model naložen · ' + stamp() : 'modela ni bilo mogoče naložiti');
+};
+$('idle').onchange = async () => {
+  const ok = await window.MiaAvatar?.reloadIdle($('idle').value);
+  apply(true);
+  status(ok ? 'idle animacija naložena · ' + stamp()
+    : 'brez idle animacije · ' + stamp());
+};
+$('reloadModelBtn').onclick = () => {
+  const select = $('model');
+  if (select) select.onchange();
+};
+
+$('gestureBtn').onclick = () => {
+  const gesture = $('gesture').value;
+  const ok = window.MiaAvatar?.playGesture(gesture);
+  status(ok ? 'gesta: ' + (GESTURE_LABELS[gesture] || gesture) : 'gesta ni na voljo');
+};
+$('look').onchange = () => {
+  window.MiaAvatar?.setLook($('look').value || null);
+  status($('look').value ? 'pogled: ' + $('look').value : 'pogled: prosto');
+};
+$('testBtn').onclick = () => {
+  window.MiaAvatar?.speakText(
+    'Dober dan, šefe. Kako si? Lepo te vidim.',
+    1800,
+    { gesture: $('gesture').value, look: $('look').value || null },
+  );
+};
+$('stopBtn').onclick = () => {
+  window.MiaAvatar?.stopSpeech();
+  status('govor ustavljen');
+};
+
+addEventListener('mia-avatar-ready', () => {
+  fillHairStyles();
+  updateStatus();
+});
+addEventListener('mia-avatar-failed', (event) => {
+  status('3D model se ni naložil: ' + (event.detail || 'neznana napaka')
+    + ' · zaženi server/scripts/fetch-avatar-assets.sh');
+});
+
+setInterval(() => {
+  const avatar = window.MiaAvatar;
+  if (avatar?.ready && avatar.frameTime)
+    $('fpsBadge').textContent = Math.round(1000 / Math.max(1, avatar.frameTime)) + ' fps';
+}, 1000);
+
 load();
-setTimeout(updateStatus,1500);
+setTimeout(updateStatus, 1500);
 </script>
 </body>
 </html>

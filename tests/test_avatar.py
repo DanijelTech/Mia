@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -10,6 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "server"))
 
 import avatar_visemes  # noqa: E402
+import avatar_config  # noqa: E402
 
 
 class AvatarVisemeTests(unittest.TestCase):
@@ -87,11 +89,11 @@ class AvatarAssetContractTests(unittest.TestCase):
 
     def test_default_model_files_are_fetched(self):
         script = (ROOT / "server/scripts/fetch-avatar-assets.sh").read_text()
-        js = (ROOT / "server/hud/avatar/avatar.js").read_text()
-        server = (ROOT / "server/server.py").read_text()
+        presets = (ROOT / "server/hud/avatar/presets.js").read_text()
+        config = (ROOT / "server/avatar_config.py").read_text()
         for name in ("mia-female.glb", "mia-female-idle.glb"):
-            self.assertIn(name, js)
-            self.assertIn(name, server)
+            self.assertIn(name, presets)
+            self.assertIn(name, config)
             self.assertIn(name, script)
 
     def test_hud_loads_the_avatar_layer(self):
@@ -100,7 +102,77 @@ class AvatarAssetContractTests(unittest.TestCase):
         self.assertIn("/hud/avatar/avatar.js", hud)
         page = (ROOT / "server/hud/avatar.html").read_text()
         self.assertIn("/hud/avatar/avatar.js", page)
+        self.assertIn("/hud/avatar/presets.js", page)
         self.assertIn("hairStyle", page)
+        self.assertIn("randomize", page)
+
+
+class AvatarSettingsContractTests(unittest.TestCase):
+    """JS presets, the Python validator and the control deck stay in sync."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.presets = (ROOT / "server/hud/avatar/presets.js").read_text()
+        block = re.search(r"export const DEFAULTS = \{(.*?)\n\};", cls.presets, re.S)
+        cls.js_defaults = set(re.findall(r"([A-Za-z0-9_]+)\s*:", block.group(1)))
+        schema = re.search(r"export const SCHEMA = \[(.*)\n\];", cls.presets, re.S)
+        cls.schema_block = schema.group(1)
+        cls.schema_keys = set(re.findall(r"key: '([A-Za-z0-9_]+)'", cls.schema_block))
+
+    def test_defaults_match_the_python_validator(self):
+        self.assertTrue(self.js_defaults)
+        self.assertEqual(self.js_defaults, set(avatar_config.DEFAULTS))
+
+    def test_every_control_is_a_known_setting(self):
+        self.assertTrue(self.schema_keys)
+        self.assertLessEqual(self.schema_keys, self.js_defaults)
+
+    def test_schema_ranges_match_the_server_clamps(self):
+        found = {}
+        pattern = (r"\{ key: '([A-Za-z0-9_]+)', type: 'range'[^}]*"
+                   r"min: (-?[\d.]+), max: (-?[\d.]+)")
+        for key, low, high in re.findall(pattern, self.schema_block):
+            found[key] = (float(low), float(high))
+        self.assertEqual(found, avatar_config.RANGES)
+
+    def test_settings_count_covers_every_control(self):
+        self.assertIn("export const SETTINGS_COUNT = Object.keys(DEFAULTS).length;",
+                      self.presets)
+        self.assertGreaterEqual(len(self.js_defaults), 60)
+
+
+class AvatarConfigValidationTests(unittest.TestCase):
+    def test_empty_patch_returns_defaults(self):
+        self.assertEqual(avatar_config.sanitize({}), avatar_config.DEFAULTS)
+
+    def test_numbers_are_clamped(self):
+        cfg = avatar_config.sanitize({"height": 9, "cameraFov": -5})
+        self.assertEqual(cfg["height"], 1.35)
+        self.assertEqual(cfg["cameraFov"], 18.0)
+
+    def test_fps_cap_is_an_integer(self):
+        cfg = avatar_config.sanitize({"fpsCap": 59.6})
+        self.assertIsInstance(cfg["fpsCap"], int)
+        self.assertEqual(cfg["fpsCap"], 60)
+
+    def test_bad_color_is_rejected(self):
+        with self.assertRaises(ValueError):
+            avatar_config.sanitize({"hairColor": "red"})
+
+    def test_wrong_type_is_rejected(self):
+        with self.assertRaises(ValueError):
+            avatar_config.sanitize({"hair": "true"})
+        with self.assertRaises(ValueError):
+            avatar_config.sanitize({"height": True})
+
+    def test_unknown_keys_are_ignored(self):
+        cfg = avatar_config.sanitize({"notASetting": 1})
+        self.assertNotIn("notASetting", cfg)
+
+    def test_merge_drops_unknown_stored_keys(self):
+        cfg = avatar_config.merge({"hairColor": "#000000", "legacy": 1})
+        self.assertEqual(cfg["hairColor"], "#000000")
+        self.assertNotIn("legacy", cfg)
 
 
 if __name__ == "__main__":

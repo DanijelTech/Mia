@@ -170,18 +170,31 @@ server/scripts/fetch-avatar-assets.sh        # prenese brezplačni RPM ženski m
 ./install.sh --yes --open --with-avatar      # isto med namestitvijo
 ```
 
-- obraz: visemi, čustva, utripanje, pogled, dihanje (brez drugega modela),
-- garderoba: zgornji/spodnji del, obutev, očala, lasje (barva + vse pričeske,
-  ki jih model ima, ali brez),
+- obraz: visemi, čustva, utripanje, pogled, dihanje, mikroizrazi; ročno tudi
+  nasmeh, dvignjene obrvi in široke oči,
+- garderoba: 8 prednastavljenih oblek (vsakdanji, poslovni, športni, večerni,
+  cyber, minimal, topel, mono), barva in material vsakega kosa, očala,
+- lasje: pričeske iz modela ali brez, 6 variant oblike (naravna, dolga, kratka,
+  volumna, gladka, divja), barva, dolžina in volumen,
+- oblika: 6 telesnih tipov (naravna, vitka, atletska, oblina, drobna, visoka)
+  in 12 drsnikov za višino, postavo, glavo, oči, rame, boke, roke in stopala,
+- koža in oči: palete odtenkov kože in barve oči,
+- kamera: 7 kadrov (doprsni, glava, obraz, cel lik, profil, heroj, filmski) ter
+  oddaljenost, višina, kot, FOV, paralaksa in samodejno kroženje,
+- luči in scena: 8 presetov (studio, cyan, toplo, kino, noč, mehko, neon,
+  ravno), moč in barva vsake luči, osvetlitev, okoljski odsev in ozadje,
+- vedenje: hitrost utripanja, dihanje, zibanje, sledenje kazalcu, hitrost idle
+  animacije in moč gest,
+- render: kakovost, sence, omejitev FPS in pixel ratio,
+- izvoz/uvoz vseh nastavitev v JSON, naključni videz in ponastavitev,
 - geste: `[gesture:nod|shake|tilt|look|wave|shrug|point|bow]` v stavku ali
   ročno na strani LIK; pogled tudi z `[look:user|camera|away|left|right|up|down]`,
 - menjava modela na strani LIK brez osvežitve (GLB se naloži in star se sprosti),
-- kamera: doprsni/obraz/cel lik; kakovost: ultra/visoka/varčna,
 - sinhronizacija: strežnik pošlje `avatar_speech` z visemi/časi iz vsakega
   stavka TTS; HUD jih veže na `playhead`, brez časovne osi pa na približno
   besedilno oceno.
-- HUD stran **LIK IN GARDEROBA** (`/hud/avatar.html`) shrani nastavitve v
-  `server/logs/avatar.json`; modeli so v `server/hud/avatar/models/`,
+- HUD stran **LIK IN GARDEROBA** (`/hud/avatar.html`) shrani vseh 71 nastavitev
+  v `server/logs/avatar.json`; modeli so v `server/hud/avatar/models/`,
 - Avaturn T2 izvoz lahko dodaš kot nov `.glb` in ga izbereš v isti strani;
   T1 demo nima obraznih blendshapov, zato ni privzet.
 

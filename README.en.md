@@ -164,13 +164,27 @@ server/scripts/fetch-avatar-assets.sh        # downloads the free RPM female mod
 ./install.sh --yes --open --with-avatar      # same during install
 ```
 
-- face: visemes, emotion, blinking, gaze, breathing,
-- wardrobe: top/bottom, footwear, glasses, hair colour/style,
-- camera: bust/head/full; quality: ultra/high/balanced,
+- face: visemes, emotion, blinking, gaze, breathing, micro-expressions; manual
+  smile, brow raise and wide eyes,
+- wardrobe: 8 outfit presets (casual, business, sport, evening, cyber, minimal,
+  warm, mono), per-piece colour and fabric material, glasses,
+- hair: the styles present in the model or off, 6 shape variants (natural, long,
+  short, volume, sleek, wild), colour, length and volume,
+- shape: 6 body types (natural, slim, athletic, curvy, petite, tall) plus 12
+  sliders for height, build, head, eyes, shoulders, hips, hands and feet,
+- skin and eyes: skin-tone and eye-colour palettes,
+- camera: 7 shots (bust, head, face, full, profile, hero, cinematic) plus
+  distance, height, yaw, FOV, pointer parallax and auto orbit,
+- lights and scene: 8 presets (studio, cyan, warm, cinema, night, soft, neon,
+  flat), per-light colour and intensity, exposure, environment and background,
+- behaviour: blink rate, breathing, head sway, pointer gaze, idle speed and
+  gesture strength,
+- render: quality, shadows, FPS cap and pixel ratio,
+- export/import all settings as JSON, randomise and reset,
 - sync: the server sends `avatar_speech` with visemes/timings for every TTS
   sentence; the HUD anchors them to `playhead`; without a timeline it falls
   back to an approximate text estimate.
-- HUD page **LIK IN GARDEROBA** (`/hud/avatar.html`) saves to
+- HUD page **LIK IN GARDEROBA** (`/hud/avatar.html`) saves all 71 settings to
   `server/logs/avatar.json`; models live in `server/hud/avatar/models/`,
 - an Avaturn T2 export can be dropped in and selected there; the T1 demo has
   no facial blendshapes, so it is not the default.

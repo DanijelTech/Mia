@@ -447,10 +447,19 @@ and separate hair, glasses, top, bottom and footwear meshes. The model is not
 committed; fetch it with `server/scripts/fetch-avatar-assets.sh` (or
 `install.sh --with-avatar`).
 
-**User controls:** hair (any style present in the model, or off), hair colour,
-glasses, top, bottom, footwear, colours, skin tone, camera (bust/head/full),
-quality, mood, model (swapped without a page reload). Settings are saved to
-`server/logs/avatar.json` and apply to the main HUD immediately.
+**User controls (71 settings):** wardrobe (8 presets, per-piece colour and
+fabric material, glasses), hair (styles present in the model or off, 6 shape
+variants, colour, length, volume), skin and eye palettes, shape (6 body types
+and 12 sliders: height, build, head, eyes, neck, shoulders, hips, hands, feet),
+face (mood, smile, brow raise, wide eyes), behaviour (blink, breathing, sway,
+pointer gaze, idle, gesture strength), camera (7 shots plus distance, height,
+yaw, FOV, parallax, orbit), lights (8 presets, per-light colour and intensity,
+exposure, environment), background and render (quality, shadows, FPS, pixel
+ratio), model and idle clip. Everything is saved to `server/logs/avatar.json`,
+applies to the main HUD immediately, and can be exported/imported as JSON,
+randomised or reset. The schema lives in `server/hud/avatar/presets.js`;
+`server/avatar_config.py` mirrors and validates it, and a test enforces the
+parity.
 
 **Sync:** each TTS sentence sends `avatar_speech` with
 `visemes/times/durations` and `duration_ms`; the HUD anchors them to the

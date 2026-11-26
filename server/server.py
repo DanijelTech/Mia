@@ -54,6 +54,7 @@ from continuous import WakeGate, build_segmenter, starts_with_exact_wake
 from speaker_gate import SpeakerGate
 from tts import build_backend
 import avatar_visemes
+import avatar_config
 from mia_core.integration import (detect_feedback, detect_remember,
                                   google_request, google_url,
                                   music_play_request, time_answer)
@@ -1407,26 +1408,17 @@ def _ws_allowed(ws: WebSocket) -> bool:
 
 HUD_DIR = ROOT / "hud"
 AVATAR_CONFIG_PATH = ROOT / "logs" / "avatar.json"
-AVATAR_DEFAULTS = {
-    "enabled": True,
-    "model": "/hud/avatar/models/mia-female.glb",
-    "idle": "/hud/avatar/models/mia-female-idle.glb",
-    "hair": True, "hairStyle": "default", "glasses": False, "top": True,
-    "bottom": True, "footwear": True,
-    "hairColor": "#3b2418", "topColor": "#1d3f52", "bottomColor": "#101820",
-    "footwearColor": "#101820", "glassesColor": "#101820", "skinTone": "#ffffff",
-    "camera": "bust", "quality": "high", "mood": "neutral",
-}
+AVATAR_DEFAULTS = avatar_config.DEFAULTS
 
 
 def _avatar_config() -> dict:
     try:
         data = json.loads(AVATAR_CONFIG_PATH.read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            return {**AVATAR_DEFAULTS, **data}
+        return avatar_config.sanitize(data)
     except (OSError, ValueError):
-        pass
-    return dict(AVATAR_DEFAULTS)
+        return dict(AVATAR_DEFAULTS)
+
+
 ALLOWED_GET_PATHS = {
     "/health", "/health/detailed", "/v1/capabilities",
     "/v1/skills", "/v1/toolsets", "/api/jobs", "/api/sessions",
@@ -2482,26 +2474,11 @@ async def avatar_config_get() -> JSONResponse:
 
 @app.post("/api/avatar/config")
 async def avatar_config_set(request: Request) -> JSONResponse:
-    body = await request.json()
-    if not isinstance(body, dict):
-        return JSONResponse({"error": "config must be an object"}, status_code=400)
-    cfg = _avatar_config()
-    allowed = set(AVATAR_DEFAULTS)
-    color_keys = {"hairColor", "topColor", "bottomColor", "footwearColor",
-                  "glassesColor", "skinTone"}
-    for key, value in body.items():
-        if key not in allowed:
-            continue
-        if key in color_keys:
-            if not isinstance(value, str) or not re.match(r"^#[0-9a-fA-F]{6}$", value):
-                return JSONResponse({"error": f"invalid color for {key}"}, status_code=400)
-            cfg[key] = value.lower()
-        elif key in ("camera", "quality", "mood", "model", "idle"):
-            if not isinstance(value, str) or len(value) > 300:
-                return JSONResponse({"error": f"invalid {key}"}, status_code=400)
-            cfg[key] = value
-        elif key in ("enabled", "hair", "glasses", "top", "bottom", "footwear"):
-            cfg[key] = bool(value)
+    try:
+        body = await request.json()
+        cfg = avatar_config.sanitize(body, _avatar_config())
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
     AVATAR_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     AVATAR_CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2),
                                   encoding="utf-8")
