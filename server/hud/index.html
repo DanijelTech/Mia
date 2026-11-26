@@ -349,6 +349,18 @@ footer{
     <div class="panel"><h2><span>AVTOMATIZACIJE</span><span class="num">10</span></h2>
       <div id="jobsList"><div>— ni nalog —</div></div>
     </div>
+    <div class="panel"><h2><span>SPOMIN IN ZNANJE</span><span class="num">11</span></h2>
+      <div class="kv"><span>Epizode</span><b id="lEpisodes">—</b></div>
+      <div class="kv"><span>Recepti</span><b id="lRecipes">—</b></div>
+      <div class="kv"><span>Napake</span><b id="lMistakes">—</b></div>
+      <div class="kv"><span>Navade</span><b id="lHabits">—</b></div>
+      <div class="kv"><span>Veščine</span><b id="lSkills">—</b></div>
+      <div id="lTop" style="font-size:12.5px;max-height:86px;overflow-y:auto;margin-top:4px;color:var(--txt-dim)">—</div>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button class="btn" style="flex:1" onclick="openView('ZNANJE','/hud/learning.html')">ODPRI ZNANJE</button>
+        <button class="btn" id="lMineBtn" title="takoj izkoplji navade in osveži indeks">OSVEŽI</button>
+      </div>
+    </div>
   </div>
 
   <div id="holoStage"></div>
@@ -385,6 +397,7 @@ let playhead=0, activeSources=[], leftoverByte=null, audioArrived=false;
 let level=0, turns=0;
 
 const $=id=>document.getElementById(id);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const feed=$("feed");
 
 /* ============================== clock ============================== */
@@ -735,7 +748,7 @@ $("stopBtn").onclick=stopRun;
 const DASH_PROXY=`https://${location.hostname}:9443`;
 function openView(name,path){
   $("viewerTitle").textContent=name;
-  $("viewerIframe").src=DASH_PROXY+path;
+  $("viewerIframe").src=String(path).startsWith("/hud/")?path:DASH_PROXY+path;
   $("viewer").classList.add("open");
 }
 function closeView(){
@@ -851,10 +864,31 @@ async function refreshUsage(){
     }
   }catch{}
 }
-refreshHealth();refreshSkills();refreshJobs();refreshMachines();refreshUsage();
+async function refreshLearning(){
+  try{
+    const s=await (await fetch("/api/learning/status")).json();
+    const db=s.db||{}, sk=s.skills||{};
+    $("lEpisodes").textContent=db.episodes??"—";
+    $("lRecipes").textContent=db.recipes??"—";
+    $("lMistakes").textContent=db.mistakes??"—";
+    $("lHabits").textContent=db.habits??"—";
+    $("lSkills").textContent=sk.skills??"—";
+    const h=await (await fetch("/api/learning/habits?limit=3&min_confidence=0.3")).json();
+    const rows=(h.habits||[]).slice(0,3).map(x=>`<div>▸ ${esc(x.subject)}</div>`).join("");
+    $("lTop").innerHTML=rows||"<div>— še ni dovolj dokazov —</div>";
+  }catch{
+    $("lEpisodes").textContent="—"; $("lTop").innerHTML="<div>spomin ni dosegljiv</div>";
+  }
+}
+if($("lMineBtn"))$("lMineBtn").onclick=async()=>{
+  $("lMineBtn").textContent="…";
+  try{await fetch("/api/learning/mine",{method:"POST"});}catch{}
+  await refreshLearning(); $("lMineBtn").textContent="OSVEŽI";
+};
+refreshHealth();refreshSkills();refreshJobs();refreshMachines();refreshUsage();refreshLearning();
 setInterval(refreshUsage,60000);
 setInterval(refreshHealth,15000); setInterval(refreshJobs,60000); setInterval(refreshMachines,10000);
-setInterval(refreshSkills,120000);
+setInterval(refreshSkills,120000); setInterval(refreshLearning,45000);
 
 /* ====================== holographic media panels ==================== */
 function holoWhoosh(up=true){

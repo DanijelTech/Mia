@@ -48,9 +48,19 @@ lokalnim TTS: 5–10 sekund.
 - **Naloge v ozadju** — programiranje v poljubni mapi, datoteke, terminal,
   iskanje po spletu, časovne naloge, kanban; nevarnejša dejanja čakajo na tvoj
   DOVOLI/ZAVRNI v HUD-u
-- **Uči se tvojih postopkov** — skill `mia-companion` (skills/) naroči agentu,
-  da si poleg navad zapomni tudi *kako* je nalogo najlažje/pravilno izvedel,
-  in ta recept uporabi ob ponovitvi
+- **Popoln nadzor nad računalnikom** — `mia-ctl` je revidiran, politiko
+  preverjen besednjak za okna, aplikacije, tipkanje/klikanje, posnetke zaslona,
+  odložišče, medije, glasnost, svetlost, napajanje, procese, storitve in
+  datoteke (X11, Wayland, macOS, Windows). Vsako dejanje gre v revizijo.
+- **Trajen spomin in drevo znanja** — vsak krog se zabeleži v lokalno SQLite
+  bazo; iz tega nastanejo navade, recepti in napake, ki se ne smejo ponoviti.
+  Pred vsakim krogom se v model vbrizga omejen `[MIA SPOMIN …]` brief.
+- **Uči se tvojih postopkov** — ko se izkaže, da je nek postopek pravi, ga Mia
+  shrani kot recept in ga ob ponovitvi uporabi; ko rečeš »ni prav«, nastane
+  anti-vzorec z vzrokom in rešitvijo.
+- **Granularno drevo veščin** — `mia-companion` (persona) + `mia-desktop`,
+  `mia-learning`, `mia-music`, `mia-browser`, `mia-productivity`,
+  `mia-diagnostics`; validator preveri imena, starše in reference.
 - **Aktivnost agenta v živo** — vidiš klice orodij s predogledi ukazov
 - **Kartice za odobritev** — nevarne ukaze agent ustavi in počaka na DOVOLI/ZAVRNI
 - **Vgrajene nadzorne plošče** — Hermesov kanban, nadzorna plošča in klepet se
@@ -68,6 +78,33 @@ lokalnim TTS: 5–10 sekund.
   samodejnim preklopom na lokalni Whisper, ko je ta stroj ugasnjen
 - **Za mobilne naprave** — odzivna postavitev + »Dodaj na začetni zaslon« = Mia
   kot aplikacija čez cel zaslon
+
+## Nadzor računalnika in učenje (na kratko)
+
+```bash
+mia-ctl doctor                     # kaj je na tem stroju podprto
+mia-ctl windows list               # okna, z ID-ji
+mia-ctl apps launch firefox        # zaženi aplikacijo
+mia-ctl type "hello" --delay 15    # tipkaj v aktivno okno
+mia-ctl screenshot                 # shrani posnetek zaslona
+mia-ctl volume set 40              # glasnost
+mia-ctl files search "pogodba" --root ~/Documents
+mia-ctl power lock                 # zakleni zaslon
+```
+
+```bash
+mia-learn status                   # koliko spomina, kdaj nazadnje izkopano
+mia-learn brief "odpri mi google"  # kaj bi Mia zdaj vedela
+mia-learn habits                   # izkopljene navade
+mia-learn recipes                  # preverjeni postopki
+mia-learn mistakes                 # česa ne ponavljati
+mia-learn remember --note "…"      # shrani zadnji postopek
+mia-learn feedback --verdict negative --note "raje Chromu"
+```
+
+V HUD-u je panel **SPOMIN IN ZNANJE**; gumb **ODPRI ZNANJE** pokaže drevo
+veščin, navade, recepte, napake, dnevnik in iskanje. Podrobnosti:
+[docs/LEARNING.md](docs/LEARNING.md) in [docs/CONTROL.md](docs/CONTROL.md).
 
 ## Arhitektura
 
@@ -88,6 +125,12 @@ lokalnim TTS: 5–10 sekund.
 
 Eni možgani, več obrazov: glas in tipkani klepet si delita eno trajno Hermes
 sejo, zato vsak ve, kaj si rekel drugemu — in spomin preživi vsak ponovni zagon.
+
+**Učenje in nadzor**: vsak sprejet krog se zabeleži v
+`~/.local/state/mia/learning.db`; pred naslednjim krogom strežnik vbrizga
+omejen brief z navadami, recepti in napakami. `mia-ctl` dejanja gredo skozi
+politiko in revizijo (`control-audit.jsonl`), ki se prav tako uči. Drevo veščin
+je v `skills/`, pregled v HUD-u pa v panelu **SPOMIN IN ZNANJE**.
 
 **Upravljanje celotnega sklada**: če v `server.yaml` izpolniš sekcijo `stack:`,
 `start-mia.sh` po vrsti zbudi llama-server (lokalni model) → Hermes gateway →
@@ -207,6 +250,8 @@ macOS-a (TCC pri zunanjih diskih in poti do logov).
 | Glasovna kalibracija | `python3 server/scripts/enroll_voice.py` (`--append` za dodaten jezik) |
 | Glasba | »Mia, pusti mi …« → YouTube app-okno · »zapri ga / ustavi glasbo« |
 | Okna na namizju | »odpri mi Google / \<stran\>« in »zapri ga« (mia-open/mia-close) |
+| Nadzor računalnika | `mia-ctl …` — okna, aplikacije, vnos, posnetki, odložišče, napajanje |
+| Spomin in znanje | panel SPOMIN IN ZNANJE → ODPRI ZNANJE · `mia-learn …` |
 | Tipkani klepet | vnosno polje na dnu (ista seja kot glas) |
 | Kanban / plošče | panel POGLEDI → kanban, nadzorna plošča, klepet |
 | Pritisni-in-govori | alternativa: klikni obroč (ali preslednica) · govori · klikni znova |
@@ -220,15 +265,21 @@ server/hud/      HUD v eni datoteki (vanilla JS, brez gradnje)
 server/continuous.py  VAD segmentacija, budnica (wake gate) za neprestano poslušanje
 server/speaker_gate.py  prepoznava govornika (ECAPA-TDNN odtisi, SpeechBrain)
 server/tts.py    lokalni TTS pogoni: piper, http (Gepard/Maya1), command, elevenlabs
+server/mia_core/ učenje in znanje (stdlib-only): SQLite, navade, recepti, napake,
+                 drevo veščin, kontekstni brief, CLI (mia-learn)
 server/scripts/  mia-start/stop/health + enroll_voice.py (glasovna kalibracija)
                  + gepard_tts.py (TTS storitev s per-request višino tona)
 client/          opcijski Windows/Linux odjemalec za pritisk na tipko (z zaznavo budnice)
 worker/          opcijska GPU sidecarja: STT strežnik z velikim modelom + statistika
-hermes-plugin/   Hermes vtičnik: agent lahko prikliče/skrije medijske panele na HUD-u
-skills/mia-companion/  Hermes skill: Mijin govor, trajni spomin postopkov, okna
-                 (bin/mia-open + bin/mia-close za zanesljivo odpiranje/zapiranje)
+hermes-plugin/   Hermes vtičnika: hud_display (medijski paneli) in mia_learning
+                 (memory_brief/search/feedback/remember/fact/mistake/status/skill_tree)
+skills/          drevo veščin: mia-companion (koren) + mia-desktop, mia-learning,
+                 mia-music, mia-browser, mia-productivity, mia-diagnostics
+skills/mia-companion/bin/  mia-open, mia-close, mia-volume, mia-artists,
+                 mia-learn, mia-skill, mia-ctl (revidiran nadzor računalnika)
+tests/           unittest suite za mia_core, mia-ctl in drevo veščin
 launchd/         predloge za samodejni zagon na macOS (pripombe o TCC in FD limitih)
-docs/            slovenska dokumentacija: SETUP, ARCHITECTURE, TROUBLESHOOTING
+docs/            slovenska dokumentacija: SETUP, ARCHITECTURE, LEARNING, CONTROL, TROUBLESHOOTING
 docs/en/         ista dokumentacija v angleščini
 install.sh       namestitev (brez venv, root ali uporabnik) + manifest
 start-mia.sh     zbudi cel sklad (stack: llama → Hermes → dashboard → Mia + TTS), odpre HUD
@@ -247,6 +298,10 @@ build-package.sh arhiv za namestitev na stroju brez interneta
   samodejno prek `?token=`).
 - Hermesov API in plošča poslušata samo na loopbacku.
 - Nizi, ki izgledajo kot skrivnosti, se prekrijejo, preden gredo v oblačni TTS.
+- `mia-ctl` preveri politiko (`~/.config/mia/control.json`): dovoljene korenine,
+  prepovedane poti (`~/.ssh`, `~/.hermes` …), potrditev za uničujoča dejanja.
+- Vsako nadzorno dejanje gre v revizijo; skrivnosti v argumentih se prekrijejo.
+- Spomin se shranjuje lokalno; vsa besedila se pred shranjevanjem prekrijejo.
 - Zasnovano za LAN — tega ne odpiraj na internet.
 
 ## Zasluge in licenca

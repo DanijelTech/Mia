@@ -628,22 +628,66 @@ vtičnikov. Agent dobi orodji `hud_display` / `hud_dismiss`; YouTube povezave se
 predvajajo kot vgrajen video, `position` left/right omogoča več panelov z
 različnih strani.
 
-**Skill `mia-companion`** (priporočeno): nauči agenta Mijin način govora
-(kratka slovenska povedi, ženske oblike), dolžnost trajnega spomina (navade in
-dogovori uporabnika), odpiranje IN zapiranje namiznih oken, predvajanje
-glasbe in brskanje:
+**Vtičnik `mia_learning`** (priporočeno): agentu da prvorazredna orodja
+`memory_brief`, `memory_search`, `memory_feedback`, `memory_remember`,
+`memory_fact`, `memory_mistake`, `memory_status` in `skill_tree`. Brez njih
+mora za vsak spomin uporabljati lupino; z njimi se učenje zgodi zanesljivo.
+
+```bash
+cp -R hermes-plugin/mia_learning ~/.hermes/plugins/mia_learning
+hermes plugins enable mia_learning     # -p <profil>, če uporabljaš profile
+# če ukaz javi "No plugin named ...", dodaj v $HERMES_HOME/config.yaml:
+#   plugins:
+#     enabled: [mia_learning]
+# znova zaženi hermes gateway (nova orodja veljajo za nove seje)
+```
+
+Vtičnik potrebuje `MIA_HUD_TOKEN` v okolju Hermesa (isti žeton kot HUD) in
+doseže `/api/learning/*` na `http://127.0.0.1:8765` (spremeni z
+`MIA_LEARNING_URL`). `install.sh` ga od koraka 7 kopira samodejno; ročno ga
+vklopiš z zgornjim ukazom.
+
+**Drevo veščin, orodja in spomin** (priporočeno): `install.sh` od koraka 7
+namesti celo drevo veščin v aktivni `$HERMES_HOME/skills`, orodja v
+`~/.local/bin` (ali `/usr/local/bin` kot root), privzeto politiko nadzora in
+kazalec na repozitorij. Drevo sestavljajo `mia-companion` (koren: govor,
+usmerjanje, varnost) ter `mia-desktop`, `mia-learning`, `mia-music`,
+`mia-browser`, `mia-productivity`, `mia-diagnostics`.
+
+```bash
+./install.sh --yes
+mia-skill validate          # 7 veščin, 0 napak
+mia-ctl doctor              # kaj je na tem stroju podprto
+mia-learn doctor            # baza spomina + drevo + orodja
+```
+
+Ročno (brez namestitvenika):
 
 ```bash
 # tudi tu velja AKTIVNI HERMES_HOME (ne nujno ~/.hermes)
-cp -R skills/mia-companion "$HERMES_HOME/skills/mia-companion"
-# pomožni ukazni za okna (odpirajo app-okna in si zapisujejo ID oken prek
-# xdotool — gol `google-chrome --new-window` se kasneje NE DA zapreti):
-cp skills/mia-companion/bin/mia-open skills/mia-companion/bin/mia-close ~/.local/bin/
-# v SOUL.md dodaj pravilo, da se uporabljata IZKLJUČNO mia-open/mia-close
-# (primer v skills/mia-companion/SKILL.md, razdelek "Opening and closing")
+MIA_HOME="$PWD" skills/mia-companion/bin/mia-skill install "$HERMES_HOME"
+install -m 0755 skills/mia-companion/bin/mia-* ~/.local/bin/
+mkdir -p ~/.config/mia
+cp server/config/control.example.json ~/.config/mia/control.json
 # skill velja za nove seje — po namestitvi ponastavi glasovno sejo
 rm -f server/logs/hermes_sessions.json   # + preimenuj staro sejo v Hermesu
 ```
+
+**Nadzor računalnika**: `mia-ctl` potrebuje nekaj sistemskih pripomočkov. Brez
+njih vrne kodo 3 in pove, kaj manjka; glasovna zanka in učenje delujeta naprej.
+
+```bash
+# Debian/Ubuntu, X11
+sudo apt install xdotool wmctrl xclip scrot playerctl brightnessctl \
+                 libnotify-bin wl-clipboard grim
+# Wayland (Sway/Hyprland)
+sudo apt install wtype ydotool grim wl-clipboard playerctl brightnessctl
+# macOS
+brew install cliclick
+```
+
+Podrobnosti in celoten ukazni slovar: [CONTROL.md](CONTROL.md). Učenje,
+navade, recepti in drevo: [LEARNING.md](LEARNING.md).
 
 **Namizna integracija** (glasba/okna na namizju): agent teče pod systemd
 brez grafičnega okolja — da lahko odpira Chrome okna (glasba, Google), dodaj

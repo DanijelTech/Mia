@@ -577,6 +577,58 @@ open (fail-open). The threshold is `stt.continuous.speaker_gate.threshold` (0.30
 is a good starting point; the enrolment script suggests a value). Re-running the
 script recalibrates.
 
+## 5.1 Skills, computer control and learning
+
+`install.sh` step 7 installs the whole skill tree into the active
+`$HERMES_HOME/skills`, the tools into `~/.local/bin` (or `/usr/local/bin` as
+root), the default control policy, the `mia_learning` plugin and a repository
+pointer.
+
+The plugin gives the agent first-class tools (`memory_brief`, `memory_search`,
+`memory_feedback`, `memory_remember`, `memory_fact`, `memory_mistake`,
+`memory_status`, `skill_tree`). Enable it once:
+
+```bash
+cp -R hermes-plugin/mia_learning ~/.hermes/plugins/mia_learning
+hermes plugins enable mia_learning     # add -p <profile> when using profiles
+# or add to $HERMES_HOME/config.yaml:
+#   plugins:
+#     enabled: [mia_learning]
+# restart the Hermes gateway; new tools apply to new sessions
+```
+
+```bash
+mia-skill validate          # 7 skills, 0 errors
+mia-ctl doctor              # what this machine supports
+mia-learn doctor            # memory DB + tree + tools
+```
+
+Manual equivalent:
+
+```bash
+MIA_HOME="$PWD" skills/mia-companion/bin/mia-skill install "$HERMES_HOME"
+install -m 0755 skills/mia-companion/bin/mia-* ~/.local/bin/
+mkdir -p ~/.config/mia
+cp server/config/control.example.json ~/.config/mia/control.json
+rm -f server/logs/hermes_sessions.json   # new skills apply to new sessions
+```
+
+Computer control needs a few helpers; missing ones produce exit code 3 with a
+clear message, while voice and learning keep working:
+
+```bash
+# Debian/Ubuntu X11
+sudo apt install xdotool wmctrl xclip scrot playerctl brightnessctl \
+                 libnotify-bin wl-clipboard grim
+# Wayland
+sudo apt install wtype ydotool grim wl-clipboard playerctl brightnessctl
+# macOS
+brew install cliclick
+```
+
+Full command vocabulary: [CONTROL.md](CONTROL.md). Learning, habits, recipes
+and the tree: [LEARNING.md](LEARNING.md).
+
 ## 6. Verify everything
 
 **Updating to a new release:**

@@ -76,7 +76,9 @@ git merge --ff-only --quiet "origin/$BRANCH" || { echo "fast-forward failed (div
 CHANGED="$([ -n "$old" ] && git diff --name-only "$old..HEAD" || git ls-tree -r --name-only HEAD)"
 
 needs_install=0
-grep -qE '^(install\.sh|launchd/|server/scripts/mia-(start|stop|restart|health)\.sh|server/scripts/make-certs\.sh)' <<<"$CHANGED" && needs_install=1
+grep -qE '^(install\.sh|launchd/|server/scripts/mia-(start|stop|restart|health)\.sh|server/scripts/make-certs\.sh|skills/|server/mia_core/)' <<<"$CHANGED" && needs_install=1
+skills_changed=0
+grep -qE '^skills/' <<<"$CHANGED" && skills_changed=1
 hud_changed=0
 grep -qE '^server/(hud/|server\.py|tts\.py)' <<<"$CHANGED" && hud_changed=1
 
@@ -109,7 +111,8 @@ fi
 
 echo
 say "Updated to $(git rev-parse --short HEAD)"
-[ "$needs_install" = 1 ] && warn "installer/service files changed — run: ./install.sh --yes"
+[ "$needs_install" = 1 ] && warn "installer/service/skills files changed — run: ./install.sh --yes"
+[ "$skills_changed" = 1 ] && info "skill tree changed — after install.sh restart the Hermes gateway so new skills load"
 [ "$hud_changed" = 1 ] && info "HUD files changed — hard-refresh the page: Ctrl+Shift+R"
 info "check with: ./stop-mia.sh --status   ·   server/scripts/mia-health.sh"
 exit 0

@@ -1,0 +1,18 @@
+{
+  "allowed_roots": ["~", "/tmp", "/var/tmp"],
+  "deny_paths": [
+    "~/.ssh",
+    "~/.gnupg",
+    "~/.hermes",
+    "~/.config/mia/secrets",
+    "~/.local/state/mia/secrets"
+  ],
+  "allow_power": true,
+  "allow_process_kill": true,
+  "allow_service_control": ["mia-", "hermes-"],
+  "require_confirmation": true,
+  "max_text_length": 5000,
+  "max_file_scan": 20000,
+  "audit": true,
+  "audit_max_mb": 20
+}

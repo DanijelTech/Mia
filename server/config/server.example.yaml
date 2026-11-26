@@ -187,3 +187,44 @@ persona:                     # used only by the anthropic fallback path
     Govoriš kot Miin glasovni vmesnik. Odgovarjaj v slovenščini, mirno in kratko:
     ena do tri kratke povedi, brez markdowna, brez seznamov. Številke, datume in
     ure izgovarjaj z besedami. Nikoli ne izgovori skrivnosti, ključev ali gesel.
+
+# ---------------------------------------------------------------- learning
+# Trajni spomin, navade, recepti in drevo veščin. Brez te sekcije veljajo
+# privzete vrednosti (vklopljeno, baza v ~/.local/state/mia/learning.db).
+learning:
+  enabled: true
+  db_path: "~/.local/state/mia/learning.db"
+  audit_path: "~/.local/state/mia/control-audit.jsonl"
+  skills_root: null                 # null = <repo>/skills
+  auto_record: true                 # vsak sprejeti krog se zabeleži
+  auto_feedback: true               # »to je bilo prav / ni prav«
+  auto_mine_interval_seconds: 900   # izkop navad + uvoz audita + indeks veščin
+  context:
+    enabled: true                   # [MIA SPOMIN …] pred vsakim krogom
+    max_chars: 1500                 # stroga zgornja meja (tokeni so dragi)
+    max_habits: 6
+    max_recipes: 2
+    max_mistakes: 3
+    max_facts: 5
+    include_skills: true
+    include_system: true
+  retention:
+    episodes_days: 400
+    events_days: 180
+    max_episodes: 200000
+    min_confidence: 0.12
+  habits:
+    min_evidence: 3                 # manj kot 3 ponovitve = ni navada
+    recency_days: 120
+    peak_share: 0.35                # 2-urno okno z >=35 % dogodkov = rutina
+    sequence_window_minutes: 20
+    decay_after_days: 45
+  recipes:
+    match_threshold: 0.52
+    max_candidates: 3
+    min_success: 1
+    saturation: 3.0
+  privacy:
+    redact: true
+    max_text_chars: 4000
+    max_response_chars: 2000

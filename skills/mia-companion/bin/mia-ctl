@@ -1,0 +1,1810 @@
+#!/usr/bin/env python3
+"""mia-ctl — audited, policy-checked control of the local computer.
+
+Why this exists
+---------------
+The agent already has a shell. That is powerful but opaque and easy to get
+wrong. `mia-ctl` gives it a small, explicit, cross-platform vocabulary
+(windows, apps, input, screenshots, clipboard, media, power, files, services)
+with three guarantees:
+
+1. **Policy**: paths and destructive actions are checked against
+   ~/.config/mia/control.json before anything runs.
+2. **Audit**: every call is appended to ~/.local/state/mia/control-audit.jsonl
+   (secrets redacted), and `mia-learn mine` turns that into durable memory.
+3. **Graceful degradation**: unsupported features return exit code 3 with a
+   clear reason instead of silently doing nothing.
+
+Exit codes: 0 ok · 2 usage · 3 unsupported · 4 denied · 5 failed.
+
+Examples
+--------
+  mia-ctl doctor
+  mia-ctl sysinfo --json
+  mia-ctl windows list
+  mia-ctl windows focus 0x03a00007
+  mia-ctl apps launch firefox
+  mia-ctl open https://example.com
+  mia-ctl type "hello" --delay 20
+  mia-ctl key ctrl+shift+t
+  mia-ctl click 640 360
+  mia-ctl screenshot ~/Pictures/mia.png
+  mia-ctl clipboard get
+  mia-ctl media play-pause
+  mia-ctl volume set 40
+  mia-ctl files search "invoice" --root ~/Documents
+  mia-ctl process list --limit 15
+  mia-ctl power lock
+  mia-ctl power reboot --yes
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import platform
+import re
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+VERSION = "1.0.0"
+
+HOME = Path.home()
+STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", HOME / ".local" / "state")) / "mia"
+CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "mia"
+AUDIT_PATH = Path(os.environ.get("MIA_CONTROL_AUDIT", STATE_DIR / "control-audit.jsonl"))
+POLICY_PATH = Path(os.environ.get("MIA_CONTROL_POLICY", CONFIG_DIR / "control.json"))
+
+DEFAULT_POLICY: dict[str, Any] = {
+    "allowed_roots": ["~", "/tmp", "/var/tmp"],
+    "deny_paths": [
+        "~/.ssh", "~/.gnupg", "~/.hermes", "~/.config/mia/secrets",
+        "~/.local/state/mia/secrets",
+    ],
+    "allow_power": True,
+    "allow_process_kill": True,
+    "allow_service_control": ["mia-", "hermes-"],
+    "require_confirmation": True,
+    "max_text_length": 5000,
+    "max_file_scan": 20000,
+    "audit": True,
+    "audit_max_mb": 20,
+}
+
+
+class CtlError(Exception):
+    exit_code = 5
+
+
+class Unsupported(CtlError):
+    exit_code = 3
+
+
+class Denied(CtlError):
+    exit_code = 4
+
+
+# ------------------------------------------------------------------ runtime
+def _session_env() -> dict[str, str]:
+    """Fill the desktop variables a systemd service does not inherit."""
+    env = dict(os.environ)
+    uid = os.getuid() if hasattr(os, "getuid") else 0
+    runtime = Path(f"/run/user/{uid}")
+    if not env.get("XDG_RUNTIME_DIR") and runtime.is_dir():
+        env["XDG_RUNTIME_DIR"] = str(runtime)
+    if not env.get("DBUS_SESSION_BUS_ADDRESS"):
+        bus = runtime / "bus"
+        if bus.exists():
+            env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={bus}"
+    if not env.get("DISPLAY"):
+        for n in range(10):
+            if Path(f"/tmp/.X11-unix/X{n}").exists():
+                env["DISPLAY"] = f":{n}"
+                break
+    if not env.get("XAUTHORITY"):
+        for candidate in (runtime / "gdm" / "Xauthority", HOME / ".Xauthority"):
+            if candidate.exists():
+                env["XAUTHORITY"] = str(candidate)
+                break
+    if not env.get("WAYLAND_DISPLAY"):
+        for n in (0, 1):
+            sock = runtime / f"wayland-{n}"
+            if sock.exists():
+                env["WAYLAND_DISPLAY"] = sock.name
+                break
+    return env
+
+
+ENV = _session_env()
+
+
+def which(name: str) -> str | None:
+    return shutil.which(name)
+
+
+def require(name: str, hint: str = "") -> str:
+    path = which(name)
+    if not path:
+        raise Unsupported(f"{name} is not installed" + (f" ({hint})" if hint else ""))
+    return path
+
+
+def desktop() -> str:
+    if sys.platform == "darwin":
+        return "macos"
+    if os.name == "nt":
+        return "windows"
+    if ENV.get("SWAYSOCK") and which("swaymsg"):
+        return "sway"
+    if ENV.get("HYPRLAND_INSTANCE_SIGNATURE") and which("hyprctl"):
+        return "hyprland"
+    if ENV.get("WAYLAND_DISPLAY"):
+        if which("swaymsg"):
+            return "sway"
+        if which("hyprctl"):
+            return "hyprland"
+        return "wayland"
+    if ENV.get("DISPLAY"):
+        return "x11"
+    return "headless"
+
+
+def run(argv: list[str], timeout: float = 20, input_text: str | None = None,
+        cwd: str | None = None) -> tuple[int, str, str]:
+    try:
+        proc = subprocess.run(
+            argv, capture_output=True, text=True, timeout=timeout,
+            input=input_text, env=ENV, cwd=cwd,
+        )
+        return proc.returncode, proc.stdout or "", proc.stderr or ""
+    except FileNotFoundError as exc:
+        raise Unsupported(str(exc)) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise CtlError(f"timeout after {timeout}s: {' '.join(argv)}") from exc
+
+
+DRY = False
+YES = False
+QUIET = False
+JSON_OUT = False
+
+
+def sh(argv: list[str], timeout: float = 20, input_text: str | None = None,
+       ok_codes: tuple[int, ...] = (0,), check: bool = True) -> tuple[int, str, str]:
+    if DRY:
+        return 0, json.dumps({"would_run": argv}, ensure_ascii=False), ""
+    rc, out, err = run(argv, timeout=timeout, input_text=input_text)
+    if check and rc not in ok_codes:
+        detail = (err or out).strip().splitlines()
+        raise CtlError(f"{' '.join(argv)} failed ({rc}): {detail[-1] if detail else ''}")
+    return rc, out, err
+
+
+def sh_json(argv: list[str], timeout: float = 20) -> Any:
+    if DRY:
+        return {"would_run": argv}
+    rc, out, err = run(argv, timeout=timeout)
+    if rc != 0:
+        raise CtlError(f"{' '.join(argv)} failed ({rc}): {(err or out)[:300]}")
+    try:
+        return json.loads(out)
+    except ValueError as exc:
+        raise CtlError(f"invalid JSON from {' '.join(argv)}: {out[:200]}") from exc
+
+
+def detached(argv: list[str]) -> None:
+    if DRY:
+        return
+    try:
+        subprocess.Popen(argv, env=ENV, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    except FileNotFoundError as exc:
+        raise Unsupported(str(exc)) from exc
+
+
+# ------------------------------------------------------------------- policy
+def load_policy() -> dict[str, Any]:
+    policy = dict(DEFAULT_POLICY)
+    try:
+        data = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            policy.update(data)
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError):
+        pass
+    return policy
+
+
+POLICY = load_policy()
+
+
+def _expand(value: str) -> Path:
+    return Path(os.path.expandvars(value)).expanduser().resolve()
+
+
+def resolve_path(raw: str, must_exist: bool = False) -> Path:
+    if not raw:
+        raise Denied("empty path")
+    path = _expand(raw)
+    for deny in POLICY.get("deny_paths") or []:
+        denied = _expand(deny)
+        if path == denied or denied in path.parents:
+            raise Denied(f"path is in the deny list: {denied}")
+    allowed = [_expand(r) for r in (POLICY.get("allowed_roots") or [])]
+    if not any(path == root or root in path.parents for root in allowed):
+        raise Denied(f"path is outside allowed_roots: {path}")
+    if must_exist and not path.exists():
+        raise CtlError(f"path does not exist: {path}")
+    return path
+
+
+def require_yes(reason: str) -> None:
+    if POLICY.get("require_confirmation", True) and not YES:
+        raise Denied(f"{reason} requires --yes (explicit confirmation)")
+
+
+# -------------------------------------------------------------------- audit
+_SECRET_RE = [
+    re.compile(r"\b(?:api[_-]?key|secret|password|passwd|token|bearer|authorization)\b\s*[:=]\s*\S+", re.I),
+    re.compile(r"\b(?:sk|pk|key|tok|ghp|xox[abp])[-_][A-Za-z0-9_\-]{12,}\b"),
+    re.compile(r"\b[A-Za-z0-9+/_\-]{40,}\b"),
+    re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"),
+]
+
+
+def redact(text: str, limit: int = 400) -> str:
+    out = str(text or "")
+    for pattern in _SECRET_RE:
+        out = pattern.sub("[REDACTED]", out)
+    return out[:limit]
+
+
+def _audit_args(args: argparse.Namespace) -> list[str]:
+    raw = getattr(args, "argv", None) or sys.argv[1:]
+    return [redact(a) for a in raw]
+
+
+def audit(action: str, args: list[str], ok: bool, rc: int, ms: float,
+          error: str = "", summary: str = "", extra: dict | None = None) -> None:
+    if not POLICY.get("audit", True):
+        return
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        max_mb = float(POLICY.get("audit_max_mb", 20))
+        if AUDIT_PATH.exists() and AUDIT_PATH.stat().st_size > max_mb * 1024 * 1024:
+            try:
+                AUDIT_PATH.replace(AUDIT_PATH.with_suffix(AUDIT_PATH.suffix + ".1"))
+            except OSError:
+                pass
+        record = {
+            "ts": time.time(),
+            "action": action,
+            "args": [redact(a, 300) for a in args],
+            "ok": ok,
+            "rc": rc,
+            "ms": round(ms, 1),
+            "error": redact(error, 500),
+            "summary": redact(summary, 300),
+            "host": socket.gethostname(),
+            "user": _user(),
+            "cwd": os.getcwd(),
+            "desktop": desktop(),
+        }
+        if extra:
+            record["extra"] = extra
+        with AUDIT_PATH.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def _user() -> str:
+    try:
+        import getpass
+        return getpass.getuser()
+    except Exception:
+        return ""
+
+
+def emit(ok: bool, action: str, data: Any = None, error: str = "",
+         summary: str = "") -> None:
+    if JSON_OUT:
+        print(json.dumps({"ok": ok, "action": action, "data": data,
+                          "error": error, "dry_run": DRY},
+                         ensure_ascii=False, indent=2, default=str))
+        return
+    if not ok:
+        print(f"mia-ctl {action}: {error}", file=sys.stderr)
+        return
+    if summary:
+        print(summary)
+    elif data is not None:
+        if isinstance(data, (dict, list)):
+            print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
+        else:
+            print(data)
+    else:
+        print(f"mia-ctl {action}: ok")
+
+
+# ------------------------------------------------------------------ windows
+def _windows_x11() -> list[dict]:
+    require("wmctrl", "install wmctrl for X11 window control")
+    _, out, _ = sh(["wmctrl", "-lpG"])
+    windows = []
+    for line in out.splitlines():
+        parts = line.split(None, 8)
+        if len(parts) < 9:
+            continue
+        wid, desk, pid, x, y, w, h, host, title = parts
+        windows.append({"id": wid, "desktop": desk, "pid": _int(pid),
+                        "x": _int(x), "y": _int(y), "w": _int(w), "h": _int(h),
+                        "host": host, "title": title, "backend": "x11"})
+    return windows
+
+
+def _int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _sway_nodes(node: dict):
+    if node.get("type") in ("con", "floating_con") and (
+            node.get("name") or node.get("app_id")):
+        yield node
+    for child in (node.get("nodes") or []) + (node.get("floating_nodes") or []):
+        yield from _sway_nodes(child)
+
+
+def _windows_sway() -> list[dict]:
+    tree = sh_json(["swaymsg", "-t", "get_tree", "-r"])
+    windows = []
+    for node in _sway_nodes(tree if isinstance(tree, dict) else {}):
+        windows.append({
+            "id": str(node.get("id")),
+            "pid": node.get("pid"),
+            "title": node.get("name") or "",
+            "app": node.get("app_id") or "",
+            "focused": bool(node.get("focused")),
+            "workspace": (node.get("workspace") or {}).get("name", ""),
+            "backend": "sway",
+        })
+    return windows
+
+
+def _windows_hyprland() -> list[dict]:
+    clients = sh_json(["hyprctl", "clients", "-j"])
+    windows = []
+    for client in clients or []:
+        windows.append({
+            "id": client.get("address"),
+            "pid": client.get("pid"),
+            "title": client.get("title") or "",
+            "app": client.get("class") or "",
+            "focused": bool(client.get("focusHistoryID") == 0),
+            "workspace": (client.get("workspace") or {}).get("name", ""),
+            "x": (client.get("at") or [0, 0])[0],
+            "y": (client.get("at") or [0, 0])[1],
+            "w": (client.get("size") or [0, 0])[0],
+            "h": (client.get("size") or [0, 0])[1],
+            "backend": "hyprland",
+        })
+    return windows
+
+
+def _windows_macos() -> list[dict]:
+    script = (
+        'set out to ""\n'
+        'tell application "System Events"\n'
+        '  repeat with p in (every process whose background only is false)\n'
+        '    try\n'
+        '      if (count of windows of p) > 0 then\n'
+        '        set out to out & (name of p) & "\\t" & (unix id of p) & "\\t" '
+        '& (name of window 1 of p) & "\\n"\n'
+        '      end if\n'
+        '    end try\n'
+        '  end repeat\n'
+        'end tell\n'
+        'return out'
+    )
+    _, out, _ = sh(["osascript", "-e", script])
+    windows = []
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2:
+            windows.append({"id": parts[0], "pid": _int(parts[1]),
+                            "title": parts[2] if len(parts) > 2 else "",
+                            "app": parts[0], "backend": "macos"})
+    return windows
+
+
+def _windows_windows_os() -> list[dict]:
+    ps = ("Get-Process | Where-Object {$_.MainWindowTitle} | "
+          "Select-Object Id,ProcessName,MainWindowTitle | ConvertTo-Json -Compress")
+    data = sh_json(["powershell", "-NoProfile", "-Command", ps])
+    if isinstance(data, dict):
+        data = [data]
+    return [{"id": str(d.get("Id")), "pid": d.get("Id"),
+             "title": d.get("MainWindowTitle") or "",
+             "app": d.get("ProcessName") or "", "backend": "windows"}
+            for d in data or []]
+
+
+def windows_list() -> list[dict]:
+    kind = desktop()
+    if kind == "x11":
+        return _windows_x11()
+    if kind == "sway":
+        return _windows_sway()
+    if kind == "hyprland":
+        return _windows_hyprland()
+    if kind == "macos":
+        return _windows_macos()
+    if kind == "windows":
+        return _windows_windows_os()
+    raise Unsupported("no window manager detected (headless session?)")
+
+
+def _find_window(ref: str) -> dict:
+    windows = windows_list()
+    ref_l = (ref or "").lower()
+    for win in windows:
+        if str(win.get("id", "")).lower() == ref_l:
+            return win
+    for win in windows:
+        if ref_l and (ref_l in str(win.get("title", "")).lower()
+                      or ref_l in str(win.get("app", "")).lower()):
+            return win
+    raise CtlError(f"no window matching {ref!r}")
+
+
+def windows_action(action: str, args: argparse.Namespace) -> Any:
+    kind = desktop()
+    ref = getattr(args, "ref", "") or ""
+    win = _find_window(ref) if ref else {}
+    wid = str(win.get("id", ""))
+    if kind == "x11":
+        if action == "focus":
+            sh(["wmctrl", "-i", "-a", wid])
+        elif action == "close":
+            sh(["wmctrl", "-i", "-c", wid])
+        elif action == "minimize":
+            sh(["wmctrl", "-i", "-r", wid, "-b", "add,hidden"])
+        elif action == "maximize":
+            sh(["wmctrl", "-i", "-r", wid, "-b", "add,maximized_vert,maximized_horz"])
+        elif action == "restore":
+            sh(["wmctrl", "-i", "-r", wid, "-b", "remove,hidden,maximized_vert,maximized_horz"])
+        elif action == "move":
+            x, y = args.x or 0, args.y or 0
+            w, h = args.w or win.get("w", 800), args.h or win.get("h", 600)
+            sh(["wmctrl", "-i", "-r", wid, "-e", f"0,{x},{y},{w},{h}"])
+        else:
+            raise Unsupported(f"windows {action} on x11")
+    elif kind == "sway":
+        target = f"[con_id={wid}]"
+        if action == "focus":
+            sh(["swaymsg", f"{target} focus"])
+        elif action == "close":
+            sh(["swaymsg", f"{target} kill"])
+        elif action == "minimize":
+            sh(["swaymsg", f"{target} move scratchpad"])
+        elif action == "maximize":
+            sh(["swaymsg", f"{target} fullscreen enable"])
+        elif action == "restore":
+            sh(["swaymsg", f"{target} fullscreen disable"])
+        elif action == "move":
+            sh(["swaymsg", f"{target} floating enable"])
+            sh(["swaymsg", f"{target} move position {args.x or 0} {args.y or 0}"])
+            if args.w or args.h:
+                sh(["swaymsg", f"{target} resize set {args.w or win.get('w', 800)} "
+                               f"{args.h or win.get('h', 600)}"])
+        else:
+            raise Unsupported(f"windows {action} on sway")
+    elif kind == "hyprland":
+        if action == "focus":
+            sh(["hyprctl", "dispatch", "focuswindow", f"address:{wid}"])
+        elif action == "close":
+            sh(["hyprctl", "dispatch", "closewindow", f"address:{wid}"])
+        elif action == "minimize":
+            sh(["hyprctl", "dispatch", "movetoworkspacesilent", "special"])
+        elif action == "maximize":
+            sh(["hyprctl", "dispatch", "fullscreen", "1"])
+        elif action == "restore":
+            sh(["hyprctl", "dispatch", "fullscreen", "0"])
+        elif action == "move":
+            sh(["hyprctl", "dispatch", "movewindowpixel", f"exact {args.x or 0} {args.y or 0},address:{wid}"])
+            if args.w or args.h:
+                sh(["hyprctl", "dispatch", "resizewindowpixel",
+                    f"exact {args.w or 800} {args.h or 600},address:{wid}"])
+        else:
+            raise Unsupported(f"windows {action} on hyprland")
+    elif kind == "macos":
+        app = win.get("app") or ref
+        if action == "focus":
+            sh(["osascript", "-e", f'tell application "{app}" to activate'])
+        elif action == "close":
+            sh(["osascript", "-e",
+                f'tell application "{app}" to close front window'])
+        elif action == "minimize":
+            sh(["osascript", "-e",
+                f'tell application "System Events" to set value of attribute '
+                f'"AXMinimized" of window 1 of process "{app}" to true'])
+        elif action == "maximize":
+            sh(["osascript", "-e",
+                f'tell application "System Events" to set position of window 1 '
+                f'of process "{app}" to {{0, 0}}'])
+        elif action == "move":
+            sh(["osascript", "-e",
+                f'tell application "System Events" to set position of window 1 '
+                f'of process "{app}" to {{{args.x or 0}, {args.y or 0}}}'])
+        else:
+            raise Unsupported(f"windows {action} on macOS")
+    elif kind == "windows":
+        pid = _int(win.get("pid") or wid)
+        if action == "focus":
+            ps = (f'$p=Get-Process -Id {pid}; '
+                  f'Add-Type -Name W -Namespace U -MemberDefinition '
+                  f'"[DllImport(\\"user32.dll\\")] public static extern bool SetForegroundWindow(IntPtr h);"; '
+                  f'[U.W]::SetForegroundWindow($p.MainWindowHandle)')
+            sh(["powershell", "-NoProfile", "-Command", ps])
+        elif action == "close":
+            ps = f'(Get-Process -Id {pid}).CloseMainWindow()'
+            sh(["powershell", "-NoProfile", "-Command", ps])
+        else:
+            raise Unsupported(f"windows {action} on Windows")
+    else:
+        raise Unsupported("no window manager")
+    return {"window": win, "action": action}
+
+
+# --------------------------------------------------------------------- apps
+def _desktop_entries() -> list[dict]:
+    bases = [Path("/usr/share/applications"),
+             Path("/usr/local/share/applications"),
+             HOME / ".local" / "share" / "applications"]
+    entries = []
+    seen = set()
+    for base in bases:
+        if not base.is_dir():
+            continue
+        for path in sorted(base.glob("*.desktop")):
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            fields = {}
+            for line in text.splitlines():
+                if line.startswith("[") and line != "[Desktop Entry]":
+                    break
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    fields.setdefault(key.strip(), value.strip())
+            if fields.get("NoDisplay", "").lower() == "true":
+                continue
+            if fields.get("Hidden", "").lower() == "true":
+                continue
+            name = fields.get("Name") or path.stem
+            if name.lower() in seen:
+                continue
+            seen.add(name.lower())
+            entries.append({"name": name, "exec": fields.get("Exec", ""),
+                            "desktop_id": path.stem, "path": str(path)})
+    return sorted(entries, key=lambda e: e["name"].lower())
+
+
+def apps_list() -> list[dict]:
+    kind = desktop()
+    if kind == "macos":
+        apps = []
+        for base in (Path("/Applications"), Path("/System/Applications"),
+                     HOME / "Applications"):
+            if base.is_dir():
+                for item in sorted(base.glob("*.app")):
+                    apps.append({"name": item.stem, "path": str(item)})
+        return apps
+    if kind == "windows":
+        return [{"name": w.get("app"), "pid": w.get("pid")} for w in windows_list()]
+    return _desktop_entries()
+
+
+def apps_launch(name: str) -> dict:
+    kind = desktop()
+    if not name:
+        raise CtlError("app name required")
+    if kind == "macos":
+        sh(["open", "-a", name])
+    elif kind == "windows":
+        detached(["cmd", "/c", "start", "", name])
+    else:
+        entries = _desktop_entries()
+        match = next((e for e in entries if e["name"].lower() == name.lower()), None)
+        if match is None:
+            match = next((e for e in entries if name.lower() in e["name"].lower()), None)
+        if match:
+            if which("gtk-launch"):
+                sh(["gtk-launch", match["desktop_id"]], check=False)
+            elif which("gio"):
+                sh(["gio", "launch", match["path"]])
+            else:
+                argv = _exec_argv(match["exec"])
+                if not argv:
+                    raise CtlError(f"cannot parse Exec for {match['name']}")
+                detached(argv)
+            return {"launched": match["name"], "desktop_id": match["desktop_id"]}
+        if which(name):
+            detached([name])
+            return {"launched": name}
+        raise CtlError(f"app not found: {name}")
+    return {"launched": name}
+
+
+def _exec_argv(exec_line: str) -> list[str]:
+    cleaned = re.sub(r"\s*%[fFuUdDnNickvm]", "", exec_line or "")
+    try:
+        import shlex
+        return shlex.split(cleaned)
+    except ValueError:
+        return []
+
+
+def apps_quit(name: str) -> dict:
+    matches = [w for w in windows_list()
+               if name.lower() in str(w.get("app", "")).lower()
+               or name.lower() in str(w.get("title", "")).lower()]
+    closed = 0
+    for win in matches:
+        try:
+            windows_action("close", argparse.Namespace(ref=str(win.get("id"))))
+            closed += 1
+        except CtlError:
+            continue
+    if not closed:
+        raise CtlError(f"no window for app {name!r}")
+    return {"closed": closed, "app": name}
+
+
+# --------------------------------------------------------------------- open
+def open_target(target: str) -> dict:
+    if re.match(r"^(https?://|mailto:|ftp://)", target, re.I):
+        if which("mia-open"):
+            rc, out, _ = sh(["mia-open", target], timeout=30, check=False)
+            if rc == 0:
+                return {"opened": target, "via": "mia-open", "output": out.strip()}
+        kind = desktop()
+        if kind == "macos":
+            sh(["open", target])
+        elif kind == "windows":
+            detached(["cmd", "/c", "start", "", target])
+        else:
+            sh(["xdg-open", target], check=False)
+        return {"opened": target}
+    path = resolve_path(target, must_exist=True)
+    kind = desktop()
+    if kind == "macos":
+        sh(["open", str(path)])
+    elif kind == "windows":
+        os.startfile(str(path))  # type: ignore[attr-defined]
+    else:
+        sh(["xdg-open", str(path)], check=False)
+    return {"opened": str(path)}
+
+
+# -------------------------------------------------------------------- input
+_MOD_MAP = {
+    "ctrl": "ctrl", "control": "ctrl", "shift": "shift", "alt": "alt",
+    "meta": "super", "super": "super", "cmd": "super", "win": "super",
+}
+
+
+def _split_combo(combo: str) -> tuple[list[str], str]:
+    parts = [p.strip().lower() for p in re.split(r"[+\-]", combo) if p.strip()]
+    if not parts:
+        raise CtlError("empty key combo")
+    key = parts[-1]
+    mods = [_MOD_MAP.get(p, p) for p in parts[:-1]]
+    return mods, key
+
+
+def input_type(text: str, delay: int = 12) -> dict:
+    if not text:
+        raise CtlError("nothing to type")
+    limit = int(POLICY.get("max_text_length", 5000))
+    if len(text) > limit:
+        raise Denied(f"text longer than max_text_length ({limit})")
+    kind = desktop()
+    if kind == "x11":
+        require("xdotool")
+        sh(["xdotool", "type", "--clearmodifiers", "--delay", str(delay), "--", text],
+           timeout=60)
+    elif kind in ("sway", "hyprland", "wayland"):
+        if which("wtype"):
+            sh(["wtype", "-"], input_text=text, timeout=60)
+        elif which("ydotool"):
+            sh(["ydotool", "type", "--", text], timeout=60)
+        else:
+            raise Unsupported("Wayland typing needs wtype or ydotool")
+    elif kind == "macos":
+        safe = text.replace("\\", "\\\\").replace('"', '\\"')
+        sh(["osascript", "-e",
+            f'tell application "System Events" to keystroke "{safe}"'])
+    elif kind == "windows":
+        safe = text.replace("'", "''")
+        sh(["powershell", "-NoProfile", "-Command",
+            f'Add-Type -AssemblyName System.Windows.Forms; '
+            f'[System.Windows.Forms.SendKeys]::SendWait(\'{safe}\')'])
+    else:
+        raise Unsupported("no input backend")
+    return {"typed": redact(text, 80), "chars": len(text)}
+
+
+def input_key(combo: str) -> dict:
+    mods, key = _split_combo(combo)
+    kind = desktop()
+    if kind == "x11":
+        require("xdotool")
+        sh(["xdotool", "key", "--clearmodifiers", combo])
+    elif kind in ("sway", "hyprland", "wayland"):
+        if not which("wtype"):
+            raise Unsupported("Wayland key input needs wtype")
+        argv = ["wtype"]
+        for mod in mods:
+            argv += ["-M", mod]
+        argv += ["-k", key]
+        for mod in reversed(mods):
+            argv += ["-m", mod]
+        sh(argv)
+    elif kind == "macos":
+        mac_mods = {"ctrl": "control down", "shift": "shift down",
+                    "alt": "option down", "super": "command down"}
+        using = ", ".join(mac_mods[m] for m in mods if m in mac_mods)
+        script = (f'tell application "System Events" to keystroke "{key}"'
+                  + (f" using {{{using}}}" if using else ""))
+        sh(["osascript", "-e", script])
+    elif kind == "windows":
+        mapping = {"ctrl": "^", "shift": "+", "alt": "%"}
+        seq = "".join(mapping.get(m, "") for m in mods) + key
+        sh(["powershell", "-NoProfile", "-Command",
+            f'Add-Type -AssemblyName System.Windows.Forms; '
+            f'[System.Windows.Forms.SendKeys]::SendWait("{seq}")'])
+    else:
+        raise Unsupported("no key backend")
+    return {"key": combo}
+
+
+def _mouse_linux(action: str, x: int | None, y: int | None,
+                 button: int = 1, amount: int = 0) -> dict:
+    kind = desktop()
+    if kind == "x11":
+        require("xdotool")
+        if action in ("move", "click") and x is not None and y is not None:
+            sh(["xdotool", "mousemove", str(x), str(y)])
+        if action == "click":
+            sh(["xdotool", "click", str(button)])
+        elif action == "scroll":
+            btn = 4 if amount >= 0 else 5
+            for _ in range(max(1, abs(amount))):
+                sh(["xdotool", "click", str(btn)])
+        return {"action": action, "x": x, "y": y}
+    if kind in ("sway", "hyprland", "wayland"):
+        if not which("ydotool"):
+            raise Unsupported("Wayland mouse control needs ydotool")
+        if action in ("move", "click") and x is not None and y is not None:
+            sh(["ydotool", "mousemove", "--absolute", "-x", str(x), "-y", str(y)])
+        if action == "click":
+            sh(["ydotool", "click", str(button - 1)])
+        elif action == "scroll":
+            sh(["ydotool", "mousemove", "--wheel", "-y", str(amount)])
+        return {"action": action, "x": x, "y": y}
+    if kind == "macos":
+        if which("cliclick"):
+            if action in ("move", "click") and x is not None and y is not None:
+                sh(["cliclick", f"m:{x},{y}"])
+            if action == "click":
+                sh(["cliclick", "c:" + str(button)])
+            elif action == "scroll":
+                sh(["cliclick", f"w:{amount}"])
+        else:
+            if action in ("move", "click") and x is not None and y is not None:
+                sh(["osascript", "-e",
+                    f'tell application "System Events" to click at {{{x}, {y}}}'])
+            else:
+                raise Unsupported("macOS scrolling needs cliclick")
+        return {"action": action, "x": x, "y": y}
+    if kind == "windows":
+        ps = ('Add-Type -AssemblyName System.Windows.Forms; '
+              f'[System.Windows.Forms.Cursor]::Position = New-Object '
+              f'System.Drawing.Point({x or 0}, {y or 0});')
+        sh(["powershell", "-NoProfile", "-Command", ps])
+        return {"action": action, "x": x, "y": y}
+    raise Unsupported("no mouse backend")
+
+
+# --------------------------------------------------------------- screenshot
+def screenshot(path: str | None) -> dict:
+    target = resolve_path(path) if path else resolve_path(
+        str(HOME / "Pictures" / f"mia-{time.strftime('%Y%m%d-%H%M%S')}.png"))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    kind = desktop()
+    if kind in ("sway", "hyprland", "wayland"):
+        if which("grim"):
+            sh(["grim", str(target)])
+        elif which("gnome-screenshot"):
+            sh(["gnome-screenshot", "-f", str(target)])
+        elif which("spectacle"):
+            sh(["spectacle", "-b", "-n", "-o", str(target)])
+        else:
+            raise Unsupported("Wayland screenshot needs grim, gnome-screenshot or spectacle")
+    elif kind == "x11":
+        if which("gnome-screenshot"):
+            sh(["gnome-screenshot", "-f", str(target)])
+        elif which("scrot"):
+            sh(["scrot", str(target)])
+        elif which("import"):
+            sh(["import", "-window", "root", str(target)])
+        else:
+            raise Unsupported("X11 screenshot needs gnome-screenshot, scrot or ImageMagick")
+    elif kind == "macos":
+        sh(["screencapture", "-x", str(target)])
+    elif kind == "windows":
+        ps = ("Add-Type -AssemblyName System.Windows.Forms,System.Drawing; "
+              "$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; "
+              "$bmp=New-Object System.Drawing.Bitmap $b.Width,$b.Height; "
+              "$g=[System.Drawing.Graphics]::FromImage($bmp); "
+              "$g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size); "
+              f"$bmp.Save('{target}')")
+        sh(["powershell", "-NoProfile", "-Command", ps])
+    else:
+        raise Unsupported("no screenshot backend")
+    return {"path": str(target), "size": target.stat().st_size if target.exists() else 0}
+
+
+# ---------------------------------------------------------------- clipboard
+def clipboard_get() -> dict:
+    kind = desktop()
+    if kind in ("sway", "hyprland", "wayland"):
+        if which("wl-paste"):
+            _, out, _ = sh(["wl-paste", "--no-newline"])
+        else:
+            raise Unsupported("Wayland clipboard needs wl-clipboard")
+    elif kind == "x11":
+        if which("xclip"):
+            _, out, _ = sh(["xclip", "-selection", "clipboard", "-o"])
+        elif which("xsel"):
+            _, out, _ = sh(["xsel", "--clipboard", "--output"])
+        else:
+            raise Unsupported("X11 clipboard needs xclip or xsel")
+    elif kind == "macos":
+        _, out, _ = sh(["pbpaste"])
+    elif kind == "windows":
+        _, out, _ = sh(["powershell", "-NoProfile", "-Command", "Get-Clipboard"])
+    else:
+        raise Unsupported("no clipboard backend")
+    return {"text": out}
+
+
+def clipboard_set(text: str) -> dict:
+    kind = desktop()
+    if kind in ("sway", "hyprland", "wayland"):
+        if not which("wl-copy"):
+            raise Unsupported("Wayland clipboard needs wl-clipboard")
+        sh(["wl-copy"], input_text=text)
+    elif kind == "x11":
+        if which("xclip"):
+            sh(["xclip", "-selection", "clipboard"], input_text=text)
+        elif which("xsel"):
+            sh(["xsel", "--clipboard", "--input"], input_text=text)
+        else:
+            raise Unsupported("X11 clipboard needs xclip or xsel")
+    elif kind == "macos":
+        sh(["pbcopy"], input_text=text)
+    elif kind == "windows":
+        safe = text.replace("'", "''")
+        sh(["powershell", "-NoProfile", "-Command", f"Set-Clipboard -Value '{safe}'"])
+    else:
+        raise Unsupported("no clipboard backend")
+    return {"set": True, "chars": len(text)}
+
+
+# ------------------------------------------------------------------ notify
+def notify(title: str, body: str = "") -> dict:
+    kind = desktop()
+    if kind in ("x11", "sway", "hyprland", "wayland"):
+        require("notify-send", "install libnotify-bin")
+        sh(["notify-send", "-a", "Mia", title, body])
+    elif kind == "macos":
+        safe_t = title.replace('"', '\\"')
+        safe_b = body.replace('"', '\\"')
+        sh(["osascript", "-e",
+            f'display notification "{safe_b}" with title "{safe_t}"'])
+    elif kind == "windows":
+        raise Unsupported("Windows notifications need BurntToast; use the HUD instead")
+    else:
+        raise Unsupported("no notification backend")
+    return {"title": title, "body": body}
+
+
+# ------------------------------------------------------------------- media
+def media_action(action: str) -> dict:
+    kind = desktop()
+    if kind in ("x11", "sway", "hyprland", "wayland"):
+        if which("playerctl"):
+            if action == "status":
+                rc, out, _ = sh(["playerctl", "status"], check=False)
+                meta = {}
+                for key in ("artist", "title", "album"):
+                    rc2, val, _ = sh(["playerctl", "metadata", key], check=False)
+                    if rc2 == 0:
+                        meta[key] = val.strip()
+                return {"status": out.strip(), **meta}
+            cmd = {"play-pause": "play-pause", "next": "next", "previous": "previous",
+                   "play": "play", "pause": "pause", "stop": "stop"}.get(action)
+            if not cmd:
+                raise CtlError(f"unknown media action: {action}")
+            sh(["playerctl", cmd])
+            return {"action": action}
+        raise Unsupported("media keys need playerctl")
+    if kind == "macos":
+        target = 'application "Music"'
+        if action == "play-pause":
+            sh(["osascript", "-e", f'tell {target} to playpause'])
+        elif action == "next":
+            sh(["osascript", "-e", f'tell {target} to next track'])
+        elif action == "previous":
+            sh(["osascript", "-e", f'tell {target} to previous track'])
+        elif action == "stop":
+            sh(["osascript", "-e", f'tell {target} to stop'])
+        elif action == "status":
+            _, out, _ = sh(["osascript", "-e", f'tell {target} to player state as string'])
+            return {"status": out.strip()}
+        else:
+            raise CtlError(f"unknown media action: {action}")
+        return {"action": action}
+    if kind == "windows":
+        raise Unsupported("Windows media control is not implemented; use the HUD")
+    raise Unsupported("no media backend")
+
+
+# ------------------------------------------------------------------ volume
+def volume_action(action: str, value: int | None = None) -> dict:
+    if which("mia-volume"):
+        argv = ["mia-volume"]
+        if action == "status":
+            argv.append("status")
+        elif action == "mute":
+            argv.append("mute")
+        elif action == "set":
+            argv += ["set", str(value if value is not None else 50)]
+        else:
+            argv += [action] + ([str(value)] if value is not None else [])
+        rc, out, _ = sh(argv, check=False)
+        return {"action": action, "output": out.strip(), "rc": rc}
+    kind = desktop()
+    if kind == "macos":
+        if action == "status":
+            _, out, _ = sh(["osascript", "-e", "output volume of (get volume settings)"])
+            return {"volume": _int(out.strip())}
+        if action == "mute":
+            _, out, _ = sh(["osascript", "-e", "output muted of (get volume settings)"])
+            muted = out.strip() == "true"
+            sh(["osascript", "-e", f"set volume output muted {str(not muted).lower()}"])
+            return {"muted": not muted}
+        level = value if value is not None else 50
+        if action == "up":
+            level = min(100, 50 + (value or 10))
+        elif action == "down":
+            level = max(0, 50 - (value or 10))
+        sh(["osascript", "-e", f"set volume output volume {level}"])
+        return {"volume": level}
+    if kind in ("x11", "sway", "hyprland", "wayland"):
+        if which("wpctl"):
+            if action == "status":
+                _, out, _ = sh(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"])
+                return {"output": out.strip()}
+            if action == "mute":
+                sh(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"])
+            elif action == "set":
+                sh(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{(value or 50) / 100:.2f}"])
+            elif action == "up":
+                sh(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{value or 10}%+"])
+            elif action == "down":
+                sh(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{value or 10}%-"])
+            return {"action": action}
+        if which("pactl"):
+            sink = "@DEFAULT_SINK@"
+            if action == "status":
+                _, out, _ = sh(["pactl", "get-sink-volume", sink])
+                return {"output": out.strip()}
+            if action == "mute":
+                sh(["pactl", "set-sink-mute", sink, "toggle"])
+            else:
+                current = 50
+                _, out, _ = sh(["pactl", "get-sink-volume", sink], check=False)
+                match = re.search(r"(\d+)%", out)
+                if match:
+                    current = int(match.group(1))
+                level = value if value is not None else current
+                if action == "up":
+                    level = current + (value or 10)
+                elif action == "down":
+                    level = current - (value or 10)
+                sh(["pactl", "set-sink-volume", sink, f"{max(0, min(150, level))}%"])
+            return {"action": action}
+        raise Unsupported("volume needs wpctl or pactl")
+    if kind == "windows":
+        raise Unsupported("Windows volume control is not implemented")
+    raise Unsupported("no audio backend")
+
+
+# -------------------------------------------------------------- brightness
+def brightness_action(action: str, value: int | None = None) -> dict:
+    if which("brightnessctl"):
+        if action == "status":
+            _, out, _ = sh(["brightnessctl", "-m"])
+            return {"output": out.strip()}
+        if action == "set":
+            sh(["brightnessctl", "set", f"{value if value is not None else 50}%"])
+        elif action == "up":
+            sh(["brightnessctl", "set", f"{(value or 10)}%+"])
+        elif action == "down":
+            sh(["brightnessctl", "set", f"{(value or 10)}%-"])
+        return {"action": action}
+    kind = desktop()
+    if kind == "macos" and which("brightness"):
+        if action == "set":
+            sh(["brightness", str((value or 50) / 100)])
+        else:
+            raise Unsupported("macOS brightness needs an absolute --value")
+        return {"action": action}
+    if kind == "windows":
+        raise Unsupported("Windows brightness is not implemented")
+    raise Unsupported("brightness needs brightnessctl")
+
+
+# -------------------------------------------------------------------- power
+def power_action(action: str) -> dict:
+    if not POLICY.get("allow_power", True):
+        raise Denied("power actions are disabled by policy")
+    if action != "lock":
+        require_yes(f"power {action}")
+    kind = desktop()
+    if action == "lock":
+        if kind == "macos":
+            sh(["pmset", "displaysleepnow"])
+        elif kind == "windows":
+            sh(["rundll32.exe", "user32.dll,LockWorkStation"])
+        elif which("loginctl"):
+            sh(["loginctl", "lock-session"])
+        elif which("xdg-screensaver"):
+            sh(["xdg-screensaver", "lock"])
+        else:
+            raise Unsupported("no screen-lock backend")
+    elif action == "suspend":
+        if kind == "macos":
+            sh(["pmset", "sleepnow"])
+        elif kind == "windows":
+            sh(["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"])
+        else:
+            sh(["systemctl", "suspend"])
+    elif action == "reboot":
+        if kind == "macos":
+            sh(["osascript", "-e", 'tell application "System Events" to restart'])
+        elif kind == "windows":
+            sh(["shutdown", "/r", "/t", "0"])
+        else:
+            sh(["systemctl", "reboot"])
+    elif action == "shutdown":
+        if kind == "macos":
+            sh(["osascript", "-e", 'tell application "System Events" to shut down'])
+        elif kind == "windows":
+            sh(["shutdown", "/s", "/t", "0"])
+        else:
+            sh(["systemctl", "poweroff"])
+    else:
+        raise CtlError(f"unknown power action: {action}")
+    return {"action": action}
+
+
+# ----------------------------------------------------------------- process
+def process_list(limit: int = 30) -> list[dict]:
+    try:
+        import psutil  # type: ignore
+        rows = []
+        for proc in psutil.process_iter(["pid", "ppid", "name", "cpu_percent",
+                                         "memory_percent", "username"]):
+            try:
+                info = proc.info
+                rows.append({"pid": info["pid"], "ppid": info["ppid"],
+                             "name": info["name"],
+                             "cpu": round(info.get("cpu_percent") or 0, 1),
+                             "mem": round(info.get("memory_percent") or 0, 1),
+                             "user": info.get("username") or ""})
+            except Exception:
+                continue
+        rows.sort(key=lambda r: (r["cpu"], r["mem"]), reverse=True)
+        return rows[:limit]
+    except ImportError:
+        pass
+    rc, out, _ = sh(["ps", "-eo", "pid,ppid,pcpu,pmem,comm"], check=False)
+    rows = []
+    for line in out.splitlines()[1:]:
+        parts = line.split(None, 4)
+        if len(parts) < 5:
+            continue
+        rows.append({"pid": _int(parts[0]), "ppid": _int(parts[1]),
+                     "cpu": float(parts[2]) if parts[2].replace(".", "").isdigit() else 0,
+                     "mem": float(parts[3]) if parts[3].replace(".", "").isdigit() else 0,
+                     "name": parts[4].strip()})
+    rows.sort(key=lambda r: (r["cpu"], r["mem"]), reverse=True)
+    return rows[:limit]
+
+
+def process_kill(pid: int, sig: str = "TERM") -> dict:
+    if not POLICY.get("allow_process_kill", True):
+        raise Denied("process kill is disabled by policy")
+    if pid <= 1 or pid == os.getpid() or pid == os.getppid():
+        raise Denied(f"refusing to kill protected pid {pid}")
+    require_yes(f"kill pid {pid}")
+    if os.name == "nt":
+        sh(["taskkill", "/PID", str(pid), "/F"])
+    else:
+        try:
+            os.kill(pid, getattr(signal, f"SIG{sig.upper()}", signal.SIGTERM))
+        except ProcessLookupError as exc:
+            raise CtlError(f"no such process: {pid}") from exc
+    return {"pid": pid, "signal": sig}
+
+
+# ----------------------------------------------------------------- service
+def service_action(action: str, unit: str, system: bool = False) -> dict:
+    if not unit:
+        raise CtlError("unit name required")
+    prefixes = POLICY.get("allow_service_control") or []
+    if prefixes and not any(unit.startswith(p) for p in prefixes):
+        raise Denied(f"service {unit} is not in allow_service_control {prefixes}")
+    if action in ("stop", "restart", "disable"):
+        require_yes(f"service {action} {unit}")
+    if desktop() == "macos":
+        if action == "status":
+            rc, out, _ = sh(["launchctl", "list", unit], check=False)
+            return {"rc": rc, "output": out.strip()}
+        raise Unsupported("launchd service control is not implemented")
+    if os.name == "nt":
+        raise Unsupported("Windows service control is not implemented")
+    argv = ["systemctl"]
+    if not system:
+        argv.append("--user")
+    argv += [action, unit]
+    rc, out, err = sh(argv, check=False)
+    if rc != 0 and "Failed to connect" in (err or ""):
+        raise CtlError(f"systemctl --user unavailable: {err.strip()[:200]}")
+    if rc != 0 and action in ("status", "is-active"):
+        return {"unit": unit, "active": False, "output": (out or err).strip()}
+    if rc != 0:
+        raise CtlError(f"systemctl {action} {unit} failed: {(err or out).strip()[:300]}")
+    return {"unit": unit, "action": action, "output": out.strip()}
+
+
+# ------------------------------------------------------------------- files
+def _skip_path(path: Path) -> bool:
+    for deny in POLICY.get("deny_paths") or []:
+        denied = _expand(deny)
+        if path == denied or denied in path.parents:
+            return True
+    return False
+
+
+def files_search(query: str, root: str | None, limit: int = 40,
+                 max_depth: int = 8) -> list[dict]:
+    if not query:
+        raise CtlError("search query required")
+    base = resolve_path(root or str(HOME), must_exist=True)
+    if not base.is_dir():
+        raise CtlError(f"not a directory: {base}")
+    max_scan = int(POLICY.get("max_file_scan", 20000))
+    needle = query.lower()
+    results = []
+    scanned = 0
+    base_depth = len(base.parts)
+    for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
+        current = Path(dirpath)
+        if len(current.parts) - base_depth >= max_depth:
+            dirnames[:] = []
+        dirnames[:] = [d for d in dirnames if not _skip_path(current / d)
+                       and not d.startswith(".")]
+        for name in filenames:
+            scanned += 1
+            if scanned > max_scan:
+                break
+            if needle in name.lower():
+                full = current / name
+                try:
+                    stat = full.stat()
+                except OSError:
+                    continue
+                results.append({"path": str(full), "size": stat.st_size,
+                                "mtime": stat.st_mtime})
+                if len(results) >= limit:
+                    break
+        if scanned > max_scan or len(results) >= limit:
+            break
+    results.sort(key=lambda r: r["mtime"], reverse=True)
+    return results
+
+
+def files_recent(limit: int = 20) -> list[dict]:
+    xbel = HOME / ".local" / "share" / "recently-used.xbel"
+    if xbel.exists():
+        import xml.etree.ElementTree as ET
+        try:
+            tree = ET.parse(xbel)
+        except ET.ParseError:
+            return []
+        rows = []
+        for bookmark in tree.getroot():
+            href = bookmark.get("href") or ""
+            if not href.startswith("file://"):
+                continue
+            path = Path(href[7:])
+            if _skip_path(path):
+                continue
+            rows.append({"path": str(path), "modified": bookmark.get("modified", ""),
+                         "exists": path.exists()})
+        rows.sort(key=lambda r: r["modified"], reverse=True)
+        return rows[:limit]
+    if desktop() == "macos":
+        _, out, _ = sh(["mdfind", "-onlyin", str(HOME),
+                        "kMDItemFSContentChangeDate >= $time.today(-7)"], check=False)
+        return [{"path": p} for p in out.splitlines()[:limit]]
+    raise Unsupported("no recent-files backend (recently-used.xbel missing)")
+
+
+def files_open(path: str) -> dict:
+    target = resolve_path(path, must_exist=True)
+    kind = desktop()
+    if kind == "macos":
+        sh(["open", str(target)])
+    elif kind == "windows":
+        os.startfile(str(target))  # type: ignore[attr-defined]
+    else:
+        sh(["xdg-open", str(target)], check=False)
+    return {"opened": str(target)}
+
+
+def files_reveal(path: str) -> dict:
+    target = resolve_path(path, must_exist=True)
+    kind = desktop()
+    if kind == "macos":
+        sh(["open", "-R", str(target)])
+    elif kind == "windows":
+        sh(["explorer", "/select,", str(target)], check=False)
+    elif which("nautilus"):
+        sh(["nautilus", "--select", str(target)], check=False)
+    else:
+        sh(["xdg-open", str(target.parent)], check=False)
+    return {"revealed": str(target)}
+
+
+# --------------------------------------------------------------------- net
+def _local_ips() -> list[str]:
+    ips = set()
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None):
+            addr = info[4][0]
+            if ":" not in addr:
+                ips.add(addr)
+    except OSError:
+        pass
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.connect(("8.8.8.8", 80))
+        ips.add(sock.getsockname()[0])
+        sock.close()
+    except OSError:
+        pass
+    return sorted(ips)
+
+
+def net_status() -> dict:
+    kind = desktop()
+    info: dict[str, Any] = {"hostname": socket.gethostname(), "ips": _local_ips()}
+    if kind in ("x11", "sway", "hyprland", "wayland"):
+        if which("ip"):
+            _, out, _ = sh(["ip", "route", "show", "default"], check=False)
+            info["default_route"] = out.strip()
+        if which("nmcli"):
+            _, out, _ = sh(["nmcli", "-t", "-f", "ACTIVE,SSID,SIGNAL", "dev", "wifi"],
+                           check=False)
+            info["wifi"] = [line for line in out.splitlines() if line.startswith("yes")]
+        if which("iwgetid"):
+            _, out, _ = sh(["iwgetid", "-r"], check=False)
+            info["ssid"] = out.strip()
+    elif kind == "macos":
+        _, out, _ = sh(["route", "-n", "get", "default"], check=False)
+        info["default_route"] = out.strip()
+        _, out, _ = sh(["networksetup", "-getairportnetwork", "en0"], check=False)
+        info["wifi"] = out.strip()
+    elif kind == "windows":
+        _, out, _ = sh(["ipconfig"], check=False)
+        info["ipconfig"] = out.strip()[:2000]
+    return info
+
+
+# ----------------------------------------------------------------- sysinfo
+def _meminfo() -> dict:
+    try:
+        import psutil  # type: ignore
+        vm = psutil.virtual_memory()
+        return {"total_gb": round(vm.total / 1024**3, 1),
+                "used_pct": vm.percent}
+    except ImportError:
+        pass
+    try:
+        lines = Path("/proc/meminfo").read_text().splitlines()
+        vals = {}
+        for line in lines:
+            key, _, rest = line.partition(":")
+            vals[key] = int(rest.strip().split()[0])
+        total = vals.get("MemTotal", 0) / 1024**2
+        available = vals.get("MemAvailable", 0) / 1024**2
+        return {"total_gb": round(total, 1),
+                "used_pct": round((1 - available / total) * 100, 1) if total else 0}
+    except (OSError, ValueError):
+        return {}
+
+
+def _cpu_model() -> str:
+    if sys.platform == "darwin":
+        rc, out, _ = sh(["sysctl", "-n", "machdep.cpu.brand_string"], check=False)
+        return out.strip() if rc == 0 else platform.processor()
+    try:
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            if line.lower().startswith("model name"):
+                return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return platform.processor() or platform.machine()
+
+
+def _gpu() -> dict:
+    if not which("nvidia-smi"):
+        return {}
+    rc, out, _ = sh(["nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total",
+                     "--format=csv,noheader,nounits"], check=False)
+    if rc != 0:
+        return {}
+    return {"nvidia": [line.strip() for line in out.splitlines() if line.strip()]}
+
+
+def _battery() -> dict:
+    base = Path("/sys/class/power_supply")
+    if not base.is_dir():
+        return {}
+    for item in base.iterdir():
+        if item.name.startswith("BAT"):
+            try:
+                capacity = (item / "capacity").read_text().strip()
+                status = (item / "status").read_text().strip()
+                return {"capacity_pct": _int(capacity), "status": status}
+            except OSError:
+                continue
+    return {}
+
+
+def _uptime() -> float | None:
+    try:
+        return float(Path("/proc/uptime").read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def sysinfo() -> dict:
+    kind = desktop()
+    info: dict[str, Any] = {
+        "version": VERSION,
+        "os": f"{platform.system()} {platform.release()}",
+        "arch": platform.machine(),
+        "hostname": socket.gethostname(),
+        "user": _user(),
+        "desktop": kind,
+        "session_type": ENV.get("XDG_SESSION_TYPE", ""),
+        "xdg_desktop": ENV.get("XDG_CURRENT_DESKTOP", ""),
+        "display": ENV.get("DISPLAY", ""),
+        "wayland_display": ENV.get("WAYLAND_DISPLAY", ""),
+        "cpu": {"model": _cpu_model(), "cores": os.cpu_count()},
+        "memory": _meminfo(),
+        "disk": {},
+        "gpu": _gpu(),
+        "battery": _battery(),
+        "uptime_s": _uptime(),
+        "python": platform.python_version(),
+    }
+    try:
+        usage = shutil.disk_usage(str(HOME))
+        info["disk"] = {"total_gb": round(usage.total / 1024**3, 1),
+                        "free_gb": round(usage.free / 1024**3, 1),
+                        "used_pct": round(usage.used / usage.total * 100, 1)}
+    except OSError:
+        pass
+    return info
+
+
+def capabilities() -> dict:
+    tools = ("xdotool", "wmctrl", "grim", "gnome-screenshot", "spectacle", "scrot",
+             "import", "wl-copy", "wl-paste", "xclip", "xsel", "notify-send",
+             "playerctl", "pactl", "wpctl", "brightnessctl", "systemctl",
+             "loginctl", "ydotool", "wtype", "osascript", "screencapture",
+             "pbcopy", "pbpaste", "cliclick", "swaymsg", "hyprctl", "nmcli",
+             "iwgetid", "nvidia-smi", "yt-dlp", "mia-open", "mia-close",
+             "mia-volume", "mia-learn")
+    return {
+        "desktop": desktop(),
+        "policy": str(POLICY_PATH),
+        "policy_exists": POLICY_PATH.exists(),
+        "audit": str(AUDIT_PATH),
+        "audit_exists": AUDIT_PATH.exists(),
+        "tools": {name: bool(which(name)) for name in tools},
+        "features": {
+            "windows": desktop() in ("x11", "sway", "hyprland", "macos", "windows"),
+            "typing": desktop() in ("x11", "macos", "windows") or bool(which("wtype") or which("ydotool")),
+            "mouse": desktop() in ("x11", "macos", "windows") or bool(which("ydotool") or which("cliclick")),
+            "screenshot": bool(which("grim") or which("gnome-screenshot") or which("spectacle")
+                               or which("scrot") or which("import") or which("screencapture")),
+            "clipboard": bool(which("wl-copy") or which("xclip") or which("xsel")
+                              or which("pbcopy") or desktop() == "windows"),
+            "media": bool(which("playerctl")) or desktop() == "macos",
+            "volume": bool(which("mia-volume") or which("wpctl") or which("pactl")),
+            "brightness": bool(which("brightnessctl")),
+            "notifications": bool(which("notify-send")) or desktop() == "macos",
+            "power": desktop() != "headless",
+        },
+    }
+
+
+# -------------------------------------------------------------------- CLI
+def _extract_globals(argv: list[str]) -> list[str]:
+    global JSON_OUT, DRY, YES, QUIET
+    out = []
+    for item in argv:
+        if item == "--json":
+            JSON_OUT = True
+        elif item == "--dry-run":
+            DRY = True
+        elif item in ("--yes", "-y"):
+            YES = True
+        elif item == "--quiet":
+            QUIET = True
+        else:
+            out.append(item)
+    return out
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="mia-ctl",
+        description="Audited, policy-checked control of the local computer.",
+        epilog="Global flags (anywhere): --json --dry-run --yes --quiet")
+    sub = p.add_subparsers(dest="cmd")
+
+    sub.add_parser("doctor", help="capabilities, policy and audit status")
+    sub.add_parser("capabilities", help="same as doctor")
+    sub.add_parser("sysinfo", help="hardware, OS, desktop and resource inventory")
+
+    w = sub.add_parser("windows", help="list and control windows")
+    wa = w.add_subparsers(dest="action")
+    wa.add_parser("list")
+    for name in ("focus", "close", "minimize", "maximize", "restore"):
+        wp = wa.add_parser(name)
+        wp.add_argument("ref", help="window id, title substring or app name")
+    wm = wa.add_parser("move")
+    wm.add_argument("ref")
+    wm.add_argument("--x", type=int)
+    wm.add_argument("--y", type=int)
+    wm.add_argument("--w", type=int)
+    wm.add_argument("--h", type=int)
+
+    a = sub.add_parser("apps", help="list, launch and quit applications")
+    aa = a.add_subparsers(dest="action")
+    aa.add_parser("list")
+    for name in ("launch", "quit"):
+        ap = aa.add_parser(name)
+        ap.add_argument("name")
+
+    op = sub.add_parser("open", help="open a URL, file or app")
+    op.add_argument("target")
+
+    ty = sub.add_parser("type", help="type text into the focused window")
+    ty.add_argument("text")
+    ty.add_argument("--delay", type=int, default=12)
+
+    ky = sub.add_parser("key", help="press a key combo (ctrl+shift+t)")
+    ky.add_argument("combo")
+
+    ck = sub.add_parser("click", help="click at absolute screen coordinates")
+    ck.add_argument("x", type=int)
+    ck.add_argument("y", type=int)
+    ck.add_argument("--button", type=int, default=1)
+
+    mv = sub.add_parser("move", help="move the mouse pointer")
+    mv.add_argument("x", type=int)
+    mv.add_argument("y", type=int)
+
+    sc = sub.add_parser("scroll", help="scroll up (positive) or down (negative)")
+    sc.add_argument("amount", type=int)
+
+    ss = sub.add_parser("screenshot", help="capture the screen to a PNG")
+    ss.add_argument("path", nargs="?")
+
+    cb = sub.add_parser("clipboard", help="read or write the clipboard")
+    cba = cb.add_subparsers(dest="action")
+    cba.add_parser("get")
+    cbs = cba.add_parser("set")
+    cbs.add_argument("text", nargs="?")
+    cbs.add_argument("--stdin", action="store_true")
+
+    nt = sub.add_parser("notify", help="show a desktop notification")
+    nt.add_argument("title")
+    nt.add_argument("body", nargs="?", default="")
+
+    md = sub.add_parser("media", help="play/pause/next/previous/status")
+    md.add_argument("action", choices=["play-pause", "next", "previous", "play",
+                                       "pause", "stop", "status"])
+
+    vo = sub.add_parser("volume", help="control the default audio output")
+    vo.add_argument("action", choices=["up", "down", "set", "mute", "status"])
+    vo.add_argument("value", nargs="?", type=int)
+
+    br = sub.add_parser("brightness", help="control screen brightness")
+    br.add_argument("action", choices=["up", "down", "set", "status"])
+    br.add_argument("value", nargs="?", type=int)
+
+    pw = sub.add_parser("power", help="lock/suspend/reboot/shutdown")
+    pw.add_argument("action", choices=["lock", "suspend", "reboot", "shutdown"])
+
+    pr = sub.add_parser("process", help="list, find and kill processes")
+    pra = pr.add_subparsers(dest="action")
+    prl = pra.add_parser("list")
+    prl.add_argument("--limit", type=int, default=30)
+    prf = pra.add_parser("find")
+    prf.add_argument("name")
+    prk = pra.add_parser("kill")
+    prk.add_argument("pid", type=int)
+    prk.add_argument("--signal", default="TERM")
+
+    sv = sub.add_parser("service", help="control allowed systemd user units")
+    sv.add_argument("action", choices=["status", "start", "stop", "restart", "is-active"])
+    sv.add_argument("unit")
+    sv.add_argument("--system", action="store_true")
+
+    fl = sub.add_parser("files", help="search, open and reveal files")
+    fla = fl.add_subparsers(dest="action")
+    fs = fla.add_parser("search")
+    fs.add_argument("query")
+    fs.add_argument("--root")
+    fs.add_argument("--limit", type=int, default=40)
+    fr = fla.add_parser("recent")
+    fr.add_argument("--limit", type=int, default=20)
+    for name in ("open", "reveal"):
+        fp = fla.add_parser(name)
+        fp.add_argument("path")
+
+    nt2 = sub.add_parser("net", help="network status")
+    nt2.add_argument("action", choices=["status"], nargs="?", default="status")
+
+    au = sub.add_parser("audit", help="inspect the control audit log")
+    aua = au.add_subparsers(dest="action")
+    at = aua.add_parser("tail")
+    at.add_argument("--limit", type=int, default=20)
+
+    po = sub.add_parser("policy", help="show or check the control policy")
+    poa = po.add_subparsers(dest="action")
+    poa.add_parser("show")
+    pc = poa.add_parser("check")
+    pc.add_argument("path")
+    return p
+
+
+def _summarize(action: str, data: Any) -> str:
+    if action == "windows list":
+        lines = [f"{w.get('id')}  {w.get('app') or '':<20} {str(w.get('title'))[:70]}"
+                 for w in data or []]
+        return "\n".join(lines) or "(no windows)"
+    if action == "apps list":
+        return "\n".join(f"{a.get('name')}" for a in (data or [])[:80]) or "(no apps)"
+    if action == "process list":
+        lines = [f"{p.get('pid'):>7}  cpu {p.get('cpu', 0):>5}  mem {p.get('mem', 0):>5}  "
+                 f"{p.get('name', '')[:50]}" for p in data or []]
+        return "\n".join(lines)
+    if action == "process find":
+        return "\n".join(f"{p.get('pid')} {p.get('name')}" for p in data or []) or "(none)"
+    if action == "files search":
+        return "\n".join(f"{f.get('path')}" for f in data or []) or "(nothing found)"
+    if action == "files recent":
+        return "\n".join(f.get("path", "") for f in data or []) or "(none)"
+    if action == "screenshot":
+        return f"screenshot: {data.get('path')}"
+    if action == "clipboard get":
+        return data.get("text", "")
+    if action in ("doctor", "capabilities", "sysinfo", "net status", "policy show"):
+        return json.dumps(data, ensure_ascii=False, indent=2, default=str)
+    if action == "audit tail":
+        return "\n".join(json.dumps(x, ensure_ascii=False) for x in data or [])
+    if action == "windows list" or action == "apps list":
+        return json.dumps(data, ensure_ascii=False, indent=2)
+    if isinstance(data, dict):
+        if "output" in data and len(data) == 1:
+            return str(data["output"])
+        return json.dumps(data, ensure_ascii=False, default=str)
+    return str(data) if data is not None else ""
+
+
+_READ_ONLY = {
+    "doctor", "capabilities", "sysinfo", "net status", "policy show", "policy check",
+    "audit tail", "windows list", "apps list", "process list", "process find",
+    "files search", "files recent", "clipboard get", "media status",
+    "volume status", "brightness status", "service status", "service is-active",
+}
+
+
+def dispatch(args: argparse.Namespace) -> Any:
+    cmd = args.cmd
+    action = getattr(args, "action", None) or ""
+    full = f"{cmd} {action}".strip()
+    if DRY and full not in _READ_ONLY:
+        planned = {k: v for k, v in vars(args).items()
+                   if k not in ("argv", "cmd", "action")}
+        return {"dry_run": True, "would": full, "args": planned}
+    if cmd in ("doctor", "capabilities"):
+        return capabilities()
+    if cmd == "sysinfo":
+        return sysinfo()
+    if cmd == "windows":
+        action = action or "list"
+        if action == "list":
+            return windows_list()
+        return windows_action(action, args)
+    if cmd == "apps":
+        action = action or "list"
+        if action == "list":
+            return apps_list()
+        if action == "launch":
+            return apps_launch(args.name)
+        if action == "quit":
+            return apps_quit(args.name)
+        raise CtlError(f"unknown apps action: {action}")
+    if cmd == "open":
+        return open_target(args.target)
+    if cmd == "type":
+        return input_type(args.text, args.delay)
+    if cmd == "key":
+        return input_key(args.combo)
+    if cmd == "click":
+        return _mouse_linux("click", args.x, args.y, args.button)
+    if cmd == "move":
+        return _mouse_linux("move", args.x, args.y)
+    if cmd == "scroll":
+        return _mouse_linux("scroll", None, None, amount=args.amount)
+    if cmd == "screenshot":
+        return screenshot(args.path)
+    if cmd == "clipboard":
+        action = action or "get"
+        if action == "get":
+            return clipboard_get()
+        text = args.text
+        if getattr(args, "stdin", False) or text is None:
+            text = sys.stdin.read()
+        return clipboard_set(text)
+    if cmd == "notify":
+        return notify(args.title, args.body)
+    if cmd == "media":
+        return media_action(args.action)
+    if cmd == "volume":
+        return volume_action(args.action, args.value)
+    if cmd == "brightness":
+        return brightness_action(args.action, args.value)
+    if cmd == "power":
+        return power_action(args.action)
+    if cmd == "process":
+        action = action or "list"
+        if action == "list":
+            return process_list(args.limit)
+        if action == "find":
+            needle = args.name.lower()
+            return [p for p in process_list(400)
+                    if needle in str(p.get("name", "")).lower()]
+        if action == "kill":
+            return process_kill(args.pid, args.signal)
+        raise CtlError(f"unknown process action: {action}")
+    if cmd == "service":
+        return service_action(args.action, args.unit, args.system)
+    if cmd == "files":
+        action = action or "search"
+        if action == "search":
+            return files_search(args.query, args.root, args.limit)
+        if action == "recent":
+            return files_recent(args.limit)
+        if action == "open":
+            return files_open(args.path)
+        if action == "reveal":
+            return files_reveal(args.path)
+        raise CtlError(f"unknown files action: {action}")
+    if cmd == "net":
+        return net_status()
+    if cmd == "audit":
+        limit = getattr(args, "limit", 20)
+        if not AUDIT_PATH.exists():
+            return []
+        lines = AUDIT_PATH.read_text(encoding="utf-8", errors="ignore").splitlines()
+        out = []
+        for line in lines[-limit:]:
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                continue
+        return out
+    if cmd == "policy":
+        action = action or "show"
+        if action == "show":
+            return {"policy_path": str(POLICY_PATH), "exists": POLICY_PATH.exists(),
+                    "policy": POLICY}
+        if action == "check":
+            return {"path": str(resolve_path(args.path)), "allowed": True}
+        raise CtlError(f"unknown policy action: {action}")
+    raise CtlError("no command given (try `mia-ctl doctor`)")
+
+
+def _action_name(args: argparse.Namespace) -> str:
+    cmd = args.cmd or ""
+    action = getattr(args, "action", None) or ""
+    return f"{cmd} {action}".strip()
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw = list(sys.argv[1:] if argv is None else argv)
+    clean = _extract_globals(raw)
+    parser = build_parser()
+    if not clean:
+        parser.print_help()
+        return 2
+    try:
+        args = parser.parse_args(clean)
+    except SystemExit as exc:
+        return int(exc.code or 0)
+    args.argv = raw
+    action = _action_name(args)
+    started = time.perf_counter()
+    try:
+        data = dispatch(args)
+        elapsed = (time.perf_counter() - started) * 1000
+        summary = _summarize(action, data)
+        audit(action, raw, True, 0, elapsed, summary=summary)
+        if not QUIET:
+            emit(True, action, data, summary=summary)
+        return 0
+    except CtlError as exc:
+        elapsed = (time.perf_counter() - started) * 1000
+        audit(action, raw, False, exc.exit_code, elapsed, error=str(exc))
+        emit(False, action, error=str(exc))
+        return exc.exit_code
+    except KeyboardInterrupt:
+        return 130
+    except Exception as exc:  # never crash without an audit line
+        elapsed = (time.perf_counter() - started) * 1000
+        message = f"{type(exc).__name__}: {exc}"
+        audit(action, raw, False, 5, elapsed, error=message)
+        emit(False, action, error=message)
+        return 5
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+

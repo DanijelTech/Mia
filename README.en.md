@@ -47,9 +47,18 @@ trip with a fast local TTS: 5–10 seconds.
   plays in a dedicated Chrome app window (found via `yt-dlp`)
 - **Background tasks** — programming in any folder, files, terminal, web
   search, scheduled jobs, kanban; dangerous actions wait for your ALLOW/DENY
-- **Learns your workflows** — the `mia-companion` skill (skills/) tells the
-  agent to remember not only preferences but *how* tasks were solved best,
-  and to reuse that recipe next time
+- **Full local computer control** — `mia-ctl` is an audited, policy-checked
+  vocabulary for windows, apps, typing/clicking, screenshots, clipboard, media,
+  volume, brightness, power, processes, services and files (X11, Wayland,
+  macOS, Windows). Every action is audited.
+- **Durable memory and a knowledge tree** — every turn is stored in a local
+  SQLite database; habits, recipes and anti-patterns are derived from it. A
+  bounded `[MIA SPOMIN …]` brief is injected before every turn.
+- **Learns your workflows** — a proven procedure becomes a recipe and is
+  reused next time; "not right" creates an anti-pattern with a cause and fix.
+- **Granular skill tree** — `mia-companion` (persona) plus `mia-desktop`,
+  `mia-learning`, `mia-music`, `mia-browser`, `mia-productivity`,
+  `mia-diagnostics`; a validator checks names, parents and references.
 - **Live agent activity** — watch tool calls happen with command previews
 - **Approval cards** — dangerous commands pause for your ALLOW/DENY
 - **Embedded dashboards** — kanban, the Hermes dashboard and chat pop up in
@@ -66,6 +75,34 @@ trip with a fast local TTS: 5–10 seconds.
   with automatic fallback to local Whisper when that machine is off
 - **Mobile-ready** — responsive layout + Add to Home Screen = full-screen
   Mia app on your phone
+
+## Computer control and learning (short version)
+
+```bash
+mia-ctl doctor                     # what this machine supports
+mia-ctl windows list               # windows with ids
+mia-ctl apps launch firefox
+mia-ctl type "hello" --delay 15
+mia-ctl screenshot
+mia-ctl volume set 40
+mia-ctl files search "invoice" --root ~/Documents
+mia-ctl power lock
+```
+
+```bash
+mia-learn status                   # memory size, last mining
+mia-learn brief "open google"      # what Mia would know right now
+mia-learn habits
+mia-learn recipes
+mia-learn mistakes
+mia-learn remember --note "…"
+mia-learn feedback --verdict negative --note "prefer Chrome"
+```
+
+The HUD has a **SPOMIN IN ZNANJE** panel; **ODPRI ZNANJE** opens the skill
+tree, habits, recipes, mistakes, episode log and search. Details:
+[docs/en/LEARNING.md](docs/en/LEARNING.md) and
+[docs/en/CONTROL.md](docs/en/CONTROL.md).
 
 ## Architecture
 
@@ -87,6 +124,12 @@ trip with a fast local TTS: 5–10 seconds.
 One brain, many faces: voice and typed chat share a single persistent Hermes
 session, so each knows what you said to the other — and memory survives every
 restart.
+
+**Learning and control**: every accepted turn is stored in
+`~/.local/state/mia/learning.db`; before the next turn the server injects a
+bounded brief with habits, recipes and anti-patterns. `mia-ctl` actions go
+through policy and audit (`control-audit.jsonl`) and are learned too. The skill
+tree lives in `skills/`; the HUD panel **SPOMIN IN ZNANJE** shows it all.
 
 **Whole-stack management**: with a `stack:` section in `server.yaml`,
 `start-mia.sh` boots llama-server (local model) → Hermes gateway → Hermes
@@ -217,6 +260,8 @@ evening.
 | Voice calibration | `python3 server/scripts/enroll_voice.py` (`--append` for another language) |
 | Music | "Mia, play me …" → YouTube app window · "close it / stop the music" |
 | Desktop windows | "open Google / \<page\>" and "close it" (mia-open/mia-close) |
+| Computer control | `mia-ctl …` — windows, apps, input, screenshots, clipboard, power |
+| Memory and knowledge | SPOMIN IN ZNANJE panel → ODPRI ZNANJE · `mia-learn …` |
 | Typed chat | input bar at the bottom (same conversation as voice) |
 | Kanban / dashboards | VIEWS panel → kanban, dashboard, chat |
 | Push-to-talk | alternative: click the ring (or Space) · speak · click again |
@@ -230,13 +275,19 @@ server/hud/      single-file HUD (vanilla JS, no build step)
 server/continuous.py  VAD segmentation + wake gate for always-on listening
 server/speaker_gate.py  speaker verification (ECAPA-TDNN voiceprints, SpeechBrain)
 server/tts.py    local TTS backends: piper, http (Gepard/Maya1), command, elevenlabs
+server/mia_core/ learning and knowledge (stdlib-only): SQLite, habits, recipes,
+                 anti-patterns, skill tree, context brief, mia-learn CLI
 server/scripts/  mia-start/stop/health + enroll_voice.py (voice calibration)
                  + gepard_tts.py (TTS service with per-request pitch)
 client/          optional Windows/Linux push-to-talk Python client (wake word capable)
 worker/          optional GPU sidecars: big-model STT server + stats agent
-hermes-plugin/   Hermes tool plugin: lets the agent summon/dismiss HUD media panels
-skills/mia-companion/  Hermes skill: Mia's manners, workflow memory, windows
-                 (bin/mia-open + bin/mia-close for reliable open/close)
+hermes-plugin/   Hermes plugins: hud_display (media panels) and mia_learning
+                 (memory_brief/search/feedback/remember/fact/mistake/status/skill_tree)
+skills/          skill tree: mia-companion (root) + mia-desktop, mia-learning,
+                 mia-music, mia-browser, mia-productivity, mia-diagnostics
+skills/mia-companion/bin/  mia-open, mia-close, mia-volume, mia-artists,
+                 mia-learn, mia-skill, mia-ctl (audited computer control)
+tests/           unittest suite for mia_core, mia-ctl and the skill tree
 launchd/         macOS auto-start templates with hard-won TCC + FD-limit notes
 docs/            Slovenian docs; docs/en/ the English copies
 install.sh       install (no venv, root or user) + manifest
@@ -255,6 +306,10 @@ build-package.sh offline tarball for a machine without internet
   token (cookie, entered once per device).
 - Hermes' API binds to loopback only; the dashboard binds to loopback only.
 - Secret-shaped strings are redacted before text leaves for cloud TTS.
+- `mia-ctl` checks a policy (`~/.config/mia/control.json`): allowed roots,
+  denied paths (`~/.ssh`, `~/.hermes` …) and confirmation for destructive
+  actions. Every control action is audited with secrets redacted.
+- Memory is stored locally; all text is redacted before storage.
 - LAN-only by design — do not port-forward this to the internet.
 
 ## Credits & license

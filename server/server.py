@@ -52,6 +52,8 @@ from RealtimeSTT import AudioToTextRecorder
 from continuous import WakeGate, build_segmenter, starts_with_exact_wake
 from speaker_gate import SpeakerGate
 from tts import build_backend
+from mia_core.integration import detect_feedback, detect_remember
+from mia_core.learning import get_core
 
 try:
     import psutil
@@ -395,6 +397,7 @@ class TurnTiming:
     voice_id: str = ""
     run_id: str = ""
     interrupted: bool = False
+    skip_learning: bool = False
     tools_used: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -743,7 +746,12 @@ class VoicePipelineServer:
         timing.llm_model = "hermes-agent"
         timeout = float(h.get("timeout", 240))
         directive = (h.get("language_directive") or "").strip()
-        payload = f"{directive}\n\n{transcript}" if directive else transcript
+        try:
+            brief = LEARNING.brief(transcript)
+        except Exception as exc:
+            print(f"learning brief skipped: {exc}", flush=True)
+            brief = ""
+        payload = "\n\n".join(part for part in (directive, brief, transcript) if part)
         try:
             it = self.hermes.chat_stream_events(session_id, payload, timeout)
             for kind, value in it:
@@ -946,6 +954,7 @@ class VoicePipelineServer:
 load_env()
 CFG = load_config()
 HERMES = HermesAPI(CFG)   # lightweight API client - independent of the STT pipeline
+LEARNING = get_core(CFG)  # durable memory, habits, recipes, skill tree
 PIPELINE: VoicePipelineServer | None = None
 
 # live voice settings (HUD pitch slider) — persisted across restarts
@@ -997,6 +1006,37 @@ async def warm_pipeline() -> None:
 
 
 _WARM_STARTED = False
+_LEARNING_STARTED = False
+
+
+@app.on_event("startup")
+async def start_learning_loop() -> None:
+    """Refresh the machine inventory and skill index, then mine periodically."""
+    global _LEARNING_STARTED
+    if _LEARNING_STARTED:
+        return
+    _LEARNING_STARTED = True
+    interval = max(60, int(LEARNING.cfg.get("auto_mine_interval_seconds", 900) or 900))
+
+    async def warm() -> None:
+        try:
+            await asyncio.to_thread(LEARNING.system_facts)
+            await asyncio.to_thread(LEARNING.mine)
+        except Exception as exc:
+            print(f"learning warm skipped: {exc}", flush=True)
+
+    async def loop() -> None:
+        await asyncio.sleep(30)
+        while True:
+            try:
+                await asyncio.to_thread(LEARNING.mine)
+                await asyncio.to_thread(LEARNING.prune)
+            except Exception as exc:
+                print(f"learning loop error: {exc}", flush=True)
+            await asyncio.sleep(interval)
+
+    asyncio.get_running_loop().create_task(warm())
+    asyncio.get_running_loop().create_task(loop())
 
 
 # ------------------------------------------------------------------ Auth
@@ -1103,13 +1143,19 @@ async def hud_chat(request: Request) -> JSONResponse:
     if not text:
         return JSONResponse({"error": "empty input"}, status_code=400)
     out: dict = {"text": "", "tools": [], "run_id": None}
+    started = time.time()
+    try:
+        brief = LEARNING.brief(text)
+    except Exception:
+        brief = ""
+    chat_payload = "\n\n".join(part for part in (brief, text) if part)
 
     def run_sync() -> None:
         timeout = float((CFG.get("hermes") or {}).get("timeout", 240))
 
         def consume(sid: str) -> list[str]:
             parts: list[str] = []
-            for kind, value in HERMES.chat_stream_events(sid, text, timeout):
+            for kind, value in HERMES.chat_stream_events(sid, chat_payload, timeout):
                 if kind == "text":
                     parts.append(value)
                 elif kind == "tool":
@@ -1134,9 +1180,20 @@ async def hud_chat(request: Request) -> JSONResponse:
 
     try:
         await asyncio.to_thread(run_sync)
+        try:
+            LEARNING.record_chat(conversation, text, out["text"], out["tools"],
+                                 duration_s=time.time() - started)
+        except Exception as exc:
+            print(f"learning record_chat skipped: {exc}", flush=True)
         return JSONResponse(out)
     except Exception as exc:
         print(f"hud_chat failed: {type(exc).__name__}: {exc}", flush=True)
+        try:
+            LEARNING.record_chat(conversation, text, "", out["tools"],
+                                 error=friendly_error(exc),
+                                 duration_s=time.time() - started)
+        except Exception:
+            pass
         return JSONResponse({"error": friendly_error(exc)}, status_code=502)
 
 
@@ -1234,6 +1291,175 @@ ACTIVE_PANELS: set = set()   # src of every holographic panel currently up
 LAST_SUMMON: dict = {}       # last media shown — for "odpri predvajanje v brskalniku"
 
 
+# --------------------------------------------------------------- learning API
+def _as_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+@app.get("/api/learning/status")
+async def learning_status() -> JSONResponse:
+    return JSONResponse(await asyncio.to_thread(LEARNING.status))
+
+
+@app.get("/api/learning/tree")
+async def learning_tree() -> JSONResponse:
+    return JSONResponse(await asyncio.to_thread(LEARNING.tree))
+
+
+@app.get("/api/learning/brief")
+async def learning_brief(request: Request) -> JSONResponse:
+    query = request.query_params.get("request", "")
+    return JSONResponse(await asyncio.to_thread(LEARNING.brief_preview, query))
+
+
+@app.get("/api/learning/search")
+async def learning_search(request: Request) -> JSONResponse:
+    query = request.query_params.get("q", "")
+    limit = _as_int(request.query_params.get("limit"), 30)
+    return JSONResponse({"results": await asyncio.to_thread(LEARNING.search, query, limit)})
+
+
+@app.get("/api/learning/habits")
+async def learning_habits(request: Request) -> JSONResponse:
+    limit = _as_int(request.query_params.get("limit"), 50)
+    min_conf = float(request.query_params.get("min_confidence", 0) or 0)
+    return JSONResponse({"habits": await asyncio.to_thread(LEARNING.habits, limit, min_conf)})
+
+
+@app.get("/api/learning/recipes")
+async def learning_recipes(request: Request) -> JSONResponse:
+    limit = _as_int(request.query_params.get("limit"), 50)
+    return JSONResponse({"recipes": await asyncio.to_thread(LEARNING.recipes, limit)})
+
+
+@app.get("/api/learning/mistakes")
+async def learning_mistakes(request: Request) -> JSONResponse:
+    limit = _as_int(request.query_params.get("limit"), 50)
+    return JSONResponse({"mistakes": await asyncio.to_thread(LEARNING.mistakes, limit)})
+
+
+@app.get("/api/learning/facts")
+async def learning_facts(request: Request) -> JSONResponse:
+    limit = _as_int(request.query_params.get("limit"), 100)
+    kind = request.query_params.get("kind") or None
+    return JSONResponse({"facts": await asyncio.to_thread(LEARNING.facts, limit, kind)})
+
+
+@app.get("/api/learning/episodes")
+async def learning_episodes(request: Request) -> JSONResponse:
+    limit = _as_int(request.query_params.get("limit"), 50)
+    source = request.query_params.get("source") or None
+    outcome = request.query_params.get("outcome") or None
+    return JSONResponse({"episodes": await asyncio.to_thread(
+        LEARNING.episodes, limit, source=source, outcome=outcome)})
+
+
+@app.get("/api/learning/events")
+async def learning_events(request: Request) -> JSONResponse:
+    limit = _as_int(request.query_params.get("limit"), 100)
+    return JSONResponse({"events": await asyncio.to_thread(LEARNING.events, limit)})
+
+
+@app.post("/api/learning/feedback")
+async def learning_feedback(request: Request) -> JSONResponse:
+    body = await request.json()
+    verdict = (body.get("verdict") or "positive").lower()
+    note = body.get("note") or ""
+    episode_id = body.get("episode_id")
+    if episode_id:
+        result = await asyncio.to_thread(LEARNING.feedback, _as_int(episode_id),
+                                         verdict, note)
+    else:
+        conversation = body.get("conversation") or (CFG.get("hermes") or {}).get(
+            "conversation", "mia-main")
+        result = await asyncio.to_thread(LEARNING.feedback_last, conversation,
+                                         verdict, note)
+    return JSONResponse(result)
+
+
+@app.post("/api/learning/remember")
+async def learning_remember(request: Request) -> JSONResponse:
+    body = await request.json()
+    episode_id = body.get("episode_id")
+    note = body.get("note") or ""
+    if episode_id:
+        result = await asyncio.to_thread(LEARNING.remember, _as_int(episode_id), note)
+    else:
+        conversation = body.get("conversation") or (CFG.get("hermes") or {}).get(
+            "conversation", "mia-main")
+        result = await asyncio.to_thread(LEARNING.remember_last, conversation, note)
+    return JSONResponse(result)
+
+
+@app.post("/api/learning/recipe")
+async def learning_add_recipe(request: Request) -> JSONResponse:
+    body = await request.json()
+    title = (body.get("title") or "").strip()
+    if not title:
+        return JSONResponse({"error": "title required"}, status_code=400)
+    recipe_id = await asyncio.to_thread(
+        LEARNING.add_recipe, title, body.get("steps") or [],
+        body.get("key"), body.get("tags") or [], body.get("notes") or "")
+    return JSONResponse({"ok": bool(recipe_id), "id": recipe_id})
+
+
+@app.post("/api/learning/mistake")
+async def learning_add_mistake(request: Request) -> JSONResponse:
+    body = await request.json()
+    symptom = (body.get("symptom") or "").strip()
+    if not symptom:
+        return JSONResponse({"error": "symptom required"}, status_code=400)
+    mistake_id = await asyncio.to_thread(
+        LEARNING.add_mistake, symptom, body.get("cause") or "",
+        body.get("fix") or "", body.get("tags") or [],
+        body.get("severity") or "medium")
+    return JSONResponse({"ok": bool(mistake_id), "id": mistake_id})
+
+
+@app.post("/api/learning/fact")
+async def learning_set_fact(request: Request) -> JSONResponse:
+    body = await request.json()
+    key = (body.get("key") or "").strip()
+    if not key:
+        return JSONResponse({"error": "key required"}, status_code=400)
+    fact_id = await asyncio.to_thread(
+        LEARNING.set_fact, key, str(body.get("value") or ""),
+        body.get("kind") or "preference", body.get("tags") or [],
+        float(body.get("confidence", 0.8) or 0.8), "hud")
+    return JSONResponse({"ok": bool(fact_id), "id": fact_id})
+
+
+@app.post("/api/learning/mine")
+async def learning_mine() -> JSONResponse:
+    return JSONResponse(await asyncio.to_thread(LEARNING.mine))
+
+
+@app.post("/api/learning/sysinfo")
+async def learning_sysinfo() -> JSONResponse:
+    return JSONResponse(await asyncio.to_thread(LEARNING.system_facts))
+
+
+@app.post("/api/learning/prune")
+async def learning_prune() -> JSONResponse:
+    return JSONResponse(await asyncio.to_thread(LEARNING.prune))
+
+
+@app.post("/api/learning/delete")
+async def learning_delete(request: Request) -> JSONResponse:
+    body = await request.json()
+    ok = await asyncio.to_thread(LEARNING.delete, body.get("kind") or "",
+                                 body.get("key") or "")
+    return JSONResponse({"ok": bool(ok)})
+
+
+@app.get("/api/learning/export")
+async def learning_export() -> JSONResponse:
+    return JSONResponse(await asyncio.to_thread(LEARNING.store.export_data))
+
+
 @app.post("/api/summon")
 async def summon(request: Request) -> JSONResponse:
     """Broadcast a holographic media panel to all connected HUD clients.
@@ -1299,6 +1525,8 @@ async def hud_config() -> JSONResponse:
         "hermes_url": hermes.get("base_url") or "",
         "conversation": hermes.get("conversation") or "",
         "pitch_semitones": VOICE_SETTINGS.get("pitch_semitones", 0.0),
+        "learning_enabled": bool(LEARNING.enabled),
+        "learning_brief_chars": int((LEARNING.cfg.get("context") or {}).get("max_chars", 1500)),
     })
 
 
@@ -1633,6 +1861,34 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             _, stripped = wake.check(transcript, None, time.time())
         else:
             stripped = transcript
+
+        feedback = detect_feedback(stripped)
+        if feedback is not None:
+            result = await asyncio.to_thread(
+                LEARNING.feedback_last, conn.conversation,
+                feedback.get("verdict", "positive"), feedback.get("note", ""))
+            if result.get("ok"):
+                timing.skip_learning = True
+                print(f"LEARNING feedback via voice: {feedback} -> {result}", flush=True)
+                confirm = ("Zapomnjeno, šefe — to je zdaj pravi postopek."
+                           if feedback.get("verdict") == "positive"
+                           else "Prav, šefe — zapomnila sem si, da tako ne deluje.")
+                await _speak_and_finish(ws, pipeline, conn, timing, confirm)
+                return
+            print(f"LEARNING feedback ignored (no previous episode): {result}", flush=True)
+
+        remember = detect_remember(stripped)
+        if remember is not None:
+            result = await asyncio.to_thread(
+                LEARNING.remember_last, conn.conversation, remember.get("note", ""))
+            if result.get("ok"):
+                timing.skip_learning = True
+                print(f"LEARNING remember via voice: {remember} -> {result}", flush=True)
+                await _speak_and_finish(ws, pipeline, conn, timing,
+                                        "Shranjeno, šefe — postopek sem si zapomnila.")
+                return
+            print(f"LEARNING remember ignored (no previous episode): {result}", flush=True)
+
         vol_args = _volume_request(stripped) if said_wake else None
         if vol_args is not None:
             r = await asyncio.to_thread(subprocess.run, ["mia-volume", *vol_args],
@@ -1737,6 +1993,13 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
     finally:
         timing.total_done_monotonic = timing.total_done_monotonic or time.perf_counter()
         pipeline.log_turn(timing)
+        try:
+            if (timing.transcript and not timing.skip_learning
+                    and not any(str(e).startswith("ignored:") for e in timing.errors)):
+                LEARNING.record_turn(timing, conn.conversation, timing.transcript,
+                                     source="voice")
+        except Exception as exc:
+            print(f"learning record_turn skipped: {exc}", flush=True)
         conn.timing = None
         conn.current_run_id = None
         conn.is_speaking = False

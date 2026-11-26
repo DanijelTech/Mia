@@ -31,6 +31,7 @@
 #   --open                start Mia (if needed) and open the HUD in the browser
 #   --service-dir DIR     where unit/plist files go (default: system-dependent)
 #   --hermes-env PATH     env file for the HUD token (default: ~/.hermes/.env)
+#   --hermes-home PATH    Hermes home for skills/plugins (default: ~/.hermes)
 #
 set -uo pipefail
 
@@ -56,6 +57,7 @@ ASSUME_YES=0
 DRY_RUN=0
 SERVICE_DIR=""
 HERMES_ENV=""
+HERMES_HOME="${HERMES_HOME:-}"
 PORT_TTS=8770
 
 while [ $# -gt 0 ]; do
@@ -79,6 +81,7 @@ while [ $# -gt 0 ]; do
     --open) DO_OPEN=1 ;;
     --service-dir) SERVICE_DIR="${2:-}"; shift ;;
     --hermes-env) HERMES_ENV="${2:-}"; shift ;;
+    --hermes-home) HERMES_HOME="${2:-}"; shift ;;
     --port-tts) PORT_TTS="${2:-}"; shift ;;
     -h|--help) sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
@@ -241,7 +244,9 @@ $PYTHON -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' \
   || die "Python 3.10+ required (found $PYV)"
 
 [ -n "$HERMES_ENV" ] || HERMES_ENV="$HOME/.hermes/.env"
+[ -n "$HERMES_HOME" ] || HERMES_HOME="$HOME/.hermes"
 info "hermes env: $HERMES_ENV"
+info "hermes home: $HERMES_HOME"
 
 if [ "$DRY_RUN" = 0 ] && [ "$DO_DEPS" = 1 ] && ! confirm "Install Python packages into $($PYTHON -c 'import sys;print(sys.prefix)')?"; then
   warn "package installation skipped by user"
@@ -277,7 +282,7 @@ pip_install() {
 }
 
 # ------------------------------------------------------------------- 1. deps
-say "1/7 Python dependencies"
+say "1/8 Python dependencies"
 pip_install fastapi uvicorn requests pyyaml numpy
 pip_install psutil || warn "psutil missing: the HUD machines panel will be degraded"
 if [ "$DO_STT_DEPS" = 1 ]; then
@@ -337,7 +342,7 @@ PY
 fi
 
 # -------------------------------------------------------------- 2. voices
-say "2/7 Local voice models"
+say "2/8 Local voice models"
 if [ "$DO_VOICE" = 1 ] && [ "$VOICE_LANG" != "none" ]; then
   run bash "$REPO_DIR/server/scripts/get-voice.sh" "$VOICE_LANG" || warn "voice download failed (offline? copy voices/ manually)"
 else
@@ -345,7 +350,7 @@ else
 fi
 
 # ---------------------------------------------------------------- 3. config
-say "3/7 Configuration"
+say "3/8 Configuration"
 CFG="$SERVER_DIR/config/server.yaml"
 if [ -f "$CFG" ]; then
   info "keeping existing $CFG"
@@ -407,7 +412,7 @@ PY
 fi
 
 # ------------------------------------------------------------------ 4. certs
-say "4/7 TLS certificate (required for the browser microphone)"
+say "4/8 TLS certificate (required for the browser microphone)"
 if [ "$DO_CERT" = 1 ]; then
   if [ -f "$SERVER_DIR/certs/cert.pem" ]; then
     LAN="$(lan_ip)"
@@ -429,7 +434,7 @@ else
 fi
 
 # ------------------------------------------------------------------ 5. token
-say "5/7 HUD access token"
+say "5/8 HUD access token"
 if [ "$DO_TOKEN" = 1 ]; then
   if [ -f "$HERMES_ENV" ] && grep -qE '^(MIA_HUD_TOKEN|JARVIS_HUD_TOKEN)=' "$HERMES_ENV"; then
     info "token already present in $HERMES_ENV — keeping it"
@@ -469,7 +474,7 @@ if [ -f "$HERMES_ENV" ] && ! grep -qE '^API_SERVER_KEY=' "$HERMES_ENV"; then
 fi
 
 # ---------------------------------------------------------------- 6. service
-say "6/7 Service"
+say "6/8 Service"
 OS="$(uname -s)"
 if [ "$DO_SERVICE" = 0 ]; then
   info "skip service (--no-service)"
@@ -583,8 +588,82 @@ PY
   fi
 fi
 
-# --------------------------------------------------------------- 7. verify
-say "7/7 Verification"
+# ------------------------------------------- 7. skills, tools and memory
+say "7/8 Skills, tools and learning memory"
+if [ "$MODE" = "system" ] && [ "$(id -u)" = "0" ]; then
+  BIN_DIR="/usr/local/bin"
+else
+  BIN_DIR="$HOME/.local/bin"
+fi
+[ "$DRY_RUN" = 1 ] || mkdir -p "$BIN_DIR" "$HOME/.config/mia" "$HOME/.local/state/mia"
+if [ "$DRY_RUN" = 0 ]; then
+  printf '%s\n' "$REPO_DIR" > "$HOME/.config/mia/home"
+  add_file "$HOME/.config/mia/home"
+  info "repository pointer: $HOME/.config/mia/home -> $REPO_DIR"
+fi
+
+# command-line tools (windows, volume, artists, learning, skills, control)
+for tool in mia-open mia-close mia-volume mia-artists mia-learn mia-skill mia-ctl; do
+  src="$REPO_DIR/skills/mia-companion/bin/$tool"
+  [ -f "$src" ] || continue
+  run install -m 0755 "$src" "$BIN_DIR/$tool"
+  add_file "$BIN_DIR/$tool"
+done
+info "tools installed into $BIN_DIR"
+case ":$PATH:" in
+  *":$BIN_DIR:"*) ;;
+  *) warn "$BIN_DIR is not on PATH — add it to your shell profile" ;;
+esac
+
+# control policy: created once, never overwritten
+if [ -f "$HOME/.config/mia/control.json" ]; then
+  info "control policy exists — keeping $HOME/.config/mia/control.json"
+else
+  run cp "$SERVER_DIR/config/control.example.json" "$HOME/.config/mia/control.json"
+  add_file "$HOME/.config/mia/control.json"
+  info "control policy: $HOME/.config/mia/control.json"
+fi
+
+# skill tree into the active Hermes home
+if [ -d "$REPO_DIR/skills" ]; then
+  if [ "$DRY_RUN" = 0 ]; then
+    MIA_HOME="$REPO_DIR" "$PYTHON" "$REPO_DIR/skills/mia-companion/bin/mia-skill" \
+      install "$HERMES_HOME" >/dev/null 2>&1 \
+      || warn "skill installation failed — run: mia-skill install $HERMES_HOME"
+  else
+    printf '    [dry-run] would install skills into %s/skills\n' "$HERMES_HOME"
+  fi
+  for d in "$HERMES_HOME"/skills/mia-*; do
+    [ -d "$d" ] || continue
+    add_dir "$d"
+    while IFS= read -r f; do add_file "$f"; done < <(find "$d" -type f 2>/dev/null)
+  done
+  info "skills installed into $HERMES_HOME/skills (restart the gateway to pick them up)"
+else
+  warn "skills/ not found — skipping skill installation"
+fi
+
+# Hermes plugin: first-class memory tools (memory_brief/search/feedback/...)
+if [ -d "$REPO_DIR/hermes-plugin/mia_learning" ]; then
+  if [ "$DRY_RUN" = 0 ]; then
+    run mkdir -p "$HERMES_HOME/plugins/mia_learning"
+    run cp -R "$REPO_DIR/hermes-plugin/mia_learning/." "$HERMES_HOME/plugins/mia_learning/"
+    add_dir "$HERMES_HOME/plugins/mia_learning"
+    while IFS= read -r f; do add_file "$f"; done < <(find "$HERMES_HOME/plugins/mia_learning" -type f 2>/dev/null)
+    info "plugin mia_learning copied — enable with: hermes plugins enable mia_learning"
+  else
+    printf '    [dry-run] would copy the mia_learning plugin into %s/plugins\n' "$HERMES_HOME"
+  fi
+fi
+
+# seed the machine inventory once (best effort; the server refreshes it too)
+if [ "$DRY_RUN" = 0 ] && [ -x "$BIN_DIR/mia-learn" ]; then
+  MIA_HOME="$REPO_DIR" "$BIN_DIR/mia-learn" sysinfo >/dev/null 2>&1 \
+    || warn "could not seed the machine inventory (not fatal)"
+fi
+
+# --------------------------------------------------------------- 8. verify
+say "8/8 Verification"
 write_manifest
 SERVICE_OK=""
 HUD_TOKEN_VAL="$(grep -hE '^(MIA_HUD_TOKEN|JARVIS_HUD_TOKEN)=' "$HERMES_ENV" 2>/dev/null \
@@ -636,6 +715,9 @@ $([ "$DRY_RUN" = 1 ] && printf '\033[1;33mDry run complete — nothing was chang
   service     ${SERVICE_KIND:-none}${SERVICE_DIR:+ ($SERVICE_DIR)}${SERVICE_OK:+ [running: $SERVICE_OK]}
   tts engine  $TTS_ENGINE
   tts deps    $TTS_DEPS
+  learning    ${BIN_DIR:-$HOME/.local/bin}/mia-learn  ·  $HOME/.local/state/mia/learning.db
+  control     $HOME/.config/mia/control.json  ·  $HOME/.local/state/mia/control-audit.jsonl
+  skills      $HERMES_HOME/skills (7 skills, validated)
   stt device  $(grep -m1 -E '^  device:' "$CFG" 2>/dev/null | awk '{print $2}')$( [ "$(grep -m1 -E '^  device:' "$CFG" 2>/dev/null | awk '{print $2}')" = "cpu" ] && echo " (GPU free for the LLM)" || echo " — if your LLM launcher says 'GPU busy', run: ./install.sh --stt-device cpu" )
   HUD URL     $(hud_url)
 

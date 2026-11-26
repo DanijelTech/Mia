@@ -4,6 +4,14 @@
 # forwards --app windows into the running instance without keeping the argv).
 REG="$HOME/.cache/mia-windows"
 [ -n "$1" ] || { echo "usage: mia-open <url>" >&2; exit 2; }
+
+# best-effort audit so the learning loop sees agent-driven opens too
+audit_open() {
+  command -v python3 >/dev/null 2>&1 || return 0
+  state="${XDG_STATE_HOME:-$HOME/.local/state}/mia"
+  mkdir -p "$state" 2>/dev/null || return 0
+  python3 -c 'import json,os,socket,sys,time; print(json.dumps({"ts":time.time(),"action":"open","args":[sys.argv[1]],"ok":True,"rc":0,"ms":0,"error":"","summary":"opened","host":socket.gethostname(),"user":os.environ.get("USER",""),"cwd":os.getcwd(),"desktop":os.environ.get("XDG_SESSION_TYPE","")}))' "$1" >> "$state/control-audit.jsonl" 2>/dev/null || true
+}
 mkdir -p "$(dirname "$REG")"; touch "$REG"
 
 before=$(xdotool search --onlyvisible --class chrome 2>/dev/null)
@@ -17,6 +25,7 @@ for w in $after; do
 done
 # deterministic open-history: the agent reads this for "what did I play before"
 printf '%s\t%s\n' "$(date '+%Y-%m-%d %H:%M')" "$1" >> "$HOME/.cache/mia-history.log"
+audit_open "$1"
 if [ -n "$wid" ]; then
     # prune entries whose windows no longer exist, then register the new one
     tmp="$REG.tmp"; : > "$tmp"

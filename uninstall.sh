@@ -109,13 +109,19 @@ fi
 
 # ----------------------------------------------------------- path validation
 ALLOWED_PREFIXES=("/etc/systemd/system" "/etc/systemd/user" "/var/lib/mia"
-                  "$HOME" "$REPO_DIR")
+                  "/usr/local/bin" "$HOME" "$REPO_DIR")
 [ -n "${MF_SVC_DIR:-}" ] && ALLOWED_PREFIXES+=("$MF_SVC_DIR")
 
 path_ok() {
   local p="$1" prefix
   case "$p" in ""|"/"|"/etc"|"/usr"|"/var"|"$HOME"|"$REPO_DIR"|"$REPO_DIR/server") return 1 ;; esac
-  case "$p" in "$HOME"/.hermes|"$HOME"/.hermes/*) return 1 ;; esac   # Hermes credentials live there
+  case "$p" in
+    # Hermes credentials live there — never touch them, except the Mia skills
+    # this installer copied (and only those).
+    "$HOME"/.hermes/skills/mia-*|"$HOME"/.hermes/skills/mia-*/*) ;;
+    "$HOME"/.hermes/plugins/mia_*|"$HOME"/.hermes/plugins/mia_*/*) ;;
+    "$HOME"/.hermes|"$HOME"/.hermes/*) return 1 ;;
+  esac
   for prefix in "${ALLOWED_PREFIXES[@]}"; do
     [ -n "$prefix" ] || continue
     case "$p" in "$prefix"/*) return 0 ;; esac

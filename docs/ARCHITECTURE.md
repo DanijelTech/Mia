@@ -30,6 +30,35 @@ Zakaj Sessions API in ne `/v1/responses` ali `/v1/runs`: v Hermesu v0.16 so seje
 edina površina, ki v enem toku združuje imenovan trajni spomin, ID krogov,
 dogodke orodij in dogodke odobritev.
 
+## Učenje, spomin in drevo znanja
+
+Pred vsakim krogom strežnik sestavi omejen `[MIA SPOMIN …]` brief iz lokalne
+SQLite baze (`server/mia_core/`): relevantne navade, recepti, anti-vzorci in
+dejstva. Brief se doda k pozivu Hermesa; dolžina je omejena s
+`learning.context.max_chars` (privzeto 1500). Po krogu se zabeleži epizoda
+(zahteva, odgovor, orodja, izid, trajanje, napake, entitete); uspešne epizode
+z orodji postanejo recepti, neuspešne pa anti-vzorci.
+
+Kratke fraze »tako je / ni prav / zapomni si postopek« strežnik ujame
+deterministično in jih uporabi na zadnji epizodi, preden dosežejo Hermesa.
+Vsakih `auto_mine_interval_seconds` (900 s) se izvede izkop navad, uvoz
+`control-audit.jsonl` in osvežitev indeksa veščin. Učenje je odporno na
+napake: če baza ali drevo nista berljiva, glasovna zanka teče naprej.
+
+Drevo veščin (`skills/`) je eksplicitno: `mia-companion` je koren, otroci
+(`mia-desktop`, `mia-learning`, `mia-music`, `mia-browser`,
+`mia-productivity`, `mia-diagnostics`) pa lastijo posamezna področja.
+`mia-skill validate` preveri imena, starše in `references/`.
+
+## Nadzor računalnika
+
+`mia-ctl` (v `skills/mia-companion/bin/`) je edini priporočeni vmesnik za
+dejanja na stroju. Vsak klic preveri politiko
+(`~/.config/mia/control.json`), izvede ukaz kot seznam argumentov (brez
+`shell=True`) in zapiše revizijo v
+`~/.local/state/mia/control-audit.jsonl`. Revizija se uvozi v učenje, zato
+so tudi nadzorna dejanja del navad in receptov.
+
 ## WebSocket protokol (glasovni odjemalci)
 
 Odjemalec → strežnik (JSON + binarno):
@@ -62,6 +91,15 @@ approval_request{data,run_id} · error · done{timing}
 | `/hud/` | HUD (statičen, ena datoteka) |
 | `/api/hermes/{path}` | **allowlist** proxy do Hermes API, vstavi bearer ključ (GET: health, capabilities, skills, toolsets, jobs, sessions; POST: samo v1/responses) |
 | `/api/chat` | tipkani krog klepeta v skupni glasovni seji |
+| `/api/learning/status` | stanje spomina, baze in drevesa veščin |
+| `/api/learning/tree` | drevo veščin (flat + nested + health) |
+| `/api/learning/brief` | točen brief, ki bi ga model dobil za zahtevo |
+| `/api/learning/search` | iskanje po epizodah, receptih, napakah, dejstvih |
+| `/api/learning/habits`, `/recipes`, `/mistakes`, `/facts`, `/episodes`, `/events` | pregled spomina |
+| `/api/learning/feedback` | ✓/✗ na epizodo (pozitivno/negativno) |
+| `/api/learning/remember` | shrani zadnjo epizodo kot recept |
+| `/api/learning/recipe`, `/mistake`, `/fact` | ročni vnos |
+| `/api/learning/mine`, `/prune`, `/sysinfo`, `/delete`, `/export` | vzdrževanje |
 | `/api/machines` | psutil statistika gostitelja + oddaljeni delavci iz konfiguracije |
 | `/api/usage` | lokalno štetje žetonov/znakov; kvota ElevenLabs le, kadar je TTS v oblaku |
 | `/api/hud-config` | stikala HUD-a: `allow_external_media`, jezik odgovorov, `tts_provider` |

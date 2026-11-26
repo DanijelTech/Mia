@@ -1,0 +1,26 @@
+# Mia skill tree — declared structure and ownership.
+#
+# A skill is a directory with SKILL.md. `parents` in the front matter (or
+# directory nesting) defines the tree. This file is validated by:
+#   mia-skill validate
+# and loaded into the HUD knowledge page by:
+#   mia-learn mine
+version: 1
+root: mia-companion
+
+skills:
+  - mia-companion
+  - mia-desktop
+  - mia-learning
+  - mia-music
+  - mia-browser
+  - mia-productivity
+  - mia-diagnostics
+
+# Rules the validator and the agent both follow:
+rules:
+  - "Every skill has a unique name and a one-sentence description."
+  - "Long procedures live in references/, not in SKILL.md."
+  - "A child skill owns one domain; the root owns persona and routing."
+  - "Destructive actions require explicit confirmation."
+  - "Never store secrets in skills, memory, recipes or audit logs."

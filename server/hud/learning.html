@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MIA // ZNANJE</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+:root{
+  --bg:#050b14; --panel:#081523cc; --line:#0e2c40;
+  --cyan:#00e5ff; --cyan-dim:#0a7f96; --teal:#19f0d8;
+  --amber:#ffb300; --red:#ff4d5e; --txt:#9fd8e8; --txt-dim:#4d7d92;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%}
+body{
+  background:radial-gradient(ellipse at 50% 0%, #0a1a2c 0%, var(--bg) 60%);
+  color:var(--txt); font-family:'Rajdhani',sans-serif; padding:14px 18px 30px;
+}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  border:1px solid var(--line);background:var(--panel);padding:10px 14px;
+  clip-path:polygon(0 0,100% 0,100% 70%,calc(100% - 14px) 100%,14px 100%,0 70%);}
+header h1{font-family:'Orbitron';font-size:15px;letter-spacing:6px;color:var(--cyan)}
+header .sub{font-size:11px;letter-spacing:2px;color:var(--txt-dim)}
+.btns{display:flex;gap:6px;flex-wrap:wrap}
+button{background:#0a2435;color:var(--cyan);border:1px solid var(--cyan-dim);
+  padding:6px 11px;font-family:'Orbitron';font-size:10px;letter-spacing:1.5px;cursor:pointer}
+button:hover{background:#0e3448}
+button.danger{color:var(--red);border-color:#5c1f27}
+button.ghost{color:var(--txt-dim);border-color:var(--line)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:12px 0}
+.stat{border:1px solid var(--line);background:var(--panel);padding:10px 12px}
+.stat b{display:block;font-family:'Orbitron';font-size:19px;color:var(--teal)}
+.stat span{font-size:11px;letter-spacing:1.5px;color:var(--txt-dim)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 14px}
+.tab{padding:6px 12px;border:1px solid var(--line);background:#06111d;cursor:pointer;
+  font-family:'Orbitron';font-size:10px;letter-spacing:1.5px;color:var(--txt-dim)}
+.tab.on{color:var(--cyan);border-color:var(--cyan-dim);box-shadow:0 0 8px #00e5ff33}
+.pane{display:none}
+.pane.on{display:block}
+.card{border:1px solid var(--line);background:var(--panel);padding:10px 12px;margin-bottom:8px;
+  clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px));}
+.card h3{font-family:'Orbitron';font-size:11px;letter-spacing:2px;color:var(--cyan);
+  margin-bottom:5px;display:flex;justify-content:space-between;gap:8px}
+.card .meta{font-size:11.5px;color:var(--txt-dim);margin-bottom:4px}
+.card .steps{font-size:13px;color:#cfeefb;word-break:break-word}
+.card .fix{font-size:12.5px;color:var(--teal);margin-top:3px}
+.bar{height:5px;background:#06101c;border:1px solid var(--line);margin-top:6px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan-dim),var(--teal))}
+.row{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.tag{display:inline-block;font-size:10px;border:1px solid var(--line);padding:1px 5px;
+  margin:1px 3px 1px 0;color:var(--txt-dim)}
+input,textarea,select{background:#06101c;border:1px solid var(--line);color:#cfeefb;
+  padding:7px 9px;font-family:'Rajdhani';font-size:13.5px;outline:none}
+input:focus,textarea:focus,select:focus{border-color:var(--cyan-dim)}
+textarea{width:100%;min-height:64px;resize:vertical}
+.searchbar{display:flex;gap:8px;margin-bottom:10px}
+.searchbar input{flex:1}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{text-align:left;padding:5px 7px;border-bottom:1px solid #0b2233;vertical-align:top}
+th{font-family:'Orbitron';font-size:9.5px;letter-spacing:1.5px;color:var(--cyan);font-weight:400}
+tr:hover td{background:#081523}
+.ok{color:var(--teal)} .warn{color:var(--amber)} .err{color:var(--red)} .dim{color:var(--txt-dim)}
+.tree{list-style:none;padding-left:16px;border-left:1px dashed #123349;margin-left:4px}
+.tree li{margin:4px 0}
+.tree .name{font-family:'Orbitron';font-size:11px;letter-spacing:1px;color:var(--cyan)}
+.tree .desc{font-size:12px;color:var(--txt-dim)}
+.brief{white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:12px;
+  background:#040c15;border:1px solid var(--line);padding:10px;color:#bfe9f7;max-height:320px;overflow:auto}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media(max-width:800px){.grid2{grid-template-columns:1fr}header h1{letter-spacing:3px}}
+.hint{font-size:11.5px;color:var(--txt-dim);margin:6px 0 10px}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>ZNANJE</h1>
+    <div class="sub">TRAJNI SPOMIN · NAVADE · RECEPTI · NAPAKE · DREVO VEŠČIN</div>
+  </div>
+  <div class="btns">
+    <button id="mineBtn">OSVEŽI SPOMIN</button>
+    <button id="sysBtn" class="ghost">SISTEM</button>
+    <button id="exportBtn" class="ghost">IZVOZ</button>
+    <button id="closeBtn" class="ghost">✕ ZAPRI</button>
+  </div>
+</header>
+
+<div class="stats" id="stats">
+  <div class="stat"><b id="sEp">—</b><span>EPIZODE</span></div>
+  <div class="stat"><b id="sRec">—</b><span>RECEPTI</span></div>
+  <div class="stat"><b id="sMis">—</b><span>NAPAKE</span></div>
+  <div class="stat"><b id="sHab">—</b><span>NAVADE</span></div>
+  <div class="stat"><b id="sFac">—</b><span>DEJSTVA</span></div>
+  <div class="stat"><b id="sSki">—</b><span>VEŠČINE</span></div>
+  <div class="stat"><b id="sSize">—</b><span>VELIKOST</span></div>
+</div>
+
+<div class="tabs">
+  <div class="tab on" data-p="overview">PREGLED</div>
+  <div class="tab" data-p="tree">DREVO VEŠČIN</div>
+  <div class="tab" data-p="habits">NAVADE</div>
+  <div class="tab" data-p="recipes">RECEPTI</div>
+  <div class="tab" data-p="mistakes">NAPAKE</div>
+  <div class="tab" data-p="episodes">DNEVNIK</div>
+  <div class="tab" data-p="search">ISKANJE</div>
+  <div class="tab" data-p="add">DODAJ</div>
+</div>
+
+<div class="pane on" id="pane-overview">
+  <div class="grid2">
+    <div class="card">
+      <h3>KAJ BI MIA ZDAJ VEDELA <span class="dim" id="briefCount"></span></h3>
+      <div class="searchbar">
+        <input id="briefQ" placeholder="npr. odpri mi google …">
+        <button id="briefBtn">POKAŽI</button>
+      </div>
+      <div class="brief" id="briefBox">—</div>
+    </div>
+    <div class="card">
+      <h3>ZADNJE AKTIVNOSTI</h3>
+      <div id="events">nalaganje …</div>
+    </div>
+  </div>
+  <div class="grid2" style="margin-top:8px">
+    <div class="card"><h3>NAJMOČNEJŠE NAVADE</h3><div id="topHabits">—</div></div>
+    <div class="card"><h3>NAJBOLJ ZANESLJIVI RECEPTI</h3><div id="topRecipes">—</div></div>
+  </div>
+</div>
+
+<div class="pane" id="pane-tree">
+  <div class="hint" id="treeHint">—</div>
+  <div id="treeBox">nalaganje …</div>
+</div>
+
+<div class="pane" id="pane-habits">
+  <div class="hint">Navade se same izkopljejo iz ponavljajočih se dejanj. Zanesljivost raste z dokazi in upada, ko navada preneha.</div>
+  <div id="habitsBox">nalaganje …</div>
+</div>
+
+<div class="pane" id="pane-recipes">
+  <div class="hint">Recept = preverjen postopek. Mia ga uporabi, ko se zahteva dovolj ujema. Neuspeh zniža zaupanje.</div>
+  <div id="recipesBox">nalaganje …</div>
+</div>
+
+<div class="pane" id="pane-mistakes">
+  <div class="hint">Napake, ki se ne smejo ponoviti. Vsak vnos ima vzrok in rešitev.</div>
+  <div id="mistakesBox">nalaganje …</div>
+</div>
+
+<div class="pane" id="pane-episodes">
+  <div class="searchbar">
+    <select id="epSource"><option value="">vsi viri</option><option value="voice">glas</option><option value="chat">klepet</option><option value="control">nadzor</option><option value="cli">cli</option></select>
+    <select id="epOutcome"><option value="">vsi izidi</option><option value="success">uspeh</option><option value="failure">napaka</option><option value="partial">prekinjeno</option></select>
+    <button id="epBtn">OSVEŽI</button>
+  </div>
+  <div id="episodesBox">nalaganje …</div>
+</div>
+
+<div class="pane" id="pane-search">
+  <div class="searchbar">
+    <input id="searchQ" placeholder="išči po spominu, receptih, napakah, dejstvih …">
+    <button id="searchBtn">IŠČI</button>
+  </div>
+  <div id="searchBox">—</div>
+</div>
+
+<div class="pane" id="pane-add">
+  <div class="grid2">
+    <div class="card">
+      <h3>DODAJ DEJSTVO</h3>
+      <div class="hint">Trajna nastavitev ali oseba. Ključ naj bo kratek in stabilen.</div>
+      <input id="factKey" placeholder="pref.browser" style="width:100%;margin-bottom:6px">
+      <input id="factVal" placeholder="firefox" style="width:100%;margin-bottom:6px">
+      <button id="factBtn">SHRANI DEJSTVO</button>
+    </div>
+    <div class="card">
+      <h3>DODAJ NAPAKO</h3>
+      <div class="hint">Kaj se je zalomilo, zakaj, in kaj narediti namesto tega.</div>
+      <input id="misSym" placeholder="simptom" style="width:100%;margin-bottom:6px">
+      <input id="misCause" placeholder="vzrok" style="width:100%;margin-bottom:6px">
+      <input id="misFix" placeholder="rešitev" style="width:100%;margin-bottom:6px">
+      <button id="misBtn">SHRANI NAPAKO</button>
+    </div>
+  </div>
+  <div class="card" style="margin-top:8px">
+    <h3>DODAJ RECEPT</h3>
+    <div class="hint">En korak na vrstico. Uporabi ga, ko je postopek nelinearen in ga je vredno ponoviti.</div>
+    <input id="recTitle" placeholder="naslov recepta" style="width:100%;margin-bottom:6px">
+    <textarea id="recSteps" placeholder="mia-ctl windows focus &quot;Chrome&quot;&#10;mia-open https://…"></textarea>
+    <button id="recBtn" style="margin-top:6px">SHRANI RECEPT</button>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt=n=>n==null?"—":(n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(1)+"k":String(n));
+const bytes=n=>n==null?"—":n>=1024**2?(n/1024**2).toFixed(1)+" MB":n>=1024?(n/1024).toFixed(0)+" kB":n+" B";
+const when=t=>{if(!t)return"—";const d=new Date(t*1000);return d.toLocaleString("sl-SI")};
+
+async function get(path){const r=await fetch(path);if(!r.ok)throw new Error(r.status);return r.json()}
+async function post(path,body){const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});return r.json()}
+
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===t));
+  document.querySelectorAll(".pane").forEach(p=>p.classList.toggle("on",p.id==="pane-"+t.dataset.p));
+  if(t.dataset.p==="tree")loadTree();
+  if(t.dataset.p==="habits")loadHabits();
+  if(t.dataset.p==="recipes")loadRecipes();
+  if(t.dataset.p==="mistakes")loadMistakes();
+  if(t.dataset.p==="episodes")loadEpisodes();
+});
+
+$("closeBtn").onclick=()=>{try{window.parent.document.getElementById("viewerClose").click()}catch{window.close()}};
+$("mineBtn").onclick=async()=>{ $("mineBtn").textContent="…"; try{await post("/api/learning/mine");}catch{} await loadAll(); $("mineBtn").textContent="OSVEŽI SPOMIN"; };
+$("sysBtn").onclick=async()=>{ $("sysBtn").textContent="…"; try{await post("/api/learning/sysinfo");}catch{} $("sysBtn").textContent="SISTEM"; loadAll(); };
+$("exportBtn").onclick=()=>{ window.open("/api/learning/export","_blank") };
+$("briefBtn").onclick=async()=>{
+  try{const q=$("briefQ").value.trim();const j=await get("/api/learning/brief?request="+encodeURIComponent(q));
+    $("briefBox").textContent=j.text||"(prazen spomin)";$("briefCount").textContent=(j.chars||0)+" / "+(j.max_chars||0)+" znakov";
+  }catch(e){$("briefBox").textContent="napaka: "+e.message}
+};
+$("searchBtn").onclick=async()=>{
+  const q=$("searchQ").value.trim(); if(!q)return;
+  try{const j=await get("/api/learning/search?q="+encodeURIComponent(q)+"&limit=50");
+    $("searchBox").innerHTML=(j.results||[]).map(r=>`<div class="card"><div class="meta">${esc(r.kind)} #${esc(r.ref)}</div><div class="steps">${esc(r.text)}</div></div>`).join("")||"<div class='hint'>ni zadetkov</div>";
+  }catch(e){$("searchBox").textContent="napaka: "+e.message}
+};
+$("searchQ").addEventListener("keydown",e=>{if(e.key==="Enter")$("searchBtn").click()});
+$("briefQ").addEventListener("keydown",e=>{if(e.key==="Enter")$("briefBtn").click()});
+$("epBtn").onclick=loadEpisodes;
+$("epSource").onchange=loadEpisodes; $("epOutcome").onchange=loadEpisodes;
+
+$("factBtn").onclick=async()=>{
+  const key=$("factKey").value.trim(), value=$("factVal").value.trim();
+  if(!key||!value)return;
+  await post("/api/learning/fact",{key,value,kind:"preference"});
+  $("factKey").value="";$("factVal").value=""; loadAll();
+};
+$("misBtn").onclick=async()=>{
+  const symptom=$("misSym").value.trim(); if(!symptom)return;
+  await post("/api/learning/mistake",{symptom,cause:$("misCause").value.trim(),fix:$("misFix").value.trim(),severity:"high"});
+  $("misSym").value="";$("misCause").value="";$("misFix").value=""; loadAll();
+};
+$("recBtn").onclick=async()=>{
+  const title=$("recTitle").value.trim(); if(!title)return;
+  const steps=$("recSteps").value.split("\n").map(s=>s.trim()).filter(Boolean).map(s=>({action:s}));
+  await post("/api/learning/recipe",{title,steps,notes:"ročno dodano v HUD"});
+  $("recTitle").value="";$("recSteps").value=""; loadAll();
+};
+
+async function del(kind,key){
+  if(!confirm("Izbrišem ta vnos iz spomina?"))return;
+  await post("/api/learning/delete",{kind,key:String(key)});
+  loadAll();
+}
+
+async function loadStats(){
+  try{
+    const s=await get("/api/learning/status"); const db=s.db||{}, sk=s.skills||{};
+    $("sEp").textContent=fmt(db.episodes); $("sRec").textContent=fmt(db.recipes);
+    $("sMis").textContent=fmt(db.mistakes); $("sHab").textContent=fmt(db.habits);
+    $("sFac").textContent=fmt(db.facts); $("sSki").textContent=fmt(sk.skills);
+    $("sSize").textContent=bytes(db.db_size_bytes);
+  }catch{}
+}
+
+async function loadOverview(){
+  try{
+    const ev=await get("/api/learning/events?limit=8");
+    $("events").innerHTML=(ev.events||[]).map(e=>`<div class="row"><span>${esc(e.kind)}</span><span class="dim">${esc(when(e.ts))}</span></div>`).join("")||"<div class='hint'>—</div>";
+  }catch{$("events").textContent="—"}
+  try{
+    const h=await get("/api/learning/habits?limit=6&min_confidence=0.3");
+    $("topHabits").innerHTML=(h.habits||[]).map(x=>`<div class="card"><div class="row"><span>${esc(x.subject)}</span><b class="ok">${Math.round((x.confidence||0)*100)}%</b></div><div class="meta">${esc(x.kind)} · ${esc((x.detail||{}).routine||("×"+(x.detail||{}).count||x.evidence))}</div><div class="bar"><i style="width:${Math.round((x.confidence||0)*100)}%"></i></div></div>`).join("")||"<div class='hint'>še ni dovolj dokazov</div>";
+  }catch{$("topHabits").textContent="—"}
+  try{
+    const r=await get("/api/learning/recipes?limit=5");
+    $("topRecipes").innerHTML=(r.recipes||[]).map(x=>`<div class="card"><h3>${esc(x.title||x.key)}<span class="ok">${Math.round((x.confidence||0)*100)}%</span></h3><div class="meta">✓${x.success_count||0} · ✗${x.fail_count||0}</div></div>`).join("")||"<div class='hint'>še ni receptov</div>";
+  }catch{$("topRecipes").textContent="—"}
+}
+
+function renderTree(nodes){
+  if(!nodes||!nodes.length)return "<div class='hint'>ni veščin</div>";
+  return "<ul class='tree'>"+nodes.map(n=>{
+    const issues=(n.health||[]).filter(h=>h.level==="error").length;
+    return `<li><div class="row"><span><span class="name">${esc(n.name)}</span> ${issues?'<span class="err">⚠</span>':''}</span><span class="dim">${esc(n.path)}</span></div><div class="desc">${esc(n.description)}</div>${(n.references||[]).length?`<div class="meta">${n.references.map(r=>`<span class="tag">${esc(r)}</span>`).join("")}</div>`:""}${renderTree(n.children)}</li>`;
+  }).join("")+"</ul>";
+}
+
+async function loadTree(){
+  try{
+    const t=await get("/api/learning/tree");
+    const s=t.summary||{};
+    $("treeHint").textContent=`${s.skills||0} veščin · ${s.references||0} referenc · ${s.errors||0} napak · ${s.warnings||0} opozoril`;
+    $("treeBox").innerHTML=renderTree(t.tree);
+  }catch(e){$("treeBox").textContent="napaka: "+e.message}
+}
+
+async function loadHabits(){
+  try{
+    const h=await get("/api/learning/habits?limit=100&min_confidence=0");
+    $("habitsBox").innerHTML=(h.habits||[]).map(x=>{
+      const d=x.detail||{};
+      return `<div class="card"><h3><span>${esc(x.subject)}</span><span class="ok">${Math.round((x.confidence||0)*100)}%</span></h3>
+      <div class="meta">${esc(x.kind)} · dokazi ×${esc(d.count||x.evidence)} · ${esc(d.routine||"")} ${x.pinned?"📌":""}</div>
+      ${(d.examples||[]).length?`<div class="meta">${d.examples.map(e=>`<span class="tag">${esc(e)}</span>`).join("")}</div>`:""}
+      <div class="bar"><i style="width:${Math.round((x.confidence||0)*100)}%"></i></div>
+      <div class="btns" style="margin-top:6px"><button class="danger" onclick="del('habit','${esc(x.key)}')">IZBRIŠI</button></div></div>`;
+    }).join("")||"<div class='hint'>še ni navad — zaženi OSVEŽI SPOMIN</div>";
+  }catch(e){$("habitsBox").textContent="napaka: "+e.message}
+}
+
+async function loadRecipes(){
+  try{
+    const r=await get("/api/learning/recipes?limit=100");
+    $("recipesBox").innerHTML=(r.recipes||[]).map(x=>{
+      const steps=(x.steps||[]).map(s=>typeof s==="string"?s:(s.action||s.tool||JSON.stringify(s))).join(" → ");
+      return `<div class="card"><h3><span>${esc(x.title||x.key)}</span><span class="ok">${Math.round((x.confidence||0)*100)}%</span></h3>
+      <div class="meta">✓${x.success_count||0} · ✗${x.fail_count||0} · ${esc(when(x.last_used))}</div>
+      <div class="steps">${esc(steps||"—")}</div>
+      ${(x.tags||[]).length?`<div class="meta">${x.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join("")}</div>`:""}
+      <div class="btns" style="margin-top:6px"><button class="danger" onclick="del('recipe','${esc(x.key)}')">IZBRIŠI</button></div></div>`;
+    }).join("")||"<div class='hint'>še ni receptov</div>";
+  }catch(e){$("recipesBox").textContent="napaka: "+e.message}
+}
+
+async function loadMistakes(){
+  try{
+    const r=await get("/api/learning/mistakes?limit=100");
+    $("mistakesBox").innerHTML=(r.mistakes||[]).map(x=>`<div class="card">
+      <h3><span>${esc(x.symptom)}</span><span class="err">×${esc(x.hits)}</span></h3>
+      <div class="meta">${esc(x.severity||"")} · ${esc(when(x.last_seen))}</div>
+      <div class="meta">vzrok: ${esc(x.cause||"—")}</div>
+      <div class="fix">rešitev: ${esc(x.fix||"—")}</div>
+      <div class="btns" style="margin-top:6px"><button class="danger" onclick="del('mistake','${esc(x.key)}')">IZBRIŠI</button></div></div>`).join("")||"<div class='hint'>ni zabeleženih napak</div>";
+  }catch(e){$("mistakesBox").textContent="napaka: "+e.message}
+}
+
+async function loadEpisodes(){
+  try{
+    const src=$("epSource").value, out=$("epOutcome").value;
+    let q="/api/learning/episodes?limit=60";
+    if(src)q+="&source="+encodeURIComponent(src);
+    if(out)q+="&outcome="+encodeURIComponent(out);
+    const r=await get(q);
+    const mark={success:"✓",failure:"✗",partial:"~",unknown:"·"};
+    $("episodesBox").innerHTML=`<table><thead><tr><th>#</th><th>ČAS</th><th>VIR</th><th>ZAHTEVA</th><th>IZID</th><th></th></tr></thead><tbody>`+
+      (r.episodes||[]).map(e=>`<tr><td>${esc(e.id)}</td><td class="dim">${esc(when(e.ts))}</td><td>${esc(e.source)}</td>
+      <td>${esc((e.request||"").slice(0,110))}${e.error?`<div class="err" style="font-size:11px">${esc(String(e.error).slice(0,120))}</div>`:""}</td>
+      <td class="${e.outcome==="failure"?"err":e.outcome==="success"?"ok":"warn"}">${mark[e.outcome]||"·"} ${esc(e.outcome)}</td>
+      <td class="btns"><button onclick="fb(${e.id},'positive')" title="to je bilo prav">✓</button><button class="danger" onclick="fb(${e.id},'negative')" title="ni prav">✗</button></td></tr>`).join("")+
+      `</tbody></table>`;
+  }catch(e){$("episodesBox").textContent="napaka: "+e.message}
+}
+
+async function fb(id,verdict){
+  await post("/api/learning/feedback",{episode_id:id,verdict,note:"HUD"});
+  loadEpisodes(); loadStats();
+}
+
+async function loadAll(){ await Promise.all([loadStats(),loadOverview()]); }
+
+loadAll();
+setInterval(loadStats,30000);
+</script>
+</body>
+</html>

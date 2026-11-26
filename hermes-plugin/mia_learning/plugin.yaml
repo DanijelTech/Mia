@@ -1,0 +1,12 @@
+name: mia_learning
+version: 1.0.0
+description: Durable memory, habits, recipes, anti-patterns and the skill tree for Mia
+provides_tools:
+  - memory_brief
+  - memory_search
+  - memory_feedback
+  - memory_remember
+  - memory_fact
+  - memory_mistake
+  - memory_status
+  - skill_tree

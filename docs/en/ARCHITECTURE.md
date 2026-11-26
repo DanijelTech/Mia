@@ -30,6 +30,36 @@ Why the Sessions API and not `/v1/responses` or `/v1/runs`: on Hermes v0.16,
 sessions are the only surface that combines named persistent memory, run ids,
 tool events, and approval events in one stream.
 
+## Learning, memory and the skill tree
+
+Before each turn the server builds a bounded `[MIA SPOMIN …]` brief from the
+local SQLite store (`server/mia_core/`): relevant habits, recipes,
+anti-patterns and facts. The brief is prepended to the Hermes payload and
+limited by `learning.context.max_chars` (default 1500). After the turn an
+episode is recorded (request, response, tools, outcome, duration, errors,
+entities); successful episodes with tools become recipes, failures become
+anti-patterns.
+
+Short phrases ("right", "not right", "remember this procedure") are handled
+deterministically on the previous episode before reaching Hermes. Every
+`auto_mine_interval_seconds` (900 s) the server mines habits, ingests
+`control-audit.jsonl` and refreshes the skill index. Learning fails open: a
+broken DB never takes the voice loop down.
+
+The skill tree (`skills/`) is explicit: `mia-companion` is the root and the
+children (`mia-desktop`, `mia-learning`, `mia-music`, `mia-browser`,
+`mia-productivity`, `mia-diagnostics`) own individual domains.
+`mia-skill validate` checks names, parents and `references/`.
+
+## Local computer control
+
+`mia-ctl` (in `skills/mia-companion/bin/`) is the recommended interface for
+actions on the machine. Every call checks the policy
+(`~/.config/mia/control.json`), runs commands as argument lists (never
+`shell=True`) and writes an audit record to
+`~/.local/state/mia/control-audit.jsonl`. The audit is ingested into the
+learning store, so control actions become part of habits and recipes.
+
 ## WebSocket protocol (voice clients)
 
 Client → server (JSON + binary):
@@ -62,6 +92,14 @@ approval_request{data,run_id} · error · done{timing}
 | `/hud/` | the HUD (static, single file) |
 | `/api/hermes/{path}` | **allowlist** proxy to Hermes API, injects the bearer key (GET: health, capabilities, skills, toolsets, jobs, sessions; POST: v1/responses only) |
 | `/api/chat` | typed chat turn on the shared voice session |
+| `/api/learning/status` | memory, DB and skill tree status |
+| `/api/learning/tree` | skill tree (flat + nested + health) |
+| `/api/learning/brief` | exact brief the model would receive for a request |
+| `/api/learning/search` | search episodes, recipes, mistakes and facts |
+| `/api/learning/habits`, `/recipes`, `/mistakes`, `/facts`, `/episodes`, `/events` | memory views |
+| `/api/learning/feedback`, `/remember` | ✓/✗ feedback and recipe promotion |
+| `/api/learning/recipe`, `/mistake`, `/fact` | manual entries |
+| `/api/learning/mine`, `/prune`, `/sysinfo`, `/delete`, `/export` | maintenance |
 | `/api/machines` | host psutil stats + remote workers from config |
 | `/api/usage` | local token/char tally; ElevenLabs quota only when TTS is cloud-based |
 | `/api/hud-config` | HUD switches: `allow_external_media`, reply `language`, `tts_provider` |
