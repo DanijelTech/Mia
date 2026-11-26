@@ -1372,7 +1372,7 @@ async def usage() -> JSONResponse:
 
 
 WS_CLIENTS: set = set()
-CONNS: set = set()
+CONNS: list = []
 
 
 def _coerce_setting(key: str, value):
@@ -2598,7 +2598,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     print(f"WS client connected from {ws.client}", flush=True)
     pipeline = get_pipeline()
     conn = ConnState(conversation=(CFG.get("hermes") or {}).get("conversation", "mia-main"))
-    CONNS.add(conn)
+    CONNS.append(conn)
     await ws.send_json({"type": "status", "message": "Hermes voice server connected."})
     try:
         while True:
@@ -2740,7 +2740,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         print("Client disconnected", flush=True)
     finally:
         WS_CLIENTS.discard(ws)
-        CONNS.discard(conn)
+        try:
+            CONNS.remove(conn)
+        except ValueError:
+            pass
 
 
 def main() -> int:
