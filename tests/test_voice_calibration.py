@@ -65,6 +65,9 @@ class CalibrationTests(unittest.TestCase):
         session = CalibrationSession(stages=stages)
         self.assertEqual(session.total_captures, 2)
         self.assertEqual(session.payload()["stage"], "blizu")
+        # the prompt phase must ignore microphone audio
+        self.assertFalse(session.add_audio(b"\x00\x00" * 8000))
+        session.begin_capture()
         self.assertFalse(session.add_audio(b"\x00\x00" * 8000))
         self.assertTrue(session.add_audio(b"\x00\x00" * 8000))
         sample = session.take_sample()
@@ -72,6 +75,8 @@ class CalibrationTests(unittest.TestCase):
         state = session.accept_sample(sample)
         self.assertFalse(state["done"])
         self.assertEqual(state["stage"], "dalec")
+        self.assertEqual(state["phase"], "prompt")
+        session.begin_capture()
         session.add_audio(b"\x00\x00" * 16000)
         state = session.accept_sample(session.take_sample())
         self.assertTrue(state["done"])

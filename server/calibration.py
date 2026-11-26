@@ -37,6 +37,7 @@ class CalibrationSession:
     started: float = field(default_factory=time.time)
     retries: int = 0
     busy: bool = False
+    phase: str = "prompt"          # prompt → Mia speaks; capture → record the user
 
     def __post_init__(self) -> None:
         if not self.stages:
@@ -70,11 +71,17 @@ class CalibrationSession:
             "captured_bytes": len(self.buffer),
             "target_bytes": target,
             "retries": self.retries,
+            "phase": self.phase,
         }
+
+    def begin_capture(self) -> None:
+        """Called after Mia finishes the prompt: start accepting microphone PCM."""
+        self.phase = "capture"
+        self.buffer.clear()
 
     def add_audio(self, pcm: bytes) -> bool:
         """Append a chunk; return True when the current capture is long enough."""
-        if self.finished or self.busy or not pcm:
+        if self.finished or self.busy or self.phase != "capture" or not pcm:
             return False
         self.buffer.extend(pcm)
         target = int(self.stage.get("seconds", 4)) * self.sample_rate * 2
@@ -87,6 +94,7 @@ class CalibrationSession:
 
     def retry_current(self) -> dict:
         self.retries += 1
+        self.phase = "prompt"
         self.buffer.clear()
         return {"retry": True, **self.payload()}
 
@@ -95,6 +103,7 @@ class CalibrationSession:
             return self.retry_current()
         stage = self.stage
         self.samples.setdefault(stage["id"], []).append(sample)
+        self.phase = "prompt"
         self.capture += 1
         if self.capture >= int(stage.get("samples", 1)):
             self.capture = 0

@@ -2085,16 +2085,47 @@ def _calibration_stages() -> list[dict]:
 
 async def _speak_calibration(ws: WebSocket, pipeline: VoicePipelineServer,
                              conn: ConnState, text: str) -> None:
+    """Speak a calibration prompt and wait until the HUD has played it.
+
+    `_send_tts_sentence` returns when synthesis finishes, not when playback
+    ends; capturing too early eats the user's first words. Count the PCM bytes,
+    wait their real duration, then add a short pause.
+    """
     if not text:
         return
     timing = TurnTiming(turn_id=pipeline.next_turn_id())
     conn.spoken_sentences = [text]
+    conn.is_speaking = True
+    q: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    def worker() -> None:
+        try:
+            for chunk in pipeline.tts_chunks_sync(text, timing):
+                loop.call_soon_threadsafe(q.put_nowait, chunk)
+            loop.call_soon_threadsafe(q.put_nowait, None)
+        except Exception as exc:
+            loop.call_soon_threadsafe(q.put_nowait, exc)
+
+    task = asyncio.create_task(asyncio.to_thread(worker))
+    total = 0
     try:
-        await pipeline._send_tts_sentence(ws, text, timing, conn)
+        while True:
+            item = await q.get()
+            if item is None:
+                break
+            if isinstance(item, Exception):
+                raise item
+            total += len(item)
+            await ws.send_bytes(item)
     except Exception as exc:
         print(f"calibration TTS skipped: {exc}", flush=True)
     finally:
+        if not task.done():
+            task.cancel()
         conn.is_speaking = False
+    # 16 kHz mono int16 = 32000 bytes/s; then let the user take a breath.
+    await asyncio.sleep(total / 32000.0 + 0.6)
 
 
 async def _calibration_start(ws: WebSocket, pipeline: VoicePipelineServer,
@@ -2111,6 +2142,9 @@ async def _calibration_start(ws: WebSocket, pipeline: VoicePipelineServer,
               f"({payload.get('index')}/{payload.get('total')})", flush=True)
         await ws.send_json({"type": "calibration_state", **payload})
         await _speak_calibration(ws, pipeline, conn, payload.get("prompt", ""))
+        conn.calibration.begin_capture()
+        await ws.send_json({"type": "calibration_capture",
+                            **conn.calibration.payload()})
     except Exception as exc:
         print(f"CALIBRATION start failed: {type(exc).__name__}: {exc}", flush=True)
         conn.calibration = None
@@ -2135,6 +2169,8 @@ async def _calibration_process(ws: WebSocket, pipeline: VoicePipelineServer,
         await ws.send_json({"type": "calibration_state", **state})
         await _speak_calibration(ws, pipeline, conn,
                                  "Prenizko je. Stopi bliže ali govori glasneje.")
+        session.begin_capture()
+        await ws.send_json({"type": "calibration_capture", **session.payload()})
         return
     state = session.accept_sample(sample)
     if state.get("done"):
@@ -2161,6 +2197,8 @@ async def _calibration_process(ws: WebSocket, pipeline: VoicePipelineServer,
     session.busy = False
     await ws.send_json({"type": "calibration_state", **state})
     await _speak_calibration(ws, pipeline, conn, state.get("prompt", ""))
+    session.begin_capture()
+    await ws.send_json({"type": "calibration_capture", **session.payload()})
 
 
 async def _calibration_audio(ws: WebSocket, pipeline: VoicePipelineServer,

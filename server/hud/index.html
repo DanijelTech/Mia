@@ -568,26 +568,40 @@ function showApproval(e){
 }
 
 /* ============================== calibration ======================== */
-let calibActive=false, calibTimer=null;
+let calibActive=false, calibTimer=null, calibGotState=false;
 function showCalib(show){ $("calibOverlay").classList.toggle("open",!!show); }
 function calibPromptUI(e){
+  calibGotState=true;
+  capturing=false;
   $("calibStage").textContent=(e.label||e.stage||"—").toUpperCase();
   $("calibPrompt").textContent=e.prompt||"";
-  const pct=e.target_bytes?Math.min(100,Math.round((e.captured_bytes||0)/e.target_bytes*100)):0;
-  $("calibBar").style.width=pct+"%";
-  $("calibMeta").textContent=`posnetek ${e.index||"?"} / ${e.total||"?"} · ${e.seconds||"?"} s · ${pct}%`;
+  $("calibBar").style.width="0%";
+  $("calibMeta").textContent="Mia govori … poslušaj in počakaj na znak GOVORI ZDAJ.";
+  $("calibStart").style.display="none";
+  $("calibCancel").style.display="";
+  calibActive=true; showCalib(true);
+  if(calibTimer){clearInterval(calibTimer);calibTimer=null}
+  setState("speaking","KALIBRACIJA","MIA GOVORI — POČAKAJ");
+}
+function calibCaptureUI(e){
+  calibGotState=true;
+  capturing=true;
+  $("calibStage").textContent="GOVORI ZDAJ — "+(e.label||e.stage||"").toUpperCase();
+  $("calibPrompt").textContent=e.prompt||"";
   $("calibStart").style.display="none";
   $("calibCancel").style.display="";
   calibActive=true; showCalib(true);
   if(calibTimer)clearInterval(calibTimer);
   const secs=Number(e.seconds||0), started=Date.now();
-  if(secs>0)calibTimer=setInterval(()=>{
-    if(!calibActive){clearInterval(calibTimer);calibTimer=null;return}
-    const p=Math.min(100,Math.round((Date.now()-started)/(secs*1000)*100));
+  const tick=()=>{
+    if(!calibActive||!capturing){clearInterval(calibTimer);calibTimer=null;return}
+    const p=secs?Math.min(100,Math.round((Date.now()-started)/(secs*1000)*100)):0;
     $("calibBar").style.width=p+"%";
     $("calibMeta").textContent=`posnetek ${e.index||"?"} / ${e.total||"?"} · ${secs} s · ${p}%`;
-  },100);
-  setState("listening","KALIBRACIJA","GOVORI, KO SE PRIKAŽE BESEDILO");
+  };
+  tick();
+  if(secs>0)calibTimer=setInterval(tick,100);
+  setState("listening","KALIBRACIJA","GOVORI ZDAJ");
 }
 async function startCalibration(){
   showCalib(true);
@@ -610,7 +624,8 @@ async function startCalibration(){
   }
   if(continuous){ try{ws.send(JSON.stringify({type:"stop"}))}catch{}; continuous=false; }
   stopPlayback();
-  capturing=true;
+  capturing=false;
+  calibGotState=false;
   calibActive=true;
   try{ ws.send(JSON.stringify({type:"calibration_start"})); }
   catch(err){
@@ -622,12 +637,12 @@ async function startCalibration(){
   }
   $("calibMeta").textContent="Mia bo govorila; ti ponavljaj za njo.";
   setTimeout(()=>{
-    if(calibActive && $("calibStage").textContent.startsWith("PRIPRAVLJAM")){
+    if(calibActive && !calibGotState){
       $("calibStage").textContent="NI ODGOVORA STREŽNIKA";
-      $("calibPrompt").textContent="Mia se ni odzvala v 5 s. Najverjetneje teče stara različica strežnika. Zaženi: ./stop-mia.sh && ./start-mia.sh, nato osveži stran.";
+      $("calibPrompt").textContent="Mia se ni odzvala v 8 s. Najverjetneje teče stara različica strežnika. Zaženi: ./stop-mia.sh && ./start-mia.sh, nato osveži stran.";
       $("calibStart").style.display="";
     }
-  },5000);
+  },8000);
 }
 function cancelCalibration(){
   try{ws.send(JSON.stringify({type:"calibration_cancel"}))}catch{}
@@ -723,6 +738,7 @@ function connect(){
       if(e.active===false){ calibActive=false; capturing=false; showCalib(false); setState("standby","PRIPRAVLJEN"); }
       else calibPromptUI(e);
     }
+    else if(e.type==="calibration_capture"){ calibCaptureUI(e); }
     else if(e.type==="calibration_done"){
       calibActive=false; capturing=false;
       if(calibTimer){clearInterval(calibTimer);calibTimer=null}
