@@ -650,7 +650,16 @@ if [ -d "$REPO_DIR/hermes-plugin/mia_learning" ]; then
     run cp -R "$REPO_DIR/hermes-plugin/mia_learning/." "$HERMES_HOME/plugins/mia_learning/"
     add_dir "$HERMES_HOME/plugins/mia_learning"
     while IFS= read -r f; do add_file "$f"; done < <(find "$HERMES_HOME/plugins/mia_learning" -type f 2>/dev/null)
-    info "plugin mia_learning copied — enable with: hermes plugins enable mia_learning"
+    info "plugin mia_learning copied"
+    if command -v hermes >/dev/null 2>&1; then
+      if HERMES_HOME="$HERMES_HOME" hermes plugins enable mia_learning >/dev/null 2>&1; then
+        info "plugin mia_learning enabled"
+      else
+        warn "plugin copied but not enabled — run: hermes plugins enable mia_learning"
+      fi
+    else
+      info "Hermes CLI not found — enable later with: hermes plugins enable mia_learning"
+    fi
   else
     printf '    [dry-run] would copy the mia_learning plugin into %s/plugins\n' "$HERMES_HOME"
   fi
