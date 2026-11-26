@@ -60,12 +60,44 @@ const VIS_OPEN = { aa: .85, E: .55, I: .35, O: .72, U: .42, sil: 0,
   PP: 0, FF: .12, TH: .18, DD: .18, kk: .15, CH: .25, SS: .15,
   nn: .12, RR: .2 };
 
+/* Procedural co-speech gestures. The free model ships one Mixamo idle clip and
+ * no gesture library, so gestures are additive head/chest offsets driven by
+ * the `[gesture:…]` tag that the server forwards with each sentence. */
+const GESTURES = {
+  nod: { dur: .7, head: { x: .07 } },
+  shake: { dur: .8, head: { y: .07 }, cycles: 2 },
+  tilt: { dur: .9, head: { z: .09 } },
+  look: { dur: .9, head: { y: -.08 }, chest: { z: .02 } },
+  wave: { dur: 1.2, head: { z: .05 }, chest: { z: .05, y: .04 } },
+  shrug: { dur: 1.0, chest: { x: -.05, z: .03 } },
+  point: { dur: .8, head: { y: .08 }, chest: { y: .03 } },
+  bow: { dur: 1.3, head: { x: .12 }, chest: { x: .12 } },
+};
+
+const LOOKS = {
+  user: 'pointer', camera: 'camera', away: 'away',
+  left: [-.55, 0], right: [.55, 0], up: [0, -.35], down: [0, .35],
+};
+
 function clamp(v, lo = 0, hi = 1) { return Math.min(hi, Math.max(lo, v)); }
 function lerp(a, b, t) { return a + (b - a) * t; }
 
 function cacheBust(url) {
   const sep = url.includes('?') ? '&' : '?';
   return url + sep + 'v=' + Date.now();
+}
+
+function disposeTree(root) {
+  root.traverse((o) => {
+    if (o.geometry) o.geometry.dispose();
+    const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+    for (const m of mats) {
+      for (const key of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap']) {
+        if (m[key]) m[key].dispose();
+      }
+      m.dispose();
+    }
+  });
 }
 
 class MiaAvatar {
@@ -83,9 +115,12 @@ class MiaAvatar {
     this.config = { ...DEFAULTS };
     this.state = 'standby';
     this.mood = 'neutral';
-    this.targets = new Map();
+    this.hairMeshes = [];
     this.current = new Map();
     this.speech = null;
+    this.gesture = null;
+    this.look = null;
+    this._loading = null;
     this.lastBlink = 0;
     this.nextBlink = 2 + Math.random() * 4;
     this.blinkUntil = 0;
@@ -95,7 +130,6 @@ class MiaAvatar {
     this.failed = false;
     this.frameTime = 16;
     this.qualityScale = 1;
-    this._speechQueue = [];
     this._bindEvents();
   }
 
@@ -205,6 +239,7 @@ class MiaAvatar {
 
   async loadModel() {
     this.eyes = []; this.morphMeshes = []; this.teeth = null; this.bones = {};
+    this.hairMeshes = [];
     const loader = new GLTFLoader();
     const gltf = await loader.loadAsync(cacheBust(this.config.model));
     this.model = gltf.scene;
@@ -229,8 +264,77 @@ class MiaAvatar {
       const m = this.model.getObjectByName(name);
       if (m && m.morphTargetDictionary) this.eyes.push(m);
     }
+    this.model.traverse((o) => {
+      if ((o.isMesh || o.isSkinnedMesh) && /hair/i.test(o.name) && o.geometry)
+        this.hairMeshes.push(o);
+    });
+    this.hairMeshes.sort((a, b) => a.name.localeCompare(b.name));
     this.scene.add(this.model);
     this.frameModel();
+  }
+
+  /* Swap the avatar GLB without rebuilding the scene (used by /hud/avatar.html). */
+  async reloadModel(url) {
+    if (!url || !this.ready) return false;
+    const previous = this.config.model;
+    this.config.model = url;
+    try {
+      if (this._loading) return false;
+      this._loading = url;
+      if (this.mixer) { this.mixer.stopAllAction(); this.mixer = null; }
+      if (this.model) {
+        this.scene.remove(this.model);
+        disposeTree(this.model);
+        this.model = null;
+      }
+      this.speech = null; this.gesture = null; this.look = null;
+      this.current.clear();
+      await this.loadModel();
+      await this.loadIdle();
+      this.applyConfig(this.config);
+      this.failed = false;
+      this.canvas.classList.add('online');
+      document.body.classList.add('avatar-ready');
+      window.dispatchEvent(new CustomEvent('mia-avatar-ready'));
+      return true;
+    } catch (err) {
+      console.warn('[mia-avatar] model swap failed:', err);
+      this.config.model = previous;
+      try {
+        await this.loadModel();
+        await this.loadIdle();
+        this.applyConfig(this.config);
+      } catch {}
+      return false;
+    } finally {
+      this._loading = null;
+    }
+  }
+
+  /* Hair styles available in the loaded GLB, in selection order. */
+  hairStyles() {
+    const out = this.hairMeshes.map((m, i) => ({
+      id: i === 0 ? 'default' : (i === 1 ? 'alt' : 'alt' + i),
+      label: i === 0 ? 'pričeska 1' : 'pričeska ' + (i + 1),
+      mesh: m.name,
+    }));
+    out.push({ id: 'none', label: 'brez', mesh: null });
+    return out;
+  }
+
+  _applyHair() {
+    const mesh = this._hairTarget();
+    for (const m of this.hairMeshes) m.visible = m === mesh;
+  }
+
+  _hairTarget() {
+    if (this.config.hair === false || this.config.hairStyle === 'none') return null;
+    const styles = this.hairStyles().filter((s) => s.id !== 'none');
+    if (!styles.length) return null;
+    const want = this.config.hairStyle && this.config.hairStyle !== 'default'
+      ? styles.find((s) => s.id === this.config.hairStyle) : styles[0];
+    const style = want || styles[0];
+    return this.hairMeshes.find((m) => m.name === style.mesh) || this.hairMeshes[0];
   }
 
   async loadIdle() {
@@ -301,12 +405,12 @@ class MiaAvatar {
       const o = this.model.getObjectByName(name);
       if (o) o.visible = !!on;
     };
-    vis('Wolf3D_Hair', this.config.hair !== false && this.config.hair !== 'none');
+    this._applyHair();
     vis('Wolf3D_Glasses', !!this.config.glasses);
     vis('Wolf3D_Outfit_Top', this.config.top !== false);
     vis('Wolf3D_Outfit_Bottom', this.config.bottom !== false);
     vis('Wolf3D_Outfit_Footwear', this.config.footwear !== false);
-    this.tint('Wolf3D_Hair', this.config.hairColor);
+    for (const m of this.hairMeshes) this.tintMesh(m, this.config.hairColor);
     this.tint('Wolf3D_Glasses', this.config.glassesColor);
     this.tint('Wolf3D_Outfit_Top', this.config.topColor);
     this.tint('Wolf3D_Outfit_Bottom', this.config.bottomColor);
@@ -318,14 +422,17 @@ class MiaAvatar {
     this.qualityScale = this.config.quality === 'balanced' ? .75 :
       this.config.quality === 'high' ? 1 : 1.25;
     this.resize();
-    document.body.classList.toggle('avatar-hair-off', this.config.hair === false ||
-      this.config.hair === 'none');
+    document.body.classList.toggle('avatar-hair-off',
+      this.config.hair === false || this.config.hairStyle === 'none');
   }
 
   tint(name, color) {
-    if (!color) return;
-    const o = this.model.getObjectByName(name);
-    if (!o) return;
+    const o = this.model && this.model.getObjectByName(name);
+    if (o) this.tintMesh(o, color);
+  }
+
+  tintMesh(o, color) {
+    if (!o || !color) return;
     for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
       if (!m) continue;
       if (m.userData.__baseColor === undefined) {
@@ -343,14 +450,26 @@ class MiaAvatar {
 
   setState(st) {
     const map = { standby: 'standby', listening: 'listening',
-      thinking: 'thinking', tool: 'tool', speaking: 'speaking',
+      thinking: 'thinking', tool: 'tool', tool_use: 'tool', speaking: 'speaking',
       error: 'error', stopped: 'standby' };
     this.state = map[st] || st || 'standby';
     if (this.state === 'thinking') this.setMood('neutral');
     if (this.state === 'listening') this.setMood('warm');
     if (this.state === 'error') this.setMood('sad');
     if (this.state === 'speaking') this.setMood(this._speechMood || 'warm');
+    if (this.state !== 'speaking') this.stopSpeech();
     document.body.classList.toggle('avatar-speaking', this.state === 'speaking');
+  }
+
+  playGesture(name) {
+    const gesture = GESTURES[name];
+    if (!gesture || !this.ready) return false;
+    this.gesture = { ...gesture, name, start: performance.now() / 1000 };
+    return true;
+  }
+
+  setLook(look) {
+    this.look = look && LOOKS[look] !== undefined ? look : null;
   }
 
   configure(patch, save = true) {
@@ -358,7 +477,7 @@ class MiaAvatar {
     if (save) this.saveConfig();
   }
 
-  /* payload: {visemes:[], times:[], durations:[], duration_ms, text, mood} */
+  /* payload: {visemes, times, durations, duration_ms, text, mood, gesture, look} */
   speak(payload) {
     if (!payload || !this.ready) return;
     const visemes = Array.isArray(payload.visemes) ? payload.visemes : [];
@@ -367,6 +486,8 @@ class MiaAvatar {
     if (!visemes.length) return;
     this._speechMood = payload.mood || 'warm';
     this.setMood(this._speechMood);
+    this.setLook(payload.look ? String(payload.look).toLowerCase() : null);
+    if (payload.gesture) this.playGesture(String(payload.gesture).toLowerCase());
     this.speech = {
       start: performance.now() / 1000 + Math.max(.05,
         (window.MiaAudio && window.MiaAudio.delay ? window.MiaAudio.delay() : 0) + .02),
@@ -377,13 +498,32 @@ class MiaAvatar {
     };
   }
 
-  speakText(text, durationMs) {
+  speakText(text, durationMs, extra) {
     if (!text) return;
     const timeline = textTimeline(text, durationMs || Math.max(800, text.length * 70));
-    this.speak({ ...timeline, text, mood: 'warm' });
+    this.speak({ ...timeline, text, mood: 'warm', ...(extra || {}) });
   }
 
-  stopSpeech() { this.speech = null; }
+  stopSpeech() {
+    this.speech = null;
+    this.look = null;
+  }
+
+  _gestureOffsets(now) {
+    const g = this.gesture;
+    if (!g) return null;
+    const p = (now - g.start) / g.dur;
+    if (p >= 1) { this.gesture = null; return null; }
+    const env = Math.sin(Math.PI * Math.min(1, Math.max(0, p)));
+    const wave = g.cycles ? Math.cos(2 * Math.PI * g.cycles * p) : 1;
+    const scale = env * wave;
+    return {
+      head: { x: (g.head?.x || 0) * scale, y: (g.head?.y || 0) * scale,
+        z: (g.head?.z || 0) * scale },
+      chest: { x: (g.chest?.x || 0) * scale, y: (g.chest?.y || 0) * scale,
+        z: (g.chest?.z || 0) * scale },
+    };
+  }
 
   update(dt, now) {
     if (!this.ready) return;
@@ -398,37 +538,53 @@ class MiaAvatar {
     }
     const blink = t < this.blinkUntil ? 1 : 0;
 
-    // gaze target: user while listening/speaking; away while thinking/tool
+    // gaze target: pointer while listening/speaking; away while thinking/tool,
+    // unless the sentence carried an explicit [look:…] tag
     const think = this.state === 'thinking' || this.state === 'tool';
-    const targetX = think ? (this.state === 'tool' ? .35 : -.25) : this.pointer.x * .22;
-    const targetY = think ? (this.state === 'tool' ? -.1 : .18) : -this.pointer.y * .12;
+    let targetX = think ? (this.state === 'tool' ? .35 : -.25) : this.pointer.x * .22;
+    let targetY = think ? (this.state === 'tool' ? -.1 : .18) : -this.pointer.y * .12;
+    const look = this.look ? LOOKS[this.look] : null;
+    if (Array.isArray(look)) { targetX = look[0]; targetY = look[1]; }
+    else if (look === 'camera') { targetX = 0; targetY = 0; }
+    else if (look === 'away') { targetX = -.4; targetY = .12; }
     this.gazeX = lerp(this.gazeX || 0, targetX, 1 - Math.pow(.001, dt));
     this.gazeY = lerp(this.gazeY || 0, targetY, 1 - Math.pow(.001, dt));
 
+    const gest = this._gestureOffsets(now);
     const head = this.bones.Head || this.bones.head;
     if (head) {
       const sway = Math.sin(t * .6) * .012 + (this.state === 'speaking' ? Math.sin(t * 3.1) * .008 : 0);
-      head.rotation.y = lerp(head.rotation.y, this.gazeX, .08);
-      head.rotation.x = lerp(head.rotation.x, this.gazeY * .6 + sway, .06);
-      head.rotation.z = lerp(head.rotation.z, Math.sin(t * .35) * .01, .05);
+      head.rotation.y = lerp(head.rotation.y, this.gazeX + (gest ? gest.head.y : 0), .08);
+      head.rotation.x = lerp(head.rotation.x, this.gazeY * .6 + sway + (gest ? gest.head.x : 0), .06);
+      head.rotation.z = lerp(head.rotation.z, Math.sin(t * .35) * .01 + (gest ? gest.head.z : 0), .05);
     }
     const chest = this.bones.Spine2 || this.bones.Spine1 || this.bones.Spine;
     if (chest) {
       const breath = Math.sin(t * 1.25) * .012;
-      chest.rotation.x = lerp(chest.rotation.x, breath, .05);
+      chest.rotation.x = lerp(chest.rotation.x, breath + (gest ? gest.chest.x : 0), .05);
+      chest.rotation.y = lerp(chest.rotation.y, gest ? gest.chest.y : 0, .05);
+      chest.rotation.z = lerp(chest.rotation.z, gest ? gest.chest.z : 0, .05);
       chest.scale.y = 1 + Math.sin(t * 1.25) * .006;
     }
 
     const desired = new Map();
     const mood = MOODS[this.mood] || MOODS.neutral;
     for (const [k, v] of Object.entries(mood)) desired.set(k, v);
-    desired.set('eyeBlinkLeft', blink);
-    desired.set('eyeBlinkRight', blink);
-    desired.set('eyesClosed', blink);
-    desired.set('eyeLookInLeft', clamp(this.gazeX) * .3);
-    desired.set('eyeLookOutRight', clamp(-this.gazeX) * .3);
-    desired.set('eyeLookUpLeft', clamp(-this.gazeY) * .3);
-    desired.set('eyeLookUpRight', clamp(-this.gazeY) * .3);
+    const moodClosed = desired.get('eyesClosed') || 0;
+    const shut = Math.max(blink, moodClosed);
+    desired.set('eyesClosed', shut);
+    desired.set('eyeBlinkLeft', shut);
+    desired.set('eyeBlinkRight', shut);
+    const hx = clamp(this.gazeX, -1, 1);
+    const vy = clamp(this.gazeY, -1, 1);
+    desired.set('eyeLookInLeft', Math.max(0, hx) * .3);
+    desired.set('eyeLookOutRight', Math.max(0, hx) * .3);
+    desired.set('eyeLookOutLeft', Math.max(0, -hx) * .3);
+    desired.set('eyeLookInRight', Math.max(0, -hx) * .3);
+    desired.set('eyeLookUpLeft', Math.max(0, -vy) * .3);
+    desired.set('eyeLookUpRight', Math.max(0, -vy) * .3);
+    desired.set('eyeLookDownLeft', Math.max(0, vy) * .3);
+    desired.set('eyeLookDownRight', Math.max(0, vy) * .3);
 
     if (this.speech) {
       const el = now - this.speech.start;
@@ -436,6 +592,7 @@ class MiaAvatar {
         // wait for audio start
       } else if (el > this.speech.total + .15) {
         this.speech = null;
+        this.look = null;
         if (this.state === 'speaking') this.state = 'listening';
       } else {
         this._applySpeech(el, desired);
@@ -564,4 +721,4 @@ if (document.readyState === 'loading') {
   boot();
 }
 
-export { MiaAvatar, textTimeline, DEFAULTS };
+export { MiaAvatar, textTimeline, DEFAULTS, GESTURES, LOOKS };

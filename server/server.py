@@ -1052,7 +1052,7 @@ class VoicePipelineServer:
                                  conn: "ConnState | None" = None) -> None:
         if not sentence:
             return
-        spoken, tags = avatar_visemes.strip_tags(sentence)
+        spoken = avatar_visemes.strip_tags(sentence)[0]
         if not spoken:
             return
         q: asyncio.Queue = asyncio.Queue()
@@ -1079,7 +1079,8 @@ class VoicePipelineServer:
         if not chunks:
             return
         pcm = b"".join(chunks)
-        timeline = avatar_visemes.timeline_for_pcm(spoken, pcm)
+        # The tagged sentence (not the spoken text) carries mood/gesture/look.
+        timeline = avatar_visemes.timeline_for_pcm(sentence, pcm)
         await ws.send_json({
             "type": "avatar_speech",
             "v": 1,

@@ -754,9 +754,6 @@ function connect(){
     else if(e.type==="avatar_speech"){
       try{window.MiaAvatar&&window.MiaAvatar.speak(e)}catch{}
     }
-    else if(e.type==="avatar_state"){
-      try{window.MiaAvatar&&window.MiaAvatar.setState(e.state)}catch{}
-    }
     else if(e.type==="mia_say"){
       // Scheduled reminders are spoken without opening a Hermes turn. Use the
       // browser voice as a fallback when no server TTS audio is attached.
@@ -1414,6 +1411,10 @@ addEventListener("keydown",e=>{
 bootSequence(new URLSearchParams(location.search).get("boot")==="full");
 
 addMsg("sys","Mia HUD je pripravljen. Klikni obroč ali pritisni preslednico.");
+addEventListener("mia-avatar-failed",e=>{
+  const why=String(e.detail||"?").replace(/\s+/g," ").slice(0,70);
+  addMsg("sys","3D lik se ni naložil ("+why+"…) · zaženi server/scripts/fetch-avatar-assets.sh");
+});
 </script>
 <script type="importmap">
 {"imports":{"three":"/hud/avatar/vendor/three/three.module.js","three/addons/":"/hud/avatar/vendor/three/addons/"}}

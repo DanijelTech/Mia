@@ -158,7 +158,11 @@ server/scripts/fetch-avatar-assets.sh        # prenese brezplačni RPM ženski m
 ```
 
 - obraz: visemi, čustva, utripanje, pogled, dihanje (brez drugega modela),
-- garderoba: zgornji/spodnji del, obutev, očala, lasje (barva/pričeska),
+- garderoba: zgornji/spodnji del, obutev, očala, lasje (barva + vse pričeske,
+  ki jih model ima, ali brez),
+- geste: `[gesture:nod|shake|tilt|look|wave|shrug|point|bow]` v stavku ali
+  ročno na strani LIK; pogled tudi z `[look:user|camera|away|left|right|up|down]`,
+- menjava modela na strani LIK brez osvežitve (GLB se naloži in star se sprosti),
 - kamera: doprsni/obraz/cel lik; kakovost: ultra/visoka/varčna,
 - sinhronizacija: strežnik pošlje `avatar_speech` z visemi/časi iz vsakega
   stavka TTS; HUD jih veže na `playhead`, brez časovne osi pa na približno

@@ -29,11 +29,12 @@ The current major addition is the **learning/knowledge core** and the
   `system_status/profile/health/adapt/plans/run_plan/command/jobs/tasks/alerts`
   over `/api/autonomy/*`.
 - 3D avatar: `server/hud/avatar/avatar.js` (Three.js runtime, wardrobe, gaze,
-  breathing, blink, ARKit/viseme blending), `server/hud/avatar.html` (settings),
-  `server/avatar_visemes.py` (Slovenian → Oculus 15 timeline), and
+  breathing, blink, ARKit/viseme blending, procedural gestures, live model
+  swap, hairstyle list from the loaded GLB), `server/hud/avatar.html`
+  (settings), `server/avatar_visemes.py` (Slovenian → Oculus 15 timeline), and
   `_send_tts_sentence()` emits `avatar_speech` before each sentence's PCM.
   Models are downloaded by `server/scripts/fetch-avatar-assets.sh` and are
-  gitignored; the HUD keeps the 2D reactor as fallback.
+  gitignored; the HUD keeps the 2D reactor as fallback and says so in the feed.
 - `server/mia_core/autonomy/` — the mini sub-OS layer: adaptive machine
   profile/backends (`profile.py`), declarative conditions, plan execution with
   verification/retry/rollback/journal (`planner.py`), persistent jobs and rules
@@ -118,7 +119,8 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
 - `tests/test_capabilities.py` — catalog, detection, confirmation, learned.
 - `tests/test_voice_calibration.py` — strict wake, calibration state machine,
   Google answer/show split (numpy-dependent tests skip if numpy is absent).
-- `tests/test_avatar.py` — Slovenian viseme timeline, tags/moods, PCM duration.
+- `tests/test_avatar.py` — Slovenian viseme timeline, tags/moods on the PCM
+  path, model-fetch and HUD wiring contracts.
 - `tests/test_autonomy.py` — profile/metrics, planner verification/retries/
   rollback/confirmation, scheduler edge triggers and events, health, alerts,
   intent router, service confirmations and `mia-auto` CLI.
@@ -160,6 +162,13 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
 - Do not add random gestures or a webcam-style "idle loop"; the behaviour
   director must gate gaze/gesture/emotion on state, speech stress and user
   intent. This is the difference between premium and robotic.
+- Gestures are procedural (`GESTURES` in `avatar.js`): additive head/chest
+  offsets with an envelope, triggered by `[gesture:…]` tags or the avatar page.
+  There is no mocap/gesture clip in the free model, so do not claim real hand
+  animation; arms stay in the idle clip.
+- Hair styles come from the meshes present in the loaded GLB
+  (`hairStyles()`), so the page never offers a style that cannot be shown.
+  Adding a style means shipping another mesh/GLB, not a new CSS class.
 - Avatar models are not committed. `server/hud/avatar/models/*.glb` is ignored;
   use `fetch-avatar-assets.sh` or `install.sh --with-avatar`. Keep the
   `ASSET_LICENSE` provenance in models/README.md.

@@ -60,11 +60,47 @@ class AvatarVisemeTests(unittest.TestCase):
         self.assertGreaterEqual(timeline["duration_ms"], 950)
         self.assertLessEqual(timeline["duration_ms"], 1100)
 
+    def test_pcm_timeline_keeps_tags_for_mood_gesture_look(self):
+        pcm = b"\x00\x01" * 8000  # 0.5 s @ 16 kHz
+        timeline = avatar_visemes.timeline_for_pcm(
+            "[mood:žalostno] Žal mi je. [gesture:bow] [look:down]", pcm)
+        self.assertEqual(timeline["mood"], "sad")
+        self.assertEqual(timeline["gesture"], "bow")
+        self.assertEqual(timeline["look"], "down")
+        self.assertGreaterEqual(timeline["duration_ms"], 450)
+
+    def test_timeline_without_tags_has_empty_gesture_and_look(self):
+        timeline = avatar_visemes.timeline("Dober dan.", 900)
+        self.assertEqual(timeline["mood"], "neutral")
+        self.assertEqual(timeline["gesture"], "")
+        self.assertEqual(timeline["look"], "")
+
     def test_long_text_has_more_visemes(self):
         short = avatar_visemes.timeline("Da.", 800)
         long = avatar_visemes.timeline(
             "To je daljši stavek, ki mora imeti bistveno več visemov.", 3000)
         self.assertGreater(len(long["visemes"]), len(short["visemes"]))
+
+
+class AvatarAssetContractTests(unittest.TestCase):
+    """The HUD, the server defaults and the fetch script must agree."""
+
+    def test_default_model_files_are_fetched(self):
+        script = (ROOT / "server/scripts/fetch-avatar-assets.sh").read_text()
+        js = (ROOT / "server/hud/avatar/avatar.js").read_text()
+        server = (ROOT / "server/server.py").read_text()
+        for name in ("mia-female.glb", "mia-female-idle.glb"):
+            self.assertIn(name, js)
+            self.assertIn(name, server)
+            self.assertIn(name, script)
+
+    def test_hud_loads_the_avatar_layer(self):
+        hud = (ROOT / "server/hud/index.html").read_text()
+        self.assertIn('id="avatar"', hud)
+        self.assertIn("/hud/avatar/avatar.js", hud)
+        page = (ROOT / "server/hud/avatar.html").read_text()
+        self.assertIn("/hud/avatar/avatar.js", page)
+        self.assertIn("hairStyle", page)
 
 
 if __name__ == "__main__":

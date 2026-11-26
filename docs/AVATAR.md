@@ -415,14 +415,16 @@ licenciranim testnim modelom, obstoječi 2D obroč pa ostane fallback.
 
 ---
 
-## 10. Stanje implementacije (Tier A, prva različica)
+## 10. Stanje implementacije (Tier A, dokončana prva različica)
 
 Implementirano:
 
 | Del | Datoteka |
 |---|---|
 | 3D runtime, kamera, luči, PBR okolje, stanja, pogled, dihanje, utripanje | `server/hud/avatar/avatar.js` |
-| HUD integracija (canvas nad obročem, `avatar-ready`, `avatar_speech`, `mia_say`) | `server/hud/index.html` |
+| Geste in pogled iz oznak (`[gesture:]`, `[look:]`) | `server/hud/avatar/avatar.js`, `server/avatar_visemes.py` |
+| Zamenjava modela v teku (`reloadModel`) in izbira pričeske | `server/hud/avatar/avatar.js`, `server/hud/avatar.html` |
+| HUD integracija (canvas nad obročem, `avatar-ready`, `avatar_speech`, `mia_say`, opozorilo ob manjkajočem modelu) | `server/hud/index.html` |
 | Garderoba in nastavitve | `server/hud/avatar.html`, `/api/avatar/config` |
 | Brezplačni ženski model + idle | `server/scripts/fetch-avatar-assets.sh`, `server/hud/avatar/models/` |
 | Slovenski visemi in časovna os | `server/avatar_visemes.py` |
@@ -434,21 +436,30 @@ Implementirano:
 kose: lasje, očala, zgornji/spodnji del, obutev. Model se ne commit-a; prenese
 se z `server/scripts/fetch-avatar-assets.sh` (ali `install.sh --with-avatar`).
 
-**Kaj uporabnik lahko nastavi:** lasje (barva/pričeska/brez), očala, zgornji
-del, spodnji del, obutev, barve, odtenek kože, kamera (doprsni/obraz/cel),
-kakovost, razpoloženje. Nastavitve se shranijo v `server/logs/avatar.json` in
-takoj veljajo v glavnem HUD-u.
+**Kaj uporabnik lahko nastavi:** lasje (pričeska iz seznama tistih, ki jih
+model vsebuje, ali brez), barva las, očala, zgornji del, spodnji del, obutev,
+barve, odtenek kože, kamera (doprsni/obraz/cel), kakovost, razpoloženje, model
+(zamenjava brez osvežitve strani). Nastavitve se shranijo v
+`server/logs/avatar.json` in takoj veljajo v glavnem HUD-u.
 
 **Sinhronizacija:** vsak TTS stavek pošlje `avatar_speech` z
 `visemes/times/durations` in `duration_ms`; HUD jih veže na dejanski
-`playhead`. Če model nima morph targetov (npr. Avaturn T1), se uporabi samo
-gibanje glave/telesa; za obrazno mimiko je potreben T2/ARKit model.
+`playhead`. V istem dogodku potujeta `mood` in `gesture`/`look` iz oznak v
+besedilu (npr. `[mood:veselo]`, `[gesture:nod]`, `[look:away]`), zato se
+obraz in telo odzivata na vsebino, ne le na glasnost. Če model nima morph
+targetov (npr. Avaturn T1), se uporabi samo gibanje glave/telesa; za obrazno
+mimiko je potreben T2/ARKit model.
 
-**Omejitve prve različice:**
-- ena pričeska v privzetem modelu; dodatne pričeske/obleke so novi `.glb`
-  modeli ali dodatni `avaturn_hair_*` kosi,
-- brez pravih co-speech gest z rokami (idle clip + pogled + dihanje sta prva
-  stopnja; geste so naslednja faza),
+**Geste:** model prinese en Mixamo idle posnetek in nobene knjižnice gest, zato
+so geste proceduralne: `nod`, `shake`, `tilt`, `look`, `wave`, `shrug`,
+`point`, `bow` so aditivni odmiki glave/prsnega koša z envelope krivuljo.
+Nastavijo se z oznako v stavku ali ročno v `/hud/avatar.html` (GESTE IN GOVOR).
+
+**Omejitve:**
+- privzeti model ima eno pričesko; seznam prikaže le kose, ki so v modelu,
+  dodatne pričeske so nov `.glb` ali dodatni `avaturn_hair_*` kosi,
+- geste so proceduralne (nič mocap/animation knjižnice), roke ostanejo v
+  idle drži,
 - brez Audio2Face in brez MetaHuman Pixel Streaming (fazi B/C iz načrta).
 
 **Avaturn:** T1 demo ima statičen obraz in ni primeren za lip-sync; T2 izvoz

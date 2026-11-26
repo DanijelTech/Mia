@@ -61,10 +61,11 @@ input[type=range]{padding:0;accent-color:var(--teal);width:130px}
     </div>
     <div class="panel">
       <h2>LASJE IN KOŽA</h2>
-      <div class="row"><label><input type="checkbox" id="hair"> Lasje</label><div style="display:flex;gap:6px;align-items:center"><select id="hairStyle"><option value="default">pričeska 1</option><option value="alt">pričeska 2</option><option value="none">brez</option></select><input type="color" id="hairColor"></div></div>
+      <div class="row"><label><input type="checkbox" id="hair"> Lasje</label><div style="display:flex;gap:6px;align-items:center"><select id="hairStyle"></select><input type="color" id="hairColor"></div></div>
       <div class="row"><span>Odtenek kože</span><input type="color" id="skinTone"></div>
-      <div class="hint">Barva se meša s teksturo modela. Za popolnoma drugo pričesko
-        dodaj drug GLB v <code>server/hud/avatar/models/</code> in ga izberi spodaj.</div>
+      <div class="hint">Barva se meša s teksturo modela. Pričeske, ki jih model
+        vsebuje, se pojavijo v seznamu; za novo pričesko dodaj drug GLB v
+        <code>server/hud/avatar/models/</code> in ga izberi spodaj.</div>
       <div class="row"><span>Model</span><select id="model"></select></div>
     </div>
     <div class="panel">
@@ -81,6 +82,19 @@ input[type=range]{padding:0;accent-color:var(--teal);width:130px}
           <option value="sleep">spanje</option></select></div>
     </div>
     <div class="panel">
+      <h2>GESTE IN GOVOR</h2>
+      <div class="row"><span>Gesta</span>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select id="gesture"></select>
+          <button id="gestureBtn" class="ghost">IZVED</button>
+        </div></div>
+      <div class="row"><span>Pogled</span>
+        <select id="look"><option value="">prosto</option><option value="user">v uporabnika</option>
+          <option value="camera">v kamero</option><option value="away">stran</option>
+          <option value="left">levo</option><option value="right">desno</option>
+          <option value="up">gor</option><option value="down">dol</option></select></div>
+    </div>
+    <div class="panel">
       <h2>UKREPI</h2>
       <div class="row"><button id="saveBtn">SHRANI</button><button id="testBtn" class="ghost">TEST GOVOR</button><button id="resetBtn" class="ghost">PONASTAVI</button></div>
       <div class="hint" id="status">—</div>
@@ -91,9 +105,31 @@ input[type=range]{padding:0;accent-color:var(--teal);width:130px}
 {"imports":{"three":"/hud/avatar/vendor/three/three.module.js","three/addons/":"/hud/avatar/vendor/three/addons/"}}
 </script>
 <script type="module">
-import { DEFAULTS } from '/hud/avatar/avatar.js';
+import { DEFAULTS, GESTURES } from '/hud/avatar/avatar.js';
 const $=id=>document.getElementById(id);
 const fields=['top','bottom','footwear','glasses','hair'];
+const GESTURE_LABELS={nod:'prikima',shake:'odkima',tilt:'nagne glavo',
+  look:'pogled',wave:'maha',shrug:'skomigne',point:'pokaže',bow:'poklon'};
+function fillGestures(){
+  const sel=$('gesture'); sel.innerHTML='';
+  for(const name of Object.keys(GESTURES)){
+    const o=document.createElement('option');
+    o.value=name; o.textContent=GESTURE_LABELS[name]||name;
+    sel.appendChild(o);
+  }
+}
+function fillHair(){
+  const sel=$('hairStyle');
+  const styles=window.MiaAvatar?.hairStyles?.()||[{id:'default',label:'pričeska 1'},{id:'none',label:'brez'}];
+  const cur=sel.value||'default';
+  sel.innerHTML='';
+  for(const s of styles){
+    const o=document.createElement('option');
+    o.value=s.id; o.textContent=s.label;
+    sel.appendChild(o);
+  }
+  sel.value=styles.some(s=>s.id===cur)?cur:'default';
+}
 function fill(cfg){
   for(const f of fields) $(f).checked=!!cfg[f];
   for(const k of ['topColor','bottomColor','footwearColor','glassesColor','hairColor','skinTone']){
@@ -102,11 +138,12 @@ function fill(cfg){
   $('camera').value=cfg.camera||'bust';
   $('quality').value=cfg.quality||'high';
   $('mood').value=cfg.mood||'neutral';
-  $('hairStyle').value=cfg.hairStyle||'default';
   $('model').innerHTML='';
   const opt=document.createElement('option');
   opt.value=cfg.model||DEFAULTS.model; opt.textContent=(cfg.model||DEFAULTS.model).split('/').pop();
   $('model').appendChild(opt);
+  fillHair();
+  $('hairStyle').value=cfg.hairStyle||'default';
 }
 async function load(){
   let cfg={...DEFAULTS};
@@ -149,12 +186,50 @@ function apply(save=true){
 for(const f of fields) $(f).addEventListener('change',()=>apply(false));
 for(const k of ['topColor','bottomColor','footwearColor','glassesColor','hairColor','skinTone','camera','quality','mood','hairStyle'])
   $(k).addEventListener('input',()=>apply(false));
-$('model').addEventListener('change',async()=>{await window.MiaAvatar?.reloadModel($('model').value);apply(true)});
+$('model').addEventListener('change',async()=>{
+  $('status').textContent='nalagam model…';
+  const ok=await window.MiaAvatar?.reloadModel($('model').value);
+  if(ok) apply(true);
+  fillHair();
+  $('status').textContent=ok?'model naložen · '+new Date().toLocaleTimeString('sl-SI')
+    :'modela ni bilo mogoče naložiti';
+});
+$('gestureBtn').onclick=()=>{
+  const g=$('gesture').value;
+  const ok=window.MiaAvatar?.playGesture(g);
+  $('status').textContent=ok?'gesta: '+(GESTURE_LABELS[g]||g):'gesta ni na voljo';
+};
+$('look').addEventListener('change',()=>{
+  window.MiaAvatar?.setLook($('look').value||null);
+  $('status').textContent=$('look').value?'pogled: '+$('look').value:'pogled: prosto';
+});
 $('saveBtn').onclick=()=>apply(true);
-$('testBtn').onclick=()=>{window.MiaAvatar?.speakText('Dober dan, šefe. Kako si? Lepo te vidim.',1800)};
+$('testBtn').onclick=()=>{
+  window.MiaAvatar?.speakText('Dober dan, šefe. Kako si? Lepo te vidim.',1800,
+    { gesture: $('gesture').value, look: $('look').value || null });
+};
 $('resetBtn').onclick=()=>{fill({...DEFAULTS});apply(true)};
 $('closeBtn').onclick=()=>{try{window.parent.closeView()}catch{window.close()}};
+addEventListener('mia-avatar-ready',()=>{fillHair();updateStatus()});
+addEventListener('mia-avatar-failed',(e)=>{
+  $('status').textContent='3D model se ni naložil: '+(e.detail||'neznana napaka')+
+    ' · zaženi server/scripts/fetch-avatar-assets.sh';
+});
+function hairWord(n){
+  if(n===1) return 'pričeska';
+  if(n===2) return 'pričeski';
+  if(n===3||n===4) return 'pričeske';
+  return 'pričesk';
+}
+function updateStatus(){
+  const a=window.MiaAvatar;
+  if(!a) return;
+  const n=a.ready?a.hairStyles().length-1:0;
+  $('status').textContent=a.ready?'3D pripravljen · '+n+' '+hairWord(n):'3D se nalaga…';
+}
+fillGestures();
 load();
+setTimeout(updateStatus,1500);
 </script>
 </body>
 </html>
