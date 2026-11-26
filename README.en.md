@@ -166,10 +166,21 @@ server/scripts/fetch-avatar-assets.sh        # downloads the free RPM female mod
 
 - face: visemes, emotion, blinking, gaze, breathing, micro-expressions; manual
   smile, brow raise and wide eyes,
-- wardrobe: 8 outfit presets (casual, business, sport, evening, cyber, minimal,
-  warm, mono), per-piece colour and fabric material, glasses,
-- hair: the styles present in the model or off, 6 shape variants (natural, long,
-  short, volume, sleek, wild), colour, length and volume,
+- **9 female characters**: Mia, Nika, Eva, Lana, Zoja, Tara, Iris, Maja and the
+  android Nova; each is a full appearance bundle (hair, skin, eyes, shape,
+  outfit, accessories, mood, robot finish) switched with one click,
+- wardrobe: 16 outfit presets (casual, business, sport, evening, cyber, minimal,
+  warm, mono, no clothes, hoodie, uniform, gala, techwear, kimono, stealth,
+  pastel), per-piece colour and fabric material, glasses,
+- accessories and garments: collar, tie, scarf, pauldrons, armour, visor,
+  antenna, headset, belt, skirt, dress and thrusters; skirt/dress length is a
+  slider,
+- robot: metal skin, glowing eyes, rings on arms/legs/neck, a chest core and
+  glow lines; colour and intensity are adjustable,
+- hair: 10 procedural wigs (chest-length, short, bob, pixie, ponytail, bun,
+  twin tails, braids, afro, mohawk) plus the styles present in the model or
+  off, colour, length and volume; procedural wigs follow the head on every
+  move,
 - shape: 6 body types (natural, slim, athletic, curvy, petite, tall) plus 12
   sliders for height, build, head, eyes, shoulders, hips, hands and feet,
 - skin and eyes: skin-tone and eye-colour palettes,
@@ -179,15 +190,28 @@ server/scripts/fetch-avatar-assets.sh        # downloads the free RPM female mod
   flat), per-light colour and intensity, exposure, environment and background,
 - behaviour: blink rate, breathing, head sway, pointer gaze, idle speed and
   gesture strength,
+- **full body**: procedural skeletal animation of head, torso, arms and legs —
+  nod/shake, head tilt, wave (one or both hands), point, shrug, salute, think,
+  bow, **bend over**, lean, stretch, dance, punch, kick, block, kata and a
+  combat combination, scan, power-up and glitch; 26 actions with easing and
+  interruption blending,
 - render: quality, shadows, FPS cap and pixel ratio,
 - export/import all settings as JSON, randomise and reset,
+- gestures: `[gesture:wave|nod|shake|bend|bow|punch|kick|block|kata|combat|…]`
+  in a sentence or manually on the LIK page; gaze with
+  `[look:user|camera|away|left|right|up|down]`; Slovenian names are accepted
+  too (`pomahaj`, `prikimi`, `prekloni`, `brcni`, `boks`, `kata`, …),
+- live model swap on the LIK page without a refresh (the new GLB loads and the
+  old one is released),
 - sync: the server sends `avatar_speech` with visemes/timings for every TTS
   sentence; the HUD anchors them to `playhead`; without a timeline it falls
   back to an approximate text estimate.
-- HUD page **LIK IN GARDEROBA** (`/hud/avatar.html`) saves all 71 settings to
+- HUD page **LIK IN GARDEROBA** (`/hud/avatar.html`) saves all 79 settings to
   `server/logs/avatar.json`; models live in `server/hud/avatar/models/`,
 - an Avaturn T2 export can be dropped in and selected there; the T1 demo has
   no facial blendshapes, so it is not the default.
+- to preview one pose: `/hud/avatar.html?pose=wave&at=0.4&camera=full`
+  (useful for checking gestures and for screenshots).
 
 Details, MetaHuman/Audio2Face comparison and phases:
 [docs/en/AVATAR.md](docs/en/AVATAR.md).

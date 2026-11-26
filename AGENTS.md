@@ -31,7 +31,7 @@ The current major addition is the **learning/knowledge core** and the
 - 3D avatar: `server/hud/avatar/avatar.js` (Three.js runtime, wardrobe, gaze,
   breathing, blink, ARKit/viseme blending, live model swap), `presets.js`
   (79 settings, schema, presets), `characters.js` (9 female appearance
-  bundles), `motion.js` (24 procedural full-body actions), `hair.js` (10
+  bundles), `motion.js` (26 procedural full-body actions), `hair.js` (10
   procedural wigs), `garments.js` (accessories, dresses, robot rig),
   `server/hud/avatar.html` (settings deck), `server/avatar_visemes.py`
   (Slovenian → Oculus 15 timeline), and `_send_tts_sentence()` emits

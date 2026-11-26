@@ -482,7 +482,7 @@ Avaturn T1) only gets head/body motion; facial animation needs a T2/ARKit
 model.
 
 **Gestures and full body:** the free model ships one Mixamo idle clip and no
-gesture library, so motion is procedural. `motion.js` defines 24 actions as
+gesture library, so motion is procedural. `motion.js` defines 26 actions as
 key poses on **world axes** per bone (head, neck, spine, shoulders, elbows,
 hands, hips, knees, feet); the runtime converts each offset into the current
 parent's local axis and adds it to the idle pose. Chained poses (raise an arm,

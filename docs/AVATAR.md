@@ -422,7 +422,7 @@ Implementirano:
 | Del | Datoteka |
 |---|---|
 | 3D runtime, kamera, luči, PBR okolje, stanja, pogled, dihanje, utripanje | `server/hud/avatar/avatar.js` |
-| Proceduralne poze glave/trupa/rok/nog (24 akcij, slovenski aliasi) | `server/hud/avatar/motion.js` |
+| Proceduralne poze glave/trupa/rok/nog (26 akcij, slovenski aliasi) | `server/hud/avatar/motion.js` |
 | 9 ženskih likov (cel paket videza) | `server/hud/avatar/characters.js` |
 | 10 proceduralnih pričesk | `server/hud/avatar/hair.js` |
 | Dodatki, obleke in robot rig | `server/hud/avatar/garments.js` |
@@ -468,7 +468,7 @@ targetov (npr. Avaturn T1), se uporabi samo gibanje glave/telesa; za obrazno
 mimiko je potreben T2/ARKit model.
 
 **Geste in polno telo:** model prinese en Mixamo idle posnetek in nobene
-knjižnice gest, zato je gibanje proceduralno. `motion.js` opisuje 24 akcij kot
+knjižnice gest, zato je gibanje proceduralno. `motion.js` opisuje 26 akcij kot
 ključne poze na **svetovnih oseh** za posamezne kosti (glava, vrat, hrbtenica,
 rame, komolci, dlani, boki, kolena, stopala); runtime vsak odmik pretvori v
 lokalno os trenutnega starša in ga doda na idle pozo. Zato delujejo tudi

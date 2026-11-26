@@ -199,7 +199,7 @@ server/scripts/fetch-avatar-assets.sh        # prenese brezplačni RPM ženski m
   prikima/odkima, nagne glavo, maha (z eno ali obema rokama), pokaže, skomigne,
   pozdravi, razmišlja, pokloni se, **prekloni se**, nagne, razteza, pleše,
   udari, brcne, blokira, izvede kato in borilno kombinacijo, skenira, vklop
-  moči in glitch; 24 akcij z glajenjem in prehodom med prekinitvami,
+  moči in glitch; 26 akcij z glajenjem in prehodom med prekinitvami,
 - render: kakovost, sence, omejitev FPS in pixel ratio,
 - izvoz/uvoz vseh nastavitev v JSON, naključni videz in ponastavitev,
 - geste: `[gesture:wave|nod|shake|bend|bow|punch|kick|block|kata|combat|…]` v
