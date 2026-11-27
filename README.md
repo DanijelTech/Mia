@@ -146,79 +146,15 @@ V HUD-u sta panel **SAMODEJNOST** in stran `/hud/autonomy.html` (pregled,
 prilagoditev, opravila in pravila, naloge, ukaz, opozorila). Podrobnosti:
 [docs/AUTONOMY.md](docs/AUTONOMY.md).
 
-## 3D lik in garderoba
+## V ozadju (pregled in ročni nadzor)
 
-V sredini HUD-a je zdaj **3D ženski lik** (Ready Player Me kompatibilen GLB z
-Mixamo rigom, 72 ARKit/Oculus blendshapi in ločenimi kosi oblačil, las in
-očal). Obroč ostane kot holografska podlaga in fallback.
-
-<p align="center">
-  <img src="docs/screenshots/01-hud.webp" alt="MIA HUD s 3D likom v sredini" width="900">
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/02-lik-cel-lik.webp" alt="Stran LIK IN GARDEROBA, cel lik" width="442">
-  <img src="docs/screenshots/03-obraz.webp" alt="Obraz od blizu" width="442">
-</p>
-
-<sub>Zaslonske slike so iz testnega okolja brez povezanega Hermesa, zato so
-desni paneli HUD-a prazni in piše "povezava prekinjena"; 3D plast in
-nastavitve so prave.</sub>
-
-```bash
-server/scripts/fetch-avatar-assets.sh        # prenese brezplačni RPM ženski model
-./install.sh --yes --open --with-avatar      # isto med namestitvijo
-```
-
-- obraz: visemi, čustva, utripanje, pogled, dihanje, mikroizrazi; ročno tudi
-  nasmeh, dvignjene obrvi in široke oči,
-- **9 ženskih likov**: Mia, Nika, Eva, Lana, Zoja, Tara, Iris, Maja in
-  androidka Nova; vsak lik je cel paket (lasje, koža, oči, postava, obleka,
-  dodatki, razpoloženje, robot končna obdelava) in se preklopi z enim klikom,
-- garderoba: 16 prednastavljenih oblek (vsakdanji, poslovni, športni, večerni,
-  cyber, minimal, topel, mono, brez oblačil, hoodie, uniforma, gala, techwear,
-  kimono, stealth, pastel), barva in material vsakega kosa, očala,
-- dodatki in obleke: ovratnik, kravata, šal, naramnice, oklep, vizir, antena,
-  slušalke, pas, krilo, obleka in potisniki; dolžina krila/obleke je drsnik,
-- robot: kovinska koža, žareče oči, obroči na rokah/nogah in vratu, jedro na
-  prsih ter žareče linije; barva in moč žarenja sta nastavljivi,
-- lasje: 10 proceduralnih pričesk (dolga do prsi, kratka, bob, pixie, rep,
-  figa, dvojni repki, pletenice, afro, mohawk) + pričeske iz modela ali brez,
-  barva, dolžina in volumen; proceduralne pričeske sledijo glavi pri vsakem
-  gibu,
-- oblika: 6 telesnih tipov (naravna, vitka, atletska, oblina, drobna, visoka)
-  in 12 drsnikov za višino, postavo, glavo, oči, rame, boke, roke in stopala,
-- koža in oči: palete odtenkov kože in barve oči,
-- kamera: 7 kadrov (doprsni, glava, obraz, cel lik, profil, heroj, filmski) ter
-  oddaljenost, višina, kot, FOV, paralaksa in samodejno kroženje,
-- luči in scena: 8 presetov (studio, cyan, toplo, kino, noč, mehko, neon,
-  ravno), moč in barva vsake luči, osvetlitev, okoljski odsev in ozadje,
-- vedenje: hitrost utripanja, dihanje, zibanje, sledenje kazalcu, hitrost idle
-  animacije, moč in hitrost gest,
-- **polno telo**: proceduralna skeletna animacija glave, trupa, rok in nog —
-  prikima/odkima, nagne glavo, maha (z eno ali obema rokama), pokaže, skomigne,
-  pozdravi, razmišlja, pokloni se, **prekloni se**, nagne, razteza, pleše,
-  udari, brcne, blokira, izvede kato in borilno kombinacijo, skenira, vklop
-  moči in glitch; 26 akcij z glajenjem in prehodom med prekinitvami,
-- render: kakovost, sence, omejitev FPS in pixel ratio,
-- izvoz/uvoz vseh nastavitev v JSON, naključni videz in ponastavitev,
-- geste: `[gesture:wave|nod|shake|bend|bow|punch|kick|block|kata|combat|…]` v
-  stavku ali ročno na strani LIK; pogled tudi z
-  `[look:user|camera|away|left|right|up|down]`; sprejeta so tudi slovenska
-  imena (`pomahaj`, `prikimi`, `prekloni`, `brcni`, `boks`, `kata`, …),
-- menjava modela na strani LIK brez osvežitve (GLB se naloži in star se sprosti),
-- sinhronizacija: strežnik pošlje `avatar_speech` z visemi/časi iz vsakega
-  stavka TTS; HUD jih veže na `playhead`, brez časovne osi pa na približno
-  besedilno oceno.
-- HUD stran **LIK IN GARDEROBA** (`/hud/avatar.html`) shrani vseh 79 nastavitev
-  v `server/logs/avatar.json`; modeli so v `server/hud/avatar/models/`,
-- Avaturn T2 izvoz lahko dodaš kot nov `.glb` in ga izbereš v isti strani;
-  T1 demo nima obraznih blendshapov, zato ni privzet.
-- za ogled posamezne poze: `/hud/avatar.html?pose=wave&at=0.4&camera=full`
-  (uporabno za preverjanje gest in za zaslonske slike).
-
-Podrobnosti, primerjava z MetaHuman/Audio2Face in faze:
-[docs/AVATAR.md](docs/AVATAR.md).
+HUD stran **V OZADJU** (`/hud/background.html`) pokaže, kaj Mia trenutno
+izvaja v ozadju: medijska okna, ki jih je odprla, holografske plošče, storitve
+sklada (llama-server, chat model, Hermes, TTS) in aktivna opravila samodejnosti.
+Vsako postavko lahko zapreš oziroma ustaviš ročno, s stikalom **ROČNI NADZOR**
+pa izklopiš Mia-ino samodejno zapiranje oken (npr. ko želiš imeti odprti dve
+stvari hkrati). API: `/api/background`, `/api/background/close`,
+`/api/background/stop`, `/api/background/override`.
 
 ## Arhitektura
 
@@ -392,8 +328,7 @@ server/calibration.py   vodena kalibracija prek HUD WebSocketa
 server/hud/settings.html      NASTAVITVE (budnica, prag, učenje, kalibracija)
 server/hud/capabilities.html  ZMOGLJIVOSTI (potrjeno/naučeno/prazno)
 server/hud/autonomy.html      SAMODEJNOST (profil, načrti, opravila, naloge, zdravje)
-server/hud/avatar/      3D lik: Three.js runtime, modeli (fetch), garderoba, visemi
-server/avatar_visemes.py  slovenski tekst → Oculus 15 visemov + časovna os
+server/hud/background.html    V OZADJU (kaj teče, ročni nadzor, zapiranje)
 server/scripts/  mia-start/stop/health + enroll_voice.py (glasovna kalibracija)
                  + gepard_tts.py (TTS storitev s per-request višino tona)
 client/          opcijski Windows/Linux odjemalec za pritisk na tipko (z zaznavo budnice)
@@ -411,7 +346,7 @@ skills/mia-companion/bin/  mia-open, mia-close, mia-volume, mia-artists,
 tests/           unittest suite za mia_core, mia-ctl in drevo veščin
 launchd/         predloge za samodejni zagon na macOS (pripombe o TCC in FD limitih)
 docs/            slovenska dokumentacija: SETUP, ARCHITECTURE, LEARNING, CONTROL,
-                 AUTONOMY, AVATAR, CALIBRATION, CAPABILITIES, TROUBLESHOOTING
+                 AUTONOMY, CALIBRATION, CAPABILITIES, TROUBLESHOOTING
 docs/en/         ista dokumentacija v angleščini
 install.sh       namestitev (brez venv, root ali uporabnik) + manifest
 start-mia.sh     zbudi cel sklad (stack: llama → Hermes → dashboard → Mia + TTS), odpre HUD

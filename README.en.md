@@ -140,81 +140,15 @@ reactive rules (“when the disk is full …”), watches health, and understand
 deterministic system commands before the LLM. HUD: `/hud/autonomy.html`.
 Details: [docs/en/AUTONOMY.md](docs/en/AUTONOMY.md).
 
-## 3D character and wardrobe
+## Background (overview and manual override)
 
-The HUD centre now renders a **3D female character** (Ready Player Me-compatible
-GLB, Mixamo rig, 72 ARKit/Oculus blendshapes, separate clothing/hair/glasses
-meshes). The ring stays as a holographic pedestal and fallback.
-
-<p align="center">
-  <img src="docs/screenshots/01-hud.webp" alt="MIA HUD with the 3D character in the centre" width="900">
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/02-lik-cel-lik.webp" alt="LIK IN GARDEROBA page, full body" width="442">
-  <img src="docs/screenshots/03-obraz.webp" alt="Face close-up" width="442">
-</p>
-
-<sub>Screenshots come from a test environment without a connected Hermes, so
-the right-hand HUD panels are empty and the header says "connection lost"; the
-3D layer and its settings are real.</sub>
-
-```bash
-server/scripts/fetch-avatar-assets.sh        # downloads the free RPM female model
-./install.sh --yes --open --with-avatar      # same during install
-```
-
-- face: visemes, emotion, blinking, gaze, breathing, micro-expressions; manual
-  smile, brow raise and wide eyes,
-- **9 female characters**: Mia, Nika, Eva, Lana, Zoja, Tara, Iris, Maja and the
-  android Nova; each is a full appearance bundle (hair, skin, eyes, shape,
-  outfit, accessories, mood, robot finish) switched with one click,
-- wardrobe: 16 outfit presets (casual, business, sport, evening, cyber, minimal,
-  warm, mono, no clothes, hoodie, uniform, gala, techwear, kimono, stealth,
-  pastel), per-piece colour and fabric material, glasses,
-- accessories and garments: collar, tie, scarf, pauldrons, armour, visor,
-  antenna, headset, belt, skirt, dress and thrusters; skirt/dress length is a
-  slider,
-- robot: metal skin, glowing eyes, rings on arms/legs/neck, a chest core and
-  glow lines; colour and intensity are adjustable,
-- hair: 10 procedural wigs (chest-length, short, bob, pixie, ponytail, bun,
-  twin tails, braids, afro, mohawk) plus the styles present in the model or
-  off, colour, length and volume; procedural wigs follow the head on every
-  move,
-- shape: 6 body types (natural, slim, athletic, curvy, petite, tall) plus 12
-  sliders for height, build, head, eyes, shoulders, hips, hands and feet,
-- skin and eyes: skin-tone and eye-colour palettes,
-- camera: 7 shots (bust, head, face, full, profile, hero, cinematic) plus
-  distance, height, yaw, FOV, pointer parallax and auto orbit,
-- lights and scene: 8 presets (studio, cyan, warm, cinema, night, soft, neon,
-  flat), per-light colour and intensity, exposure, environment and background,
-- behaviour: blink rate, breathing, head sway, pointer gaze, idle speed and
-  gesture strength,
-- **full body**: procedural skeletal animation of head, torso, arms and legs —
-  nod/shake, head tilt, wave (one or both hands), point, shrug, salute, think,
-  bow, **bend over**, lean, stretch, dance, punch, kick, block, kata and a
-  combat combination, scan, power-up and glitch; 26 actions with easing and
-  interruption blending,
-- render: quality, shadows, FPS cap and pixel ratio,
-- export/import all settings as JSON, randomise and reset,
-- gestures: `[gesture:wave|nod|shake|bend|bow|punch|kick|block|kata|combat|…]`
-  in a sentence or manually on the LIK page; gaze with
-  `[look:user|camera|away|left|right|up|down]`; Slovenian names are accepted
-  too (`pomahaj`, `prikimi`, `prekloni`, `brcni`, `boks`, `kata`, …),
-- live model swap on the LIK page without a refresh (the new GLB loads and the
-  old one is released),
-- sync: the server sends `avatar_speech` with visemes/timings for every TTS
-  sentence; the HUD anchors them to `playhead`; without a timeline it falls
-  back to an approximate text estimate.
-- HUD page **LIK IN GARDEROBA** (`/hud/avatar.html`) saves all 79 settings to
-  `server/logs/avatar.json`; models live in `server/hud/avatar/models/`,
-- an Avaturn T2 export can be dropped in and selected there; the T1 demo has
-  no facial blendshapes, so it is not the default.
-- to preview one pose: `/hud/avatar.html?pose=wave&at=0.4&camera=full`
-  (useful for checking gestures and for screenshots).
-
-Details, MetaHuman/Audio2Face comparison and phases:
-[docs/en/AVATAR.md](docs/en/AVATAR.md).
+The HUD page **V OZADJU** (`/hud/background.html`) lists what Mia is running in
+the background: media windows she opened, holographic panels, stack services
+(llama-server, chat model, Hermes, TTS) and active autonomy jobs. Each item can
+be closed or stopped by hand, and the **ROČNI NADZOR** switch turns off Mia's
+automatic window closing (for example when you want two things open at once).
+API: `/api/background`, `/api/background/close`, `/api/background/stop`,
+`/api/background/override`.
 
 ## Architecture
 
@@ -400,8 +334,7 @@ server/calibration.py   guided calibration over the HUD WebSocket
 server/hud/settings.html      SETTINGS (wake, threshold, learning, calibration)
 server/hud/capabilities.html  CAPABILITIES (confirmed/learned/empty)
 server/hud/autonomy.html      AUTONOMY (profile, plans, jobs, tasks, health)
-server/hud/avatar/      3D character: Three.js runtime, models (fetch), wardrobe, visemes
-server/avatar_visemes.py  Slovenian text → Oculus 15 visemes + timeline
+server/hud/background.html    V OZADJU (what runs, manual override, closing)
 server/scripts/  mia-start/stop/health + enroll_voice.py (voice calibration)
                  + gepard_tts.py (TTS service with per-request pitch)
 client/          optional Windows/Linux push-to-talk Python client (wake word capable)
@@ -419,7 +352,7 @@ skills/mia-companion/bin/  mia-open, mia-close, mia-volume, mia-artists,
 tests/           unittest suite for mia_core, mia-ctl and the skill tree
 launchd/         macOS auto-start templates with hard-won TCC + FD-limit notes
 docs/            Slovenian docs; docs/en/ the English copies
-                 (SETUP, ARCHITECTURE, LEARNING, CONTROL, AUTONOMY, AVATAR, CALIBRATION, CAPABILITIES)
+                 (SETUP, ARCHITECTURE, LEARNING, CONTROL, AUTONOMY, CALIBRATION, CAPABILITIES)
 install.sh       install (no venv, root or user) + manifest
 start-mia.sh     boots the whole stack (stack: llama → Hermes → dashboard → Mia + TTS), opens HUD
 stop-mia.sh      stops everything and frees RAM/VRAM; status, --restart, --free-ports

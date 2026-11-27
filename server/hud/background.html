@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MIA // V OZADJU</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+:root{--bg:#050b14;--panel:#081523cc;--line:#0e2c40;--cyan:#00e5ff;--cyan-dim:#0a7f96;
+  --teal:#19f0d8;--amber:#ffb300;--red:#ff4d5e;--txt:#9fd8e8;--txt-dim:#4d7d92}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:radial-gradient(ellipse at 50% 0%,#0a1a2c 0%,var(--bg) 60%);color:var(--txt);
+  font-family:'Rajdhani',sans-serif;padding:14px 18px 30px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line);
+  background:var(--panel);padding:10px 14px;clip-path:polygon(0 0,100% 0,100% 70%,calc(100% - 14px) 100%,14px 100%,0 70%)}
+header h1{font-family:'Orbitron';font-size:15px;letter-spacing:6px;color:var(--cyan)}
+header .sub{font-size:11px;letter-spacing:2px;color:var(--txt-dim)}
+.btns{display:flex;gap:6px;flex-wrap:wrap}
+button{background:#0a2435;color:var(--cyan);border:1px solid var(--cyan-dim);padding:6px 10px;
+  font-family:'Orbitron';font-size:9.5px;letter-spacing:1.2px;cursor:pointer}
+button:hover{background:#0e3448}
+button.danger{color:var(--red);border-color:#5c1f27}
+button.ghost{color:var(--txt-dim);border-color:var(--line)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:12px 0}
+.stat{border:1px solid var(--line);background:var(--panel);padding:10px 12px}
+.stat b{display:block;font-family:'Orbitron';font-size:19px;color:var(--teal)}
+.stat span{font-size:11px;letter-spacing:1.5px;color:var(--txt-dim)}
+.card{border:1px solid var(--line);background:var(--panel);padding:10px 12px;margin-bottom:10px;
+  clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px))}
+.card h3{font-family:'Orbitron';font-size:11px;letter-spacing:2px;color:var(--cyan);
+  margin-bottom:6px;display:flex;justify-content:space-between;gap:8px}
+.card h3 .num{color:var(--txt-dim)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{text-align:left;padding:6px 7px;border-bottom:1px solid #0b2233;vertical-align:middle}
+th{font-family:'Orbitron';font-size:9.5px;letter-spacing:1.5px;color:var(--cyan);font-weight:400}
+tr:hover td{background:#081523}
+.ok{color:var(--teal)}.warn{color:var(--amber)}.err{color:var(--red)}.dim{color:var(--txt-dim)}
+.chip{display:inline-block;font-size:9.5px;padding:2px 6px;border:1px solid var(--line);white-space:nowrap}
+.chip.up{color:var(--teal);border-color:#0d6b63;background:#041c1a}
+.chip.down{color:var(--red);border-color:#6b1a22;background:#1a0407}
+.chip.open{color:var(--cyan);border-color:var(--cyan-dim);background:#04141c}
+.hint{font-size:11.5px;color:var(--txt-dim);margin:6px 0 10px}
+.code{font-family:ui-monospace,monospace;font-size:11px;color:#bfe9f7;word-break:break-all}
+.toggle{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.switch{position:relative;width:56px;height:26px;border:1px solid var(--line);background:#06101c;cursor:pointer}
+.switch i{position:absolute;top:3px;left:3px;width:18px;height:18px;background:var(--txt-dim);transition:.2s}
+.switch.on{border-color:var(--cyan-dim);background:#0a2435}
+.switch.on i{left:33px;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+.state-line{font-size:12.5px}
+@media(max-width:760px){th:nth-child(2),td:nth-child(2){display:none}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>V OZADJU</h1>
+    <div class="sub">MEDIJSKA OKNA · PLOŠČE · STORITVE · OPRAVILA</div></div>
+  <div class="btns">
+    <button id="refreshBtn">OSVEŽI</button>
+    <button id="stopAllBtn" class="danger">USTAVI VSE PREDVAJANJE</button>
+    <button id="closeBtn" class="ghost">✕ ZAPRI</button>
+  </div>
+</header>
+
+<div class="stats">
+  <div class="stat"><b id="sWindows">—</b><span>OKNA</span></div>
+  <div class="stat"><b id="sPanels">—</b><span>PLOŠČE</span></div>
+  <div class="stat"><b id="sServices">—</b><span>STORITVE</span></div>
+  <div class="stat"><b id="sJobs">—</b><span>OPRAVILA</span></div>
+</div>
+
+<div class="card">
+  <h3><span>ROČNI NADZOR</span><span class="num">OVERRIDE</span></h3>
+  <div class="toggle">
+    <div class="switch" id="overrideSwitch" role="switch" aria-checked="false" tabindex="0"><i></i></div>
+    <div>
+      <div class="state-line" id="overrideState">Izklopljeno — Mia sama ustavi staro predvajanje.</div>
+      <div class="hint">Vklopljeno: Mia ne zapira več oken samodejno. Ukaz »Mia ustavi youtube«
+        in gumb spodaj še vedno delujeta.</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h3><span>MEDIJSKA OKNA</span><span class="num">01</span></h3>
+  <div class="hint">Okna, ki jih je Mia odprla. Zapri jih tu, če v ozadju igra več stvari.</div>
+  <table><thead><tr><th>Okno</th><th>Povezava</th><th></th></tr></thead>
+    <tbody id="windowsRows"><tr><td colspan="3" class="dim">nalagam …</td></tr></tbody></table>
+</div>
+
+<div class="card">
+  <h3><span>HOLOGRAMSKE PLOŠČE</span><span class="num">02</span></h3>
+  <table><thead><tr><th>Vsebina</th><th>Vir</th><th></th></tr></thead>
+    <tbody id="panelsRows"><tr><td colspan="3" class="dim">nalagam …</td></tr></tbody></table>
+</div>
+
+<div class="card">
+  <h3><span>STORITVE SKLADA</span><span class="num">03</span></h3>
+  <div class="hint">Ustavi le, kar ne potrebuješ. Brez llama-serverja ali Hermesa Mia ne odgovarja.</div>
+  <table><thead><tr><th>Storitev</th><th>Naslov</th><th>Stanje</th><th></th></tr></thead>
+    <tbody id="servicesRows"><tr><td colspan="4" class="dim">nalagam …</td></tr></tbody></table>
+</div>
+
+<div class="card">
+  <h3><span>OPRAVILA SAMODEJNOSTI</span><span class="num">04</span></h3>
+  <table><thead><tr><th>Opravilo</th><th>Urnik</th><th>Naslednji zagon</th><th></th></tr></thead>
+    <tbody id="jobsRows"><tr><td colspan="4" class="dim">nalagam …</td></tr></tbody></table>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const get=async u=>{const r=await fetch(u);if(!r.ok)throw new Error(r.status);return r.json()};
+const post=async(u,b)=>{const r=await fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b||{})});
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||j.error||r.status);return j};
+const ts=s=>s?new Date(s*1000).toLocaleString("sl-SI"):"—";
+let busy=false;
+
+function emptyRow(cols,text){return `<tr><td colspan="${cols}" class="dim">${text}</td></tr>`}
+
+async function closeItem(id){
+  if(busy)return; busy=true;
+  try{await post("/api/background/close",{id});}
+  catch(e){alert("ni uspelo: "+e.message)}
+  finally{busy=false; await load();}
+}
+
+function renderWindows(items){
+  $("windowsRows").innerHTML=items.length?items.map(i=>`<tr>
+    <td><b>${esc(i.name)}</b></td>
+    <td class="code">${esc(i.detail)}</td>
+    <td><button class="danger" data-close="${esc(i.id)}">ZAPRI</button></td></tr>`).join("")
+    :emptyRow(3,"ni odprtih medijskih oken");
+}
+
+function renderPanels(items){
+  $("panelsRows").innerHTML=items.length?items.map(i=>`<tr>
+    <td><b>${esc(i.name)}</b></td>
+    <td class="code">${esc(i.detail)}</td>
+    <td><button class="danger" data-close="${esc(i.id)}">ZAPRI</button></td></tr>`).join("")
+    :emptyRow(3,"ni holografskih plošč");
+}
+
+function renderServices(items){
+  $("servicesRows").innerHTML=items.length?items.map(i=>`<tr>
+    <td><b>${esc(i.name)}</b></td>
+    <td class="code">${esc(i.detail)}</td>
+    <td><span class="chip ${i.state==="up"?"up":"down"}">${i.state==="up"?"DELUJE":"NE ODGOVARJA"}</span></td>
+    <td><button class="${i.danger?"danger":""}" data-close="${esc(i.id)}"
+      data-confirm="${i.danger?1:0}">USTAVI</button></td></tr>`).join("")
+    :emptyRow(4,"ni nastavljenih storitev (stack: v server.yaml)");
+}
+
+function renderJobs(items){
+  $("jobsRows").innerHTML=items.length?items.map(i=>`<tr>
+    <td><b>${esc(i.name)}</b></td>
+    <td>${esc(i.detail)||"—"}</td>
+    <td>${ts(i.next_run)}</td>
+    <td><button data-close="${esc(i.id)}">USTAVI</button></td></tr>`).join("")
+    :emptyRow(4,"ni aktivnih opravil");
+}
+
+function renderOverride(on){
+  const sw=$("overrideSwitch");
+  sw.classList.toggle("on",!!on);
+  sw.setAttribute("aria-checked",on?"true":"false");
+  $("overrideState").textContent=on
+    ? "Vklopljeno — Mia ne zapira oken sama; zapiraš jih ročno spodaj."
+    : "Izklopljeno — Mia sama ustavi staro predvajanje.";
+}
+
+async function load(){
+  try{
+    const j=await get("/api/background");
+    const items=j.items||[];
+    const by=k=>items.filter(i=>i.kind===k);
+    renderWindows(by("window"));
+    renderPanels(by("panel"));
+    renderServices(by("service"));
+    renderJobs(by("job"));
+    renderOverride(j.override);
+    const c=j.counts||{};
+    $("sWindows").textContent=c.windows??by("window").length;
+    $("sPanels").textContent=c.panels??by("panel").length;
+    const svc=by("service");
+    $("sServices").textContent=svc.length?(svc.filter(s=>s.state==="up").length+"/"+svc.length):"0";
+    $("sJobs").textContent=c.jobs??by("job").length;
+    document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>{
+      const id=b.dataset.close;
+      if(b.dataset.confirm==="1" && !confirm("Ustavi to storitev? Mia morda ne bo več odgovarjala, dokler je ne zaženeš znova."))return;
+      closeItem(id);
+    });
+  }catch(e){
+    $("windowsRows").innerHTML=emptyRow(3,"napaka: "+esc(e.message));
+  }
+}
+
+$("refreshBtn").onclick=()=>load();
+$("stopAllBtn").onclick=async()=>{
+  try{const r=await post("/api/background/close-all",{});
+    if(!r.stopped)alert("Nič ni igralo.");
+  }catch(e){alert("ni uspelo: "+e.message)}
+  await load();
+};
+$("overrideSwitch").onclick=async()=>{
+  const on=!$("overrideSwitch").classList.contains("on");
+  try{await post("/api/background/override",{enabled:on})}catch(e){alert(e.message)}
+  await load();
+};
+$("overrideSwitch").addEventListener("keydown",e=>{
+  if(e.key===" "||e.key==="Enter"){e.preventDefault();$("overrideSwitch").click();}
+});
+$("closeBtn").onclick=()=>{try{window.parent.closeView()}catch{window.close()}};
+
+load();
+setInterval(()=>{if(!document.hidden)load()},5000);
+</script>
+</body>
+</html>

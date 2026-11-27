@@ -27,6 +27,7 @@ import json
 import os
 import random
 import shutil
+import signal
 import subprocess
 import re
 import threading
@@ -54,14 +55,14 @@ from continuous import WakeGate, build_segmenter, starts_with_exact_wake
 from speaker_gate import SpeakerGate
 from tts import build_backend
 from chat_brain import ChatBrain, EscalateToAgent
-import avatar_visemes
-import avatar_config
 from mia_core.integration import (detect_feedback, detect_remember,
                                   google_request, google_url,
                                   hermes_error_text, media_stop_request,
-                                  music_play_request, time_answer,
-                                  weather_request)
+                                  music_play_request, strip_speech_tags,
+                                  time_answer, weather_request)
 from mia_core import capabilities as capability_core
+from mia_core.background import (load_ui_state, read_window_registry,
+                                 render_window_registry, save_ui_state)
 from mia_core.config import find_tool
 from mia_core.learning import get_core
 from mia_core.autonomy.service import AutonomyService
@@ -431,12 +432,27 @@ _MEDIA_WINDOW_PATTERNS = ("youtube", "youtu.be", "soundcloud", "spotify",
                           "vimeo", "twitch", "radio")
 
 
-async def _stop_all_media() -> bool:
+def _manual_override() -> bool:
+    return bool(UI_STATE.get("manual_override"))
+
+
+def _save_ui_state() -> None:
+    try:
+        save_ui_state(UI_STATE_PATH, UI_STATE)
+    except OSError as exc:
+        print(f"ui-state save failed: {exc}", flush=True)
+
+
+async def _stop_all_media(auto: bool = True) -> bool:
     """Stop every playback path: HUD panels + desktop media windows.
 
-    Called before starting a new track (never two songs at once) and by the
-    deterministic stop command. Returns True when something was actually up.
+    `auto` marks the implicit stop before a new track; the manual override
+    skips only those, never an explicit »ustavi«. Returns True when something
+    was actually up.
     """
+    if auto and _manual_override():
+        print("MEDIA stop skipped — manual override is on", flush=True)
+        return False
     stopped = bool(ACTIVE_PANELS)
     for client in list(WS_CLIENTS):
         try:
@@ -497,6 +513,186 @@ def _run_mia_tool(name: str, args: list[str],
     except Exception as exc:
         print(f"{name} failed: {type(exc).__name__}: {exc}", flush=True)
         return None
+
+
+_MEDIA_WINDOW_REGISTRY = Path.home() / ".cache" / "mia-windows"
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(int(pid), 0)
+    except (ProcessLookupError, ValueError):
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _window_items() -> list[dict]:
+    """Windows Mia opened, from the mia-open registry (dead ones dropped)."""
+    entries = read_window_registry(_MEDIA_WINDOW_REGISTRY)
+    xdo = shutil.which("xdotool")
+    items: list[dict] = []
+    for entry in entries[:25]:
+        title = ""
+        if xdo:
+            try:
+                probe = subprocess.run([xdo, "getwindowname", entry["wid"]],
+                                       capture_output=True, text=True, timeout=2)
+            except Exception:
+                continue
+            if probe.returncode != 0:
+                continue
+            title = (probe.stdout or "").strip()
+        items.append({"id": f"window:{entry['wid']}", "kind": "window",
+                      "name": title or "okno", "detail": entry["url"],
+                      "state": "open" if title else "unverified"})
+    return items
+
+
+def _job_items() -> list[dict]:
+    service = get_autonomy()
+    if service is None:
+        return []
+    try:
+        jobs = service.store.list_jobs(50, True, None)
+    except Exception:
+        return []
+    items = []
+    for job in jobs:
+        trigger = job.get("trigger") or {}
+        detail = (trigger.get("at") or
+                  (f"vsakih {trigger.get('every')} s" if trigger.get("every") else "")
+                  or str(job.get("kind") or ""))
+        items.append({"id": f"job:{job.get('id')}", "kind": "job",
+                      "name": job.get("name") or f"opravilo {job.get('id')}",
+                      "detail": detail, "state": "scheduled",
+                      "next_run": job.get("next_run")})
+    return items
+
+
+_STACK_SERVICES = (("llama", "llama-server", True),
+                   ("chat", "chat model", False),
+                   ("hermes", "Hermes gateway", True),
+                   ("dashboard", "Hermes dashboard", False))
+
+
+def _stack_services() -> list[dict]:
+    stack = CFG.get("stack") or {}
+    items = []
+    for key, label, danger in _STACK_SERVICES:
+        entry = stack.get(key) or {}
+        health = str(entry.get("health") or "")
+        if not health:
+            continue
+        items.append({"id": f"service:{key}", "kind": "service", "key": key,
+                      "name": label, "detail": health, "danger": danger,
+                      "state": "unknown"})
+    tts = CFG.get("tts") or {}
+    if (tts.get("provider") or "").lower() == "http":
+        url = str((tts.get("http") or {}).get("url") or "")
+        if url:
+            items.append({"id": "service:tts", "kind": "service", "key": "tts",
+                          "name": "TTS storitev",
+                          "detail": url.rstrip("/").removesuffix("/tts") + "/health",
+                          "danger": False, "state": "unknown"})
+    return items
+
+
+def _probe(url: str) -> bool:
+    try:
+        return requests.get(url, timeout=1.5).status_code < 500
+    except Exception:
+        return False
+
+
+async def _service_items() -> list[dict]:
+    items = _stack_services()
+    states = await asyncio.gather(*(asyncio.to_thread(_probe, item["detail"])
+                                    for item in items))
+    for item, up in zip(items, states):
+        item["state"] = "up" if up else "down"
+    return items
+
+
+def _close_window(wid: str) -> tuple[bool, str]:
+    if not str(wid).isdigit():
+        return False, "neveljaven id okna"
+    entries = read_window_registry(_MEDIA_WINDOW_REGISTRY)
+    if not any(entry["wid"] == wid for entry in entries):
+        return False, "okno ni v Miinem seznamu"
+    xdo = shutil.which("xdotool")
+    if not xdo:
+        return False, "xdotool ni nameščen"
+    try:
+        result = subprocess.run([xdo, "windowclose", wid],
+                                capture_output=True, text=True, timeout=10)
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    if result.returncode != 0:
+        return False, (result.stderr or "zaprtje ni uspelo").strip()[:200]
+    try:
+        _MEDIA_WINDOW_REGISTRY.write_text(
+            render_window_registry([e for e in entries if e["wid"] != wid]),
+            encoding="utf-8")
+    except OSError:
+        pass
+    return True, "zaprto"
+
+
+def _stop_service(key: str) -> tuple[bool, str]:
+    """Stop one stack service by its pidfile (or its systemd unit)."""
+    stack = CFG.get("stack") or {}
+    entry = stack.get(key) or {}
+    pidfile = str(entry.get("pidfile") or "")
+    if key == "tts":
+        pidfile = pidfile or "logs/mia-tts.pid"
+    path = ROOT / pidfile if pidfile else None
+    pid = 0
+    if path is not None and path.is_file():
+        try:
+            pid = int((path.read_text(encoding="utf-8").strip() or "0"))
+        except ValueError:
+            pid = 0
+    if pid > 1 and _pid_alive(pid):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except PermissionError:
+            return False, f"nimam dovoljenja za pid {pid}"
+        for _ in range(20):
+            if not _pid_alive(pid):
+                break
+            time.sleep(0.25)
+        if _pid_alive(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except Exception:
+                pass
+        return True, f"ustavljeno (pid {pid})"
+    unit = str(entry.get("unit") or "")
+    if unit and shutil.which("systemctl"):
+        for argv in (["systemctl", "--user", "stop", unit],
+                     ["systemctl", "stop", unit]):
+            try:
+                result = subprocess.run(argv, capture_output=True, text=True,
+                                        timeout=20)
+            except Exception:
+                continue
+            if result.returncode == 0:
+                return True, f"systemd: {unit} ustavljen"
+    return False, "procesa ni bilo mogoče najti"
+
+
+def _disable_job(ref: str) -> tuple[bool, str]:
+    service = get_autonomy()
+    if service is None:
+        return False, "samodejnost ni na voljo"
+    try:
+        job_id = int(ref)
+    except ValueError:
+        return False, "neveljaven id opravila"
+    ok = service.store.update_job(job_id, enabled=False)
+    return (True, "opravilo ustavljeno") if ok else (False, "opravila ni")
 
 
 def _open_visible_url(url: str) -> bool:
@@ -1241,7 +1437,7 @@ class VoicePipelineServer:
                                  conn: "ConnState | None" = None) -> None:
         if not sentence:
             return
-        spoken = avatar_visemes.strip_tags(sentence)[0]
+        spoken = strip_speech_tags(sentence)
         if not spoken:
             return
         q: asyncio.Queue = asyncio.Queue()
@@ -1267,23 +1463,6 @@ class VoicePipelineServer:
         await worker_task
         if not chunks:
             return
-        pcm = b"".join(chunks)
-        # The tagged sentence (not the spoken text) carries mood/gesture/look.
-        timeline = avatar_visemes.timeline_for_pcm(sentence, pcm)
-        await ws.send_json({
-            "type": "avatar_speech",
-            "v": 1,
-            "speech_id": int(time.time() * 1000) & 0x7FFFFFFF,
-            "text": spoken,
-            "voice": getattr(self.tts, "label", ""),
-            "duration_ms": timeline["duration_ms"],
-            "mood": timeline.get("mood") or "warm",
-            "gesture": timeline.get("gesture") or "",
-            "look": timeline.get("look") or "",
-            "visemes": timeline["visemes"],
-            "times": timeline["times"],
-            "durations": timeline["durations"],
-        })
         if conn is not None and not conn.is_speaking:
             # announce "speaking" only when audio really exists — on a slow
             # CPU TTS the synthesis takes minutes and a premature GOVORIM
@@ -1328,6 +1507,8 @@ class VoicePipelineServer:
 
 load_env()
 CFG = load_config()
+UI_STATE_PATH = ROOT / "logs" / "ui-state.json"
+UI_STATE: dict = load_ui_state(UI_STATE_PATH)   # e.g. {"manual_override": true}
 HERMES = HermesAPI(CFG)   # lightweight API client - independent of the STT pipeline
 LEARNING = get_core(CFG)  # durable memory, habits, recipes, skill tree
 CHAT = ChatBrain(CFG)   # fast conversational brain; "agent" when disabled
@@ -1607,16 +1788,6 @@ def _ws_allowed(ws: WebSocket) -> bool:
 # --------------------------------------------------------------- HUD + proxy
 
 HUD_DIR = ROOT / "hud"
-AVATAR_CONFIG_PATH = ROOT / "logs" / "avatar.json"
-AVATAR_DEFAULTS = avatar_config.DEFAULTS
-
-
-def _avatar_config() -> dict:
-    try:
-        data = json.loads(AVATAR_CONFIG_PATH.read_text(encoding="utf-8"))
-        return avatar_config.sanitize(data)
-    except (OSError, ValueError):
-        return dict(AVATAR_DEFAULTS)
 
 
 ALLOWED_GET_PATHS = {
@@ -1688,7 +1859,7 @@ async def hud_chat(request: Request) -> JSONResponse:
         return quick(answer, [])
 
     if media_stop_request(chat_text):
-        stopped = await _stop_all_media()
+        stopped = await _stop_all_media(auto=False)
         print(f"MEDIA stop via chat: {chat_text!r} -> stopped={stopped}", flush=True)
         return quick("Ustavila sem glasbo, šefe." if stopped
                      else "Nič ne igra, šefe.", [])
@@ -2229,8 +2400,80 @@ async def music_play_endpoint(request: Request) -> JSONResponse:
 
 @app.post("/api/music/stop")
 async def music_stop_endpoint() -> JSONResponse:
-    await _stop_all_media()
+    await _stop_all_media(auto=False)
     return JSONResponse({"ok": True})
+
+
+@app.get("/api/background")
+async def background_list() -> JSONResponse:
+    """What Mia is running outside the turn: windows, panels, services, jobs."""
+    windows = await asyncio.to_thread(_window_items)
+    panels = []
+    for src in sorted(ACTIVE_PANELS):
+        title = (LAST_SUMMON.get("title") if src == LAST_SUMMON.get("src") else "")
+        panels.append({"id": f"panel:{src}", "kind": "panel",
+                       "name": title or "medijska plošča", "detail": src,
+                       "state": "open"})
+    services = await _service_items()
+    jobs = await asyncio.to_thread(_job_items)
+    items = windows + panels + services + jobs
+    return JSONResponse({
+        "override": _manual_override(),
+        "items": items,
+        "counts": {"windows": len(windows), "panels": len(panels),
+                   "services": len(services), "jobs": len(jobs)},
+        "generated": time.time(),
+    })
+
+
+@app.post("/api/background/close")
+async def background_close(request: Request) -> JSONResponse:
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    item_id = str(body.get("id") or "")
+    kind, _, ref = item_id.partition(":")
+    if not kind or not ref:
+        return JSONResponse({"error": "manjka id"}, status_code=400)
+    if kind == "window":
+        ok, message = await asyncio.to_thread(_close_window, ref)
+    elif kind == "panel":
+        for client in list(WS_CLIENTS):
+            try:
+                await client.send_json({"type": "dismiss_panel", "src": ref})
+            except Exception:
+                WS_CLIENTS.discard(client)
+        ACTIVE_PANELS.discard(ref)
+        ok, message = True, "plošča zaprta"
+    elif kind == "service":
+        ok, message = await asyncio.to_thread(_stop_service, ref)
+    elif kind == "job":
+        ok, message = await asyncio.to_thread(_disable_job, ref)
+    else:
+        return JSONResponse({"error": "neznan tip"}, status_code=400)
+    print(f"BACKGROUND close {item_id}: {message}", flush=True)
+    return JSONResponse({"ok": ok, "message": message},
+                        status_code=200 if ok else 400)
+
+
+@app.post("/api/background/close-all")
+async def background_close_all() -> JSONResponse:
+    stopped = await _stop_all_media(auto=False)
+    return JSONResponse({"ok": True, "stopped": stopped})
+
+
+@app.post("/api/background/override")
+async def background_override(request: Request) -> JSONResponse:
+    """Manual override: Mia stops closing windows on her own."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    UI_STATE["manual_override"] = bool(body.get("enabled"))
+    _save_ui_state()
+    print(f"BACKGROUND manual override -> {UI_STATE['manual_override']}", flush=True)
+    return JSONResponse({"ok": True, "override": UI_STATE["manual_override"]})
 
 
 @app.post("/api/summon")
@@ -2696,36 +2939,6 @@ async def autonomy_alert_ack(alert_id: int) -> JSONResponse:
     return JSONResponse({"ok": ok})
 
 
-@app.get("/api/avatar/config")
-async def avatar_config_get() -> JSONResponse:
-    return JSONResponse({"config": _avatar_config()})
-
-
-@app.post("/api/avatar/config")
-async def avatar_config_set(request: Request) -> JSONResponse:
-    try:
-        body = await request.json()
-        cfg = avatar_config.sanitize(body, _avatar_config())
-    except ValueError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=400)
-    AVATAR_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    AVATAR_CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2),
-                                  encoding="utf-8")
-    return JSONResponse({"ok": True, "config": cfg})
-
-
-@app.get("/api/avatar/models")
-async def avatar_models() -> JSONResponse:
-    base = HUD_DIR / "avatar" / "models"
-    items = []
-    if base.is_dir():
-        for path in sorted(base.glob("*.glb")):
-            items.append({"name": path.name,
-                          "url": f"/hud/avatar/models/{path.name}",
-                          "size": path.stat().st_size})
-    return JSONResponse({"models": items})
-
-
 @app.get("/api/machines")
 async def machines() -> JSONResponse:
     """Local (Mac) stats + configured remote workers.
@@ -3159,7 +3372,7 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
         # deterministic media control — works in any session, and (because it
         # only needs the wake word) even while loud playback drowns the voiceprint
         if said_wake and _is_media_stop(transcript):
-            stopped = await _stop_all_media()
+            stopped = await _stop_all_media(auto=False)
             print(f"MEDIA stopped via voice: {transcript[:60]!r} -> {stopped}",
                   flush=True)
             await _speak_and_finish(ws, pipeline, conn, timing,
@@ -3168,7 +3381,7 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             return
         if said_wake and _is_media_open_browser(transcript):
             src = LAST_SUMMON.get("src") or ""
-            await _stop_all_media()
+            await _stop_all_media(auto=False)
             if src:
                 opened = await asyncio.to_thread(_open_visible_url, src)
                 confirm = ("Odprla sem ga v brskalniku, šefe." if opened

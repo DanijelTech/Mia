@@ -364,6 +364,15 @@ def weather_request(text: str) -> str | None:
     return ""
 
 
+_SPEECH_TAG_RE = re.compile(
+    r"\[(mood|emotion|gesture|look|pause)\s*:\s*[a-zčćžšđ0-9_. -]+\]", re.I)
+
+
+def strip_speech_tags(text: str) -> str:
+    """Drop inline »[mood: …]« / »[gesture: …]« tags before TTS."""
+    return re.sub(r"\s+", " ", _SPEECH_TAG_RE.sub(" ", text or "")).strip()
+
+
 def hermes_error_text(payload: Any, fallback: str = "") -> str:
     """One actionable sentence for a Hermes ``run.failed``/``error`` event.
 

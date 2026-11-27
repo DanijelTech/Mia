@@ -54,12 +54,6 @@ header .sub{font-size:12px; letter-spacing:3px; color:var(--txt-dim)}
 #center{display:flex; flex-direction:column; align-items:center; justify-content:flex-start; position:relative; overflow:hidden}
 #reactorWrap{position:relative; width:min(46vh,440px); height:min(46vh,440px); cursor:pointer; flex-shrink:0}
 #reactor{width:100%; height:100%}
-#avatar{position:absolute; inset:0; width:100%; height:100%; opacity:0; transition:opacity .6s; pointer-events:none}
-body.avatar-ready #avatar{opacity:1}
-body.avatar-ready #reactor{opacity:.22}
-body.avatar-ready #coreState{opacity:.85}
-#avatarStateBadge{position:absolute; left:8px; bottom:8px; font:9px 'Orbitron'; letter-spacing:1px; color:var(--teal); opacity:0}
-body.avatar-ready #avatarStateBadge{opacity:.8}
 #coreState{
   position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
   pointer-events:none; font-family:'Orbitron';
@@ -308,7 +302,7 @@ footer{
       <button class="btn viewBtn" onclick="openView('HERMES DASHBOARD','/')">▸ HERMES NADZORNA PLOŠČA</button>
       <button class="btn viewBtn" onclick="openView('CHAT','/chat')">▸ KLEPET</button>
       <button class="btn viewBtn" onclick="openView('SAMODEJNOST','/hud/autonomy.html')">▸ SAMODEJNOST</button>
-      <button class="btn viewBtn" onclick="openView('LIK','/hud/avatar.html')">▸ LIK IN GARDEROBA</button>
+      <button class="btn viewBtn" onclick="openView('V OZADJU','/hud/background.html')">▸ V OZADJU</button>
     </div>
     <div class="panel"><h2><span>SEJA</span><span class="num">05</span></h2>
       <div class="kv"><span>Pogovor</span><b>mia-main</b></div>
@@ -338,8 +332,6 @@ footer{
     <div id="approvals"></div>
     <div id="reactorWrap" title="Click to talk">
       <canvas id="reactor"></canvas>
-      <canvas id="avatar"></canvas>
-      <div id="avatarStateBadge">3D · MIA</div>
       <div id="coreState"><div class="st" id="stateLabel">PRIPRAVLJEN</div><div class="hint" id="stateHint">KLIKNI OBROČ ALI PRESLEDNICO</div></div>
     </div>
     <div id="feed"></div>
@@ -503,14 +495,9 @@ function drawRing(cx,cy,r,w,color,alpha,dash,offset){
   ctx.lineDashOffset=offset||0;
   ctx.arc(cx,cy,r,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1; ctx.setLineDash([]);
 }
-let reactorLast=0;
 function frame(t){
   requestAnimationFrame(frame);
   if(document.hidden)return;
-  // With the 3D avatar on top the ring is only a faint backdrop; 20 fps is
-  // plenty and leaves the CPU/GPU budget to the avatar render loop.
-  if(document.body.classList.contains("avatar-ready") && t-reactorLast<50)return;
-  reactorLast=t;
   const s=STATE_STYLE[state]||STATE_STYLE.standby;
   rot+=s.speed;
   const W=cv.width,H=cv.height,cx=W/2,cy=H/2;
@@ -544,7 +531,6 @@ requestAnimationFrame(frame);
 
 function setState(st,label,hint){
   state=st;
-  try{window.MiaAvatar&&window.MiaAvatar.setState(st)}catch{}
   $("stateLabel").textContent=label;
   if(hint!==undefined)$("stateHint").textContent=hint;
 }
@@ -758,14 +744,15 @@ function connect(){
     let e; try{e=JSON.parse(ev.data)}catch{return}
     if(e.type==="summon_panel"){ summonPanel(e); }
     else if(e.type==="dismiss_panels"){ dismissAllPanels(); }
-    else if(e.type==="avatar_speech"){
-      try{window.MiaAvatar&&window.MiaAvatar.speak(e)}catch{}
+    else if(e.type==="dismiss_panel"){
+      document.querySelectorAll(".holo").forEach(p=>{
+        if(p.dataset.src===(e.src||"")) dismissPanel(p);
+      });
     }
     else if(e.type==="mia_say"){
       // Scheduled reminders are spoken without opening a Hermes turn. Use the
       // browser voice as a fallback when no server TTS audio is attached.
       addMsg("mia",e.text||"");
-      try{window.MiaAvatar&&window.MiaAvatar.speakText(String(e.text||""),Math.max(900,String(e.text||"").length*75))}catch{}
       try{const u=new SpeechSynthesisUtterance(String(e.text||""));u.lang="sl-SI";u.rate=1;speechSynthesis.speak(u)}catch{}
     }
     else if(e.type==="partial_transcript"){ showLive(e.text); }
@@ -801,7 +788,7 @@ function connect(){
       else if(e.state==="tool_use"){setState("tool","DELAM");addActivity("",e.tool||"tool",e.preview)}
       else if(e.state==="speaking")setState("speaking","GOVORIM");
       else if(e.state==="listening")setState("listening","POSLUŠAM",continuous?"RECI »MIA …« ALI KAR GOVORI":"KLIKNI ZNOVA ZA POŠILJANJE");
-      else if(e.state==="stopped"){setState("standby","PRIPRAVLJEN");showStop(false);stopPlayback();try{window.MiaAvatar?.stopSpeech()}catch{};addMsg("sys","izvajanje ustavljeno")}
+      else if(e.state==="stopped"){setState("standby","PRIPRAVLJEN");showStop(false);stopPlayback();addMsg("sys","izvajanje ustavljeno")}
     }
     else if(e.type==="ignored"){ // hrup brez budnice: diskretno, brez poplavljanja klepeta
       if(continuous&&state==="listening"){
@@ -1425,14 +1412,6 @@ addEventListener("keydown",e=>{
 bootSequence(new URLSearchParams(location.search).get("boot")==="full");
 
 addMsg("sys","Mia HUD je pripravljen. Klikni obroč ali pritisni preslednico.");
-addEventListener("mia-avatar-failed",e=>{
-  const why=String(e.detail||"?").replace(/\s+/g," ").slice(0,70);
-  addMsg("sys","3D lik se ni naložil ("+why+"…) · zaženi server/scripts/fetch-avatar-assets.sh");
-});
 </script>
-<script type="importmap">
-{"imports":{"three":"/hud/avatar/vendor/three/three.module.js","three/addons/":"/hud/avatar/vendor/three/addons/"}}
-</script>
-<script type="module" src="/hud/avatar/avatar.js"></script>
 </body>
 </html>

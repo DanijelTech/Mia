@@ -86,21 +86,13 @@ The server ticks the scheduler every `autonomy.interval_seconds` (30 s) and the
 health check every `health_interval` (300 s). The whole layer is fail-open: a
 broken profile or DB never stops the voice loop.
 
-## 3D avatar and speech sync
+## Stack startup and diagnosis
 
-`server/hud/avatar/avatar.js` (vendored Three.js) loads a female GLB with a
-Mixamo rig and ARKit/Oculus blendshapes, adds an idle animation, and drives
-wardrobe (hair/glasses/top/bottom/footwear), gaze, breathing, blinking and
-emotion. The `#reactor` ring stays beneath the avatar as a holographic pedestal
-and fallback when WebGL or the model fails.
-
-`server/avatar_visemes.py` builds an Oculus 15-viseme timeline for each TTS
-sentence and scales it to the actual PCM duration. `_send_tts_sentence()` sends
-`avatar_speech` (visemes/times/mood) **before** the binary PCM of the same
-sentence; the HUD anchors it to `playhead` and applies it smoothly to the
-blendshapes. Wardrobe settings live in `server/logs/avatar.json`; models live in
-`server/hud/avatar/models/` (fetched by
-`server/scripts/fetch-avatar-assets.sh`, never committed).
+`start-mia.sh` waits for a real 2xx answer (llama-server returns 503
+"Loading model" while the GGUF is still loading, which is not "ready") and, on
+failure, prints the current run's log tail plus a hint (VRAM, wrong GPU,
+missing GGUF, taken port). Exit code 3 means the HUD is up but part of the
+stack is not.
 
 ## Calibration, settings and verification
 
@@ -154,10 +146,10 @@ approval_request{data,run_id} · error · done{timing}
 | `/api/learning/feedback`, `/remember` | ✓/✗ feedback and recipe promotion |
 | `/api/learning/recipe`, `/mistake`, `/fact` | manual entries |
 | `/api/learning/mine`, `/prune`, `/sysinfo`, `/delete`, `/export` | maintenance |
-| `/api/avatar/config`, `/api/avatar/models` | wardrobe/camera settings and available GLB models |
 | `/api/autonomy/status`, `/profile`, `/health`, `/jobs`, `/tasks`, `/alerts` | autonomy state, machine profile, health, jobs, tasks, alerts |
 | `/api/autonomy/refresh`, `/adapt`, `/remediate`, `/tick`, `/run`, `/text` | detect/adapt, remediate, one scheduler cycle, run a plan, natural command |
 | `/api/autonomy/jobs` (POST/DELETE), `/jobs/{id}/toggle`, `/tasks/{id}/resume`, `/cancel` | manage jobs and tasks from the HUD |
+| `/api/background`, `/api/background/close`, `/stop`, `/override` | what runs in the background, manual closing/stopping and manual override |
 | `/api/machines` | host psutil stats + remote workers from config |
 | `/api/usage` | local token/char tally; ElevenLabs quota only when TTS is cloud-based |
 | `/api/hud-config` | HUD switches: `allow_external_media`, reply `language`, `tts_provider` |
