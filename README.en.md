@@ -342,7 +342,7 @@ evening.
 | Google | “search and tell me” = spoken · “show me” = browser |
 | Typed chat | input bar at the bottom (same conversation as voice) |
 | Kanban / dashboards | VIEWS panel → kanban, dashboard, chat |
-| Push-to-talk | alternative: click the ring (or Space) · speak · click again |
+| Push-to-talk | alternative: click the brain (or Space) · speak · click again |
 | Phone | open the HUD → Add to Home Screen |
 
 ## Repo layout

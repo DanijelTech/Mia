@@ -184,7 +184,7 @@ slovenščine ali srbščine — tam uporabi `eleven_v3_conversational`.
 
 ### Neprestano poslušanje (gumb STALNO)
 
-Če nočeš klikati obroča za vsako poved, vklopi **STALNO** v panelu GLASOVNA
+Če nočeš klikati možganov za vsako poved, vklopi **STALNO** v panelu GLASOVNA
 POVEZAVA:
 
 1. klikni `STALNO` (mikrofon se odpre in ostane odprt),
@@ -193,7 +193,7 @@ POVEZAVA:
    `followup_seconds` > 0 (privzeto **0** = vsaka izjava mora začeti z »Mia«);
    sicer po vsakem odgovoru znova reci »Mia«,
 4. govori lahko tudi med njenim odgovorom — to jo **prekine** (`barge_in`),
-5. **preslednica** (ali klik na obroč) med poslušanjem **takoj pošlje** trenutno
+5. **preslednica** (ali klik na možgane) med poslušanjem **takoj pošlje** trenutno
    izjavo — uporabi, če Mia ne zazna konca govora sama,
 6. klik na `■ STALNO` poslušanje izklopi (nedokončana izjava se še obdela).
 
@@ -767,5 +767,5 @@ scripts/mia-health.sh   # vseh pet vrstic OK (in TTS storitev, če je http)
 scripts/mia-smoke.sh    # sintetiziran glasovni krog skozi celoten sklad (macOS)
 ```
 
-Nato pravi test: klikni obroč in vprašaj »kaj je v tvoji spominski datoteki?« —
+Nato pravi test: klikni možgane in vprašaj »kaj je v tvoji spominski datoteki?« —
 resnični agent odgovori z resnično vsebino datoteke.

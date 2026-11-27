@@ -332,11 +332,11 @@ footer{
     <div id="approvals"></div>
     <div id="reactorWrap" title="Click to talk">
       <canvas id="reactor"></canvas>
-      <div id="coreState"><div class="st" id="stateLabel">PRIPRAVLJEN</div><div class="hint" id="stateHint">KLIKNI OBROČ ALI PRESLEDNICO</div></div>
+      <div id="coreState"><div class="st" id="stateLabel">PRIPRAVLJEN</div><div class="hint" id="stateHint">KLIKNI MOŽGANE ALI PRESLEDNICO</div></div>
     </div>
     <div id="feed"></div>
     <div id="chatRow">
-      <input id="chatInput" placeholder="Piši Hermesu … (/new ponastavi · glas: klikni obroč)" autocomplete="off">
+      <input id="chatInput" placeholder="Piši Hermesu … (/new ponastavi · glas: klikni možgane)" autocomplete="off">
       <button class="btn" id="sendBtn">POŠLJI</button>
       <button class="btn" id="clearBtn" title="Clear the visible chat (history stays in Hermes)">POČISTI</button>
     </div>
@@ -466,7 +466,7 @@ let autoListen=true;  // continuous listening re-arms itself on every (re)connec
 let lastFrameAt=0, micWarned=false;
 let audioCtx=null, workletNode=null, mediaStream=null, srcNode=null;
 let playhead=0, activeSources=[], leftoverByte=null, audioArrived=false;
-let level=0, turns=0;
+let level=0, turns=0, speakLevel=0, speakAt=0;
 
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -478,54 +478,186 @@ setInterval(()=>{const d=new Date();$("clock").textContent=d.toTimeString().slic
 /* ============================== reactor ============================ */
 const cv=$("reactor"), ctx=cv.getContext("2d");
 const RDPR=Math.min(window.devicePixelRatio||1,2);
-function sizeCanvas(){const r=cv.parentElement.getBoundingClientRect();cv.width=r.width*RDPR;cv.height=r.height*RDPR}
-sizeCanvas(); addEventListener("resize",sizeCanvas);
-let rot=0;
-const STATE_STYLE={
-  standby:{speed:.15,color:"#00e5ff",glow:18,pulse:0},
-  listening:{speed:.5,color:"#19f0d8",glow:30,pulse:1},
-  thinking:{speed:1.6,color:"#ffb300",glow:26,pulse:.4},
-  tool:{speed:2.4,color:"#ffb300",glow:32,pulse:.6},
-  speaking:{speed:.7,color:"#00e5ff",glow:34,pulse:.8},
-  error:{speed:.05,color:"#ff4d5e",glow:22,pulse:0},
-};
-function drawRing(cx,cy,r,w,color,alpha,dash,offset){
-  ctx.beginPath(); ctx.strokeStyle=color; ctx.globalAlpha=alpha; ctx.lineWidth=w;
-  if(dash)ctx.setLineDash(dash); else ctx.setLineDash([]);
-  ctx.lineDashOffset=offset||0;
-  ctx.arc(cx,cy,r,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1; ctx.setLineDash([]);
+let brain=null, lastT=0, energy=0, spikes=[];
+function sizeCanvas(){
+  const r=cv.parentElement.getBoundingClientRect();
+  cv.width=Math.max(1,Math.round(r.width*RDPR));
+  cv.height=Math.max(1,Math.round(r.height*RDPR));
+  brain=buildBrain(cv.width,cv.height);
+  spikes.length=0;
 }
+sizeCanvas(); addEventListener("resize",sizeCanvas);
+const STATE_STYLE={
+  standby:{speed:.15,color:"#00e5ff"},
+  listening:{speed:.5,color:"#19f0d8"},
+  thinking:{speed:1.6,color:"#ffb300"},
+  tool:{speed:2.4,color:"#ffb300"},
+  speaking:{speed:.7,color:"#00e5ff"},
+  error:{speed:.05,color:"#ff4d5e"},
+};
+
+/* A brain-shaped neural cloud. The silhouette is a hand-tuned side view; the
+   folds (gyri) are inset copies of it, and the neurons sit on those folds, so
+   the network reads as a brain instead of a spinning ring. Nodes brighten with
+   the microphone level and with Mia's own TTS output. */
+const BRAIN_OUTLINE=[
+  [[-0.86,0.06],[-0.90,-0.30],[-0.66,-0.60],[-0.30,-0.64]],
+  [[-0.30,-0.64],[0.02,-0.70],[0.34,-0.66],[0.58,-0.48]],
+  [[0.58,-0.48],[0.82,-0.30],[0.96,-0.04],[0.92,0.14]],
+  [[0.92,0.14],[0.88,0.28],[0.72,0.36],[0.52,0.38]],
+  [[0.52,0.38],[0.34,0.40],[0.22,0.34],[0.10,0.40]],
+  [[0.10,0.40],[-0.02,0.46],[-0.10,0.56],[-0.24,0.54]],
+  [[-0.24,0.54],[-0.38,0.52],[-0.46,0.62],[-0.60,0.64]],
+  [[-0.60,0.64],[-0.78,0.66],[-0.90,0.46],[-0.86,0.06]],
+];
+function bezierPoints(seg,n){
+  const out=[];
+  for(let i=0;i<n;i++){
+    const t=i/n, u=1-t;
+    out.push([
+      u*u*u*seg[0][0]+3*u*u*t*seg[1][0]+3*u*t*t*seg[2][0]+t*t*t*seg[3][0],
+      u*u*u*seg[0][1]+3*u*u*t*seg[1][1]+3*u*t*t*seg[2][1]+t*t*t*seg[3][1],
+    ]);
+  }
+  return out;
+}
+function buildBrain(W,H){
+  const R=Math.min(W,H)*0.42, cx=W/2, cy=H/2;
+  const path=[];
+  for(const seg of BRAIN_OUTLINE) path.push(...bezierPoints(seg,20));
+  let mx=0,my=0;
+  for(const p of path){mx+=p[0];my+=p[1];}
+  mx/=path.length; my/=path.length;
+  const inside=(x,y)=>{
+    let hit=false;
+    for(let i=0;i<path.length;i++){
+      const a=path[i], b=path[(i+1)%path.length];
+      if((a[1]>y)!==(b[1]>y) && x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0]) hit=!hit;
+    }
+    return hit;
+  };
+  const rings=[];
+  const scales=[0.88,0.72,0.56,0.40,0.24];
+  for(let k=0;k<scales.length;k++){
+    const s=scales[k], pts=[];
+    for(let i=0;i<path.length;i++){
+      const p=path[i], dx=p[0]-mx, dy=p[1]-my;
+      const w=0.05*Math.sin(i*0.7+k*1.3);
+      pts.push([mx+dx*s*(1+w), my+dy*s*(1+w)]);
+    }
+    const arcs=[];
+    let i=0;
+    while(i<pts.length){
+      const gap=Math.random()<0.18;
+      const len=6+((Math.random()*11)|0);
+      if(!gap) arcs.push(pts.slice(i,i+len));
+      i+=len;
+    }
+    rings.push(arcs);
+  }
+  const nodes=[], edges=[], link=(0.09*R)*(0.09*R);
+  for(const arcs of rings){
+    for(const arc of arcs){
+      const idx=[];
+      for(let i=0;i<arc.length;i+=2){
+        const x=arc[i][0]+(Math.random()-0.5)*0.02;
+        const y=arc[i][1]+(Math.random()-0.5)*0.02;
+        if(!inside(x,y)) continue;
+        idx.push(nodes.length);
+        nodes.push({x:cx+x*R,y:cy+y*R,phase:Math.random()*Math.PI*2,
+                    w:0.55+Math.random()*0.9});
+      }
+      for(let k=1;k<idx.length;k++){
+        const a=nodes[idx[k-1]], b=nodes[idx[k]];
+        const d=(a.x-b.x)*(a.x-b.x)+(a.y-b.y)*(a.y-b.y);
+        if(d<link) edges.push([idx[k-1],idx[k]]);
+      }
+    }
+  }
+  for(let i=0;i<30;i++){
+    const x=(Math.random()*2-1)*0.9, y=(Math.random()*2-1)*0.7;
+    if(!inside(x,y)) continue;
+    nodes.push({x:cx+x*R,y:cy+y*R,phase:Math.random()*Math.PI*2,
+                w:0.5+Math.random()*0.7});
+  }
+  const outline=path.map(p=>[cx+p[0]*R,cy+p[1]*R]);
+  return {nodes,edges,outline,R,cx,cy};
+}
+
 function frame(t){
   requestAnimationFrame(frame);
   if(document.hidden)return;
+  const now=t/1000;
+  const dt=lastT?Math.min(0.1,now-lastT):0.016;
+  lastT=now;
   const s=STATE_STYLE[state]||STATE_STYLE.standby;
-  rot+=s.speed;
-  const W=cv.width,H=cv.height,cx=W/2,cy=H/2;
-  const base=Math.min(W,H)*0.40;
+  if(!speakAt||performance.now()-speakAt>160) speakLevel*=Math.pow(0.86,dt*60);
+  const mic=(state==="listening")?level:level*0.25;
+  const target=0.10+Math.min(1.5,mic*1.5+speakLevel*1.8);
+  energy+=(target-energy)*Math.min(1,dt*10);
+  const W=cv.width,H=cv.height;
   ctx.clearRect(0,0,W,H);
-  ctx.shadowColor=s.color; ctx.shadowBlur=s.glow*RDPR;
-  const pulse=1+Math.sin(t/300)*0.012*(1+s.pulse*3)+(state==="listening"?level*0.10:0);
-  drawRing(cx,cy,base*pulse,2*RDPR,s.color,.9);
-  drawRing(cx,cy,base*.86,1.2*RDPR,s.color,.45,[40,18],rot*2);
-  drawRing(cx,cy,base*.72,5*RDPR,s.color,.25,[4,10],-rot*3);
-  drawRing(cx,cy,base*.58,1.5*RDPR,s.color,.6,[90,40],rot*1.2);
-  // ticks
+  if(!brain||!brain.nodes.length)return;
+  const {nodes,edges,outline,R,cx,cy}=brain;
+  const col=s.color;
+
+  const glow=ctx.createRadialGradient(cx,cy,0,cx,cy,R*1.05);
+  glow.addColorStop(0,col+"2e"); glow.addColorStop(0.6,col+"10");
+  glow.addColorStop(1,"transparent");
+  ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(cx,cy,R*1.05,0,Math.PI*2); ctx.fill();
+
+  ctx.lineWidth=1.3*RDPR; ctx.strokeStyle=col;
+  ctx.globalAlpha=0.18+0.20*Math.min(1,energy);
+  ctx.beginPath();
+  for(let i=0;i<outline.length;i++){
+    const p=outline[i];
+    if(i) ctx.lineTo(p[0],p[1]); else ctx.moveTo(p[0],p[1]);
+  }
+  ctx.closePath(); ctx.stroke(); ctx.globalAlpha=1;
+
+  ctx.lineWidth=0.7*RDPR; ctx.strokeStyle=col;
+  ctx.globalAlpha=0.09+0.22*Math.min(1,energy);
+  ctx.beginPath();
+  for(const e of edges){
+    const a=nodes[e[0]], b=nodes[e[1]];
+    ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
+  }
+  ctx.stroke(); ctx.globalAlpha=1;
+
+  ctx.globalCompositeOperation="lighter";
+  const speed=0.9+s.speed;
+  let glowBudget=14;
+  for(const n of nodes){
+    const wave=0.5+0.5*Math.sin(now*speed*1.7+n.phase);
+    const b=Math.min(1,0.12+energy*n.w*(0.35+0.65*wave));
+    ctx.globalAlpha=0.22+0.78*b;
+    ctx.fillStyle=b>0.74?"#eaffff":col;
+    if(b>0.62&&glowBudget>0){ctx.shadowColor=col;ctx.shadowBlur=10*RDPR;glowBudget--;}
+    else ctx.shadowBlur=0;
+    ctx.beginPath();
+    ctx.arc(n.x,n.y,(1.1+2.4*b)*RDPR,0,Math.PI*2);
+    ctx.fill();
+  }
   ctx.shadowBlur=0;
-  for(let i=0;i<60;i++){
-    const a=(i/60)*Math.PI*2+rot/180;
-    const r1=base*1.06,r2=base*(i%5===0?1.12:1.09);
-    ctx.beginPath(); ctx.strokeStyle=s.color; ctx.globalAlpha=i%5===0?.8:.3;
-    ctx.lineWidth=RDPR;
-    ctx.moveTo(cx+Math.cos(a)*r1,cy+Math.sin(a)*r1);
-    ctx.lineTo(cx+Math.cos(a)*r2,cy+Math.sin(a)*r2); ctx.stroke();
+
+  if(edges.length&&Math.random()<Math.min(0.55,energy*0.45)&&spikes.length<24){
+    const e=edges[(Math.random()*edges.length)|0];
+    spikes.push({a:e[0],b:e[1],t:0,dur:0.32+Math.random()*0.32});
+  }
+  for(let i=spikes.length-1;i>=0;i--){
+    const sp=spikes[i]; sp.t+=dt;
+    if(sp.t>=sp.dur){spikes.splice(i,1);continue;}
+    const a=nodes[sp.a], b=nodes[sp.b];
+    const p=sp.t/sp.dur, x=a.x+(b.x-a.x)*p, y=a.y+(b.y-a.y)*p;
+    const fade=Math.sin(p*Math.PI);
+    ctx.globalAlpha=0.9*fade;
+    ctx.fillStyle="#f2ffff";
+    ctx.shadowColor=col; ctx.shadowBlur=12*RDPR;
+    ctx.beginPath(); ctx.arc(x,y,1.8*RDPR,0,Math.PI*2); ctx.fill();
+    ctx.shadowBlur=0;
   }
   ctx.globalAlpha=1;
-  // core
-  ctx.shadowColor=s.color; ctx.shadowBlur=40*RDPR;
-  const g=ctx.createRadialGradient(cx,cy,0,cx,cy,base*.42);
-  g.addColorStop(0,s.color+"55"); g.addColorStop(1,"transparent");
-  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,base*.42,0,Math.PI*2); ctx.fill();
-  ctx.shadowBlur=0;
+  ctx.globalCompositeOperation="source-over";
 }
 requestAnimationFrame(frame);
 
@@ -839,6 +971,12 @@ function playChunk(buf){
   if(bytes.length%2===1){leftoverByte=bytes[bytes.length-1];bytes=bytes.subarray(0,bytes.length-1)}
   if(!bytes.length)return;
   const i16=new Int16Array(bytes.buffer,bytes.byteOffset,bytes.length/2);
+  if(i16.length){
+    let sum=0;
+    for(let i=0;i<i16.length;i++){const v=i16[i]/32768;sum+=v*v;}
+    speakLevel=Math.min(1,Math.sqrt(sum/i16.length)*3.2);
+    speakAt=performance.now();
+  }
   const f32=new Float32Array(i16.length);
   for(let i=0;i<i16.length;i++)f32[i]=i16[i]/32768;
   const ab=audioCtx.createBuffer(1,f32.length,16000); ab.copyToChannel(f32,0);
@@ -1417,7 +1555,7 @@ addEventListener("keydown",e=>{
 });
 bootSequence(new URLSearchParams(location.search).get("boot")==="full");
 
-addMsg("sys","Mia HUD je pripravljen. Klikni obroč ali pritisni preslednico.");
+addMsg("sys","Mia HUD je pripravljen. Klikni možgane ali pritisni preslednico.");
 </script>
 <script src="/hud/i18n.js"></script>
 </body>

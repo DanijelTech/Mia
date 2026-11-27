@@ -34,6 +34,13 @@ The current major addition is the **learning/knowledge core** and the
   still supports it as an opt-in. `server/scripts/use_single_model.py`
   (pure `rewrite_config`) migrates old configs and must stay comment-preserving
   and idempotent.
+- The HUD centre is a brain, not a ring: `#reactor` draws a brain-shaped
+  neural network (`BRAIN_OUTLINE` side view sampled to a polygon; inset copies
+  are the gyri and the neurons sit on them). Node brightness follows `level`
+  (microphone) and `speakLevel` (RMS of every TTS PCM chunk in `playChunk`), so
+  it reacts to both voices. Do not reintroduce rotation or a spinning ring; the
+  user asked for a non-hypnotic brain. `buildBrain()` runs once per canvas size
+  (≈400 nodes) and `sizeCanvas()` rebuilds it.
 - HUD language: `server/hud/i18n.js` is loaded by every HUD page and injects
   the SLO/ENG switch (bottom-right). The dictionary is keyed by the exact
   Slovenian text; a MutationObserver translates text nodes and

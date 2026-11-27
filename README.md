@@ -336,7 +336,7 @@ macOS-a (TCC pri zunanjih diskih in poti do logov).
 | Google | »poišči in povej« = ustno · »prikaži« = brskalnik |
 | Tipkani klepet | vnosno polje na dnu (ista seja kot glas) |
 | Kanban / plošče | panel POGLEDI → kanban, nadzorna plošča, klepet |
-| Pritisni-in-govori | alternativa: klikni obroč (ali preslednica) · govori · klikni znova |
+| Pritisni-in-govori | alternativa: klikni možgane (ali preslednica) · govori · klikni znova |
 | Telefon | odpri HUD → Dodaj na začetni zaslon |
 
 ## Struktura repozitorija

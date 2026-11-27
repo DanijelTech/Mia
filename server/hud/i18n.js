@@ -205,7 +205,7 @@
 
     /* ---- status labels written by scripts --------------------------- */
     "PRIPRAVLJEN": "READY",
-    "KLIKNI OBROČ ALI PRESLEDNICO": "CLICK THE RING OR PRESS SPACE",
+    "KLIKNI MOŽGANE ALI PRESLEDNICO": "CLICK THE BRAIN OR PRESS SPACE",
     "POSLUŠAM": "LISTENING",
     "OBDELUJEM": "PROCESSING",
     "DELAM": "WORKING",
@@ -252,7 +252,7 @@
     "HUD se znova povezuje. Če se ne poveže v 5 s, preveri, da Mia teče na vratih 8766.":
       "The HUD is reconnecting. If it does not connect within 5 s, check that Mia runs on port 8766.",
     "Strežnik je vrnil napako.": "The server returned an error.",
-    "Mia HUD je pripravljen. Klikni obroč ali pritisni preslednico.":
+    "Mia HUD je pripravljen. Klikni možgane ali pritisni preslednico.":
       "Mia HUD is ready. Click the ring or press space.",
     "neprestano poslušanje vklopljeno": "continuous listening on",
     "neprestano poslušanje izklopljeno": "continuous listening off",
@@ -454,7 +454,7 @@
     "Okno": "Window",
     "Opomnik …": "Reminder …",
     "PRAZNE": "EMPTY",
-    "Piši Hermesu … (/new ponastavi · glas: klikni obroč)":
+    "Piši Hermesu … (/new ponastavi · glas: klikni možgane)":
       "Type to Hermes … (/new resets · voice: click the ring)",
     "Povezava": "Link",
     "Rezerva": "Spare",

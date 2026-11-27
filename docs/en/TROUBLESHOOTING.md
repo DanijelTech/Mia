@@ -48,10 +48,10 @@ If `status --deep` does not mention `api_server`, the gateway does not see
 Verify: `curl -s -H "Authorization: Bearer $(grep '^API_SERVER_KEY=' ~/.hermes/.env | cut -d= -f2)" http://127.0.0.1:8642/health`
 
 **In STALNO mode nothing happens after I stop talking** — first look at the label
-under the ring: `SLIŠIM …` means the server hears you, `POSLUŠAM` means silence.
+under the brain: `SLIŠIM …` means the server hears you, `POSLUŠAM` means silence.
 Three steps:
 
-1. **Space** (or clicking the ring) while listening submits the current utterance
+1. **Space** (or clicking the brain) while listening submits the current utterance
    immediately (`flush`) — always works, even when end-of-speech is missed;
 2. if `SLIŠIM` never appears, the server does not hear you: check
    `stt.continuous` in `server.yaml`, try `threshold: 0.3`, `min_rms: 150`;

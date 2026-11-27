@@ -172,7 +172,7 @@ quota bar. Note Flash v2.5 does not cover Slovenian or Serbian; use
 
 ### Always-on listening (STALNO button)
 
-If you do not want to click the ring for every sentence, enable **STALNO** in the
+If you do not want to click the brain for every sentence, enable **STALNO** in the
 VOICE LINK panel:
 
 1. click `STALNO` (the mic opens and stays open),
@@ -181,7 +181,7 @@ VOICE LINK panel:
    `followup_seconds` > 0 (default **0** = every utterance must start with "Mia");
    otherwise say "Mia" again for each request,
 4. you may speak while she is answering — that **interrupts** her (`barge_in`),
-5. **Space** (or clicking the ring) while listening **submits** the current
+5. **Space** (or clicking the brain) while listening **submits** the current
    utterance immediately — use it when the end of speech is not detected,
 6. clicking `■ STALNO` turns listening off (a pending utterance is still processed).
 
@@ -660,5 +660,5 @@ scripts/mia-health.sh   # all five rows OK
 scripts/mia-smoke.sh    # synthesized voice turn through the full stack (macOS)
 ```
 
-Then the real test: click the ring and ask "what's in your memory file?" —
+Then the real test: click the brain and ask "what's in your memory file?" —
 a real agent answers with real file contents.
