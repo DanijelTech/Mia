@@ -1,0 +1,93 @@
+"""Tests for the chat-vs-agent router and the optional chat brain gating."""
+
+from __future__ import annotations
+
+import sys
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "server"))
+
+from mia_core.brain import classify_brain  # noqa: E402
+from chat_brain import ChatBrain, EscalateToAgent  # noqa: E402
+
+
+class BrainRouterTests(unittest.TestCase):
+    def test_casual_chat_stays_on_chat(self):
+        for text in (
+            "Kako si?",
+            "Kdo si ti?",
+            "Povej mi vic.",
+            "Kaj misliš o tem vremenu?",
+            "Kaj je glavno mesto Slovenije?",
+            "Hvala, to je bilo lepo.",
+            "Kako se imaš?",
+            "Povej mi nekaj zanimivega.",
+        ):
+            self.assertEqual(classify_brain(text), "chat", text)
+
+    def test_actions_go_to_agent(self):
+        for text in (
+            "Odpri brskalnik.",
+            "Zaženi Spotify.",
+            "Zapri okno.",
+            "Poišči recept za potico.",
+            "Preberi datoteko /home/user/opombe.txt",
+            "Pošlji to Ani.",
+            "Nastavi opomnik za jutri.",
+            "Preveri stanje CPU.",
+            "Odpri https://example.com",
+            "Prenesi to datoteko.",
+            "Namesti paket.",
+            "Posodobi sistem.",
+        ):
+            self.assertEqual(classify_brain(text), "agent", text)
+
+    def test_live_data_goes_to_agent(self):
+        for text in ("Kakšno je vreme danes?", "Povej mi novice.",
+                     "Koliko je cena delnice?"):
+            self.assertEqual(classify_brain(text), "agent", text)
+
+    def test_empty_is_chat(self):
+        self.assertEqual(classify_brain(""), "chat")
+        self.assertEqual(classify_brain("   "), "chat")
+
+    def test_leading_directive_is_ignored(self):
+        self.assertEqual(
+            classify_brain("[note: your previous reply was cut off] Kako si?"),
+            "chat")
+
+
+class ChatBrainGatingTests(unittest.TestCase):
+    def test_disabled_router_always_agent(self):
+        brain = ChatBrain({"llm": {
+            "router": {"enabled": False},
+            "chat": {"enabled": True, "base_url": "http://127.0.0.1:1/v1"},
+        }})
+        self.assertFalse(brain.enabled)
+        self.assertEqual(brain.choose("Kako si?"), "agent")
+
+    def test_missing_base_url_disables_chat(self):
+        brain = ChatBrain({"llm": {
+            "router": {"enabled": True},
+            "chat": {"enabled": True},
+        }})
+        self.assertFalse(brain.enabled)
+        self.assertEqual(brain.choose("Kako si?"), "agent")
+
+    def test_enabled_router_splits(self):
+        brain = ChatBrain({"llm": {
+            "router": {"enabled": True},
+            "chat": {"enabled": True, "base_url": "http://127.0.0.1:1/v1"},
+        }})
+        self.assertTrue(brain.enabled)
+        self.assertEqual(brain.choose("Kako si?"), "chat")
+        self.assertEqual(brain.choose("Odpri brskalnik."), "agent")
+
+    def test_sentinel_is_an_exception_type(self):
+        self.assertTrue(issubclass(EscalateToAgent, RuntimeError))
+
+
+if __name__ == "__main__":
+    unittest.main()

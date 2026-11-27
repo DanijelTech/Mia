@@ -81,6 +81,13 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
 ## Architecture facts
 
 - Voice/chat turns go through `server/server.py` → Hermes Sessions API.
+- A turn is routed by `mia_core/brain.py::classify_brain`: explicit actions,
+  live-data questions, URLs and paths go to Hermes; casual chat goes to the
+  optional fast chat model (`server/chat_brain.py`, OpenAI-compatible
+  llama-server on `llm.chat.base_url`). The deterministic
+  `autonomy/intents.py` router still runs first. If the chat model is off,
+  unreachable or answers `[[AGENT]]`, the turn falls back to Hermes.
+
 - Before a turn, `LEARNING.brief(transcript)` is prepended to the payload.
 - After a turn, `LEARNING.record_turn(...)` writes an episode; successful
   tool-using episodes become recipes, failures become anti-patterns.
@@ -127,6 +134,8 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
 - `tests/test_autonomy.py` — profile/metrics, planner verification/retries/
   rollback/confirmation, scheduler edge triggers and events, health, alerts,
   intent router, service confirmations and `mia-auto` CLI.
+- `tests/test_brain_router.py` — chat-vs-agent routing and chat-brain gating
+  (no network: the `requests` import is lazy).
 - Keep tests hermetic: use `tempfile`, set `HOME`/`XDG_*` for `mia-ctl`.
 
 ## Known pitfalls (hard-won)
@@ -217,6 +226,9 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
 - New control command: `mia-ctl` `build_parser()` + `dispatch()` + test.
 - New skill: create `skills/<name>/SKILL.md`, add to `skills/tree.yaml` and
   the parent's `children`, run `mia-skill validate`.
+- New brain route: add verbs/live-data words to `mia_core/brain.py`, keep
+  `classify_brain` conservative (unknown → chat), and add a case to
+  `tests/test_brain_router.py`. The chat client lives in `server/chat_brain.py`.
 - New learning signal: add to `integration.py` (pure helpers) and wire it in
   `server.py`; add a unit test.
 - New HUD view: add a panel in `server/hud/index.html` and a page under

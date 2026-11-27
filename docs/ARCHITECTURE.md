@@ -50,6 +50,20 @@ Drevo veščin (`skills/`) je eksplicitno: `mia-companion` je koren, otroci
 `mia-productivity`, `mia-diagnostics`) pa lastijo posamezna področja.
 `mia-skill validate` preveri imena, starše in `references/`.
 
+## Dva možgana: hiter pogovor + Hermes agent
+
+Vsak krog najprej požene deterministični usmerjevalnik
+(`mia_core/autonomy/intents.py`): eksplicitni ukazi se izvedejo brez LLM. Kar
+ostane, razdeli `mia_core/brain.py::classify_brain` na **pogovor** in
+**dejanje**. Pogovor gre v mali lokalni model (`llm.chat`, OpenAI-kompatibilni
+llama-server), dejanja, vprašanja o živih podatkih, URL-ji in poti pa v Hermesa.
+
+Maya1 ostane skupni glas za oba. Če je chat model izklopljen, nedosegljiv ali
+vrne `[[AGENT]]`, krog pade nazaj na Hermesa; če Hermes ne dela, chat model
+odgovori, da dejanja ne more izvesti. Konfiguracija je v
+`llm.router.enabled`, `llm.chat.*` in `stack.chat.*` (glej
+`server/config/server.example.yaml`).
+
 ## Samodejnost (mini pod-OS)
 
 `server/mia_core/autonomy/` je stdlib-only plast nad `mia-ctl`:

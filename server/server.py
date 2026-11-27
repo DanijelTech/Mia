@@ -53,6 +53,7 @@ from calibration import CalibrationSession, DEFAULT_STAGES
 from continuous import WakeGate, build_segmenter, starts_with_exact_wake
 from speaker_gate import SpeakerGate
 from tts import build_backend
+from chat_brain import ChatBrain, EscalateToAgent
 import avatar_visemes
 import avatar_config
 from mia_core.integration import (detect_feedback, detect_remember,
@@ -860,6 +861,30 @@ class VoicePipelineServer:
         llm = self.cfg["llm"]
         provider = llm["provider"]
         timing.llm_start_monotonic = time.perf_counter()
+        force_agent = transcript.lstrip().startswith("[Navodilo:")
+        if not force_agent and CHAT.choose(transcript) == "chat":
+            timing.llm_provider = "chat"
+            timing.llm_model = str(CHAT.cfg.get("model") or "local-chat")
+            try:
+                brief = LEARNING.brief(transcript)
+            except Exception:
+                brief = ""
+            yielded = False
+            try:
+                for item in CHAT.stream(transcript, conversation, brief, timing):
+                    yielded = True
+                    yield item
+                return
+            except EscalateToAgent:
+                print("CHAT escalated to agent (sentinel)", flush=True)
+                timing.errors.append("chat_escalated")
+            except Exception as exc:
+                if yielded:
+                    raise
+                print(f"CHAT brain failed ({type(exc).__name__}: {exc}) — "
+                      f"falling back to agent", flush=True)
+                timing.errors.append(f"chat_fallback: {exc}")
+
         if provider == "hermes":
             try:
                 h = self.cfg.get("hermes") or {}
@@ -1142,6 +1167,7 @@ load_env()
 CFG = load_config()
 HERMES = HermesAPI(CFG)   # lightweight API client - independent of the STT pipeline
 LEARNING = get_core(CFG)  # durable memory, habits, recipes, skill tree
+CHAT = ChatBrain(CFG)   # fast conversational brain; "agent" when disabled
 
 
 # Autonomy is created lazily: a broken profile or DB must never prevent the
@@ -1529,6 +1555,22 @@ async def hud_chat(request: Request) -> JSONResponse:
             "[Navodilo: uporabi spletno iskanje in mi ustno odgovori na "
             "vprašanje. Ne odpiraj brskalnika in ne prikazuj strani.] "
             + google_query)
+
+    if google_mode != "answer" and CHAT.choose(chat_text) == "chat":
+        try:
+            brief = LEARNING.brief(chat_text)
+        except Exception:
+            brief = ""
+        try:
+            answer = await asyncio.to_thread(
+                CHAT.reply, chat_text, conversation, brief)
+        except EscalateToAgent:
+            answer = ""
+        except Exception as exc:
+            print(f"CHAT chat failed ({type(exc).__name__}: {exc})", flush=True)
+            answer = ""
+        if answer:
+            return quick(answer, [])
 
     out: dict = {"text": "", "tools": [], "run_id": None}
     try:

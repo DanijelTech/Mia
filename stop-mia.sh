@@ -70,10 +70,13 @@ HERMES_UNIT="$(cfg stack.hermes.unit '')"
 LLAMA_SUPERVISOR="$(cfg stack.llama.supervisor '')"
 LLAMA_PIDFILE="$REPO/server/$(cfg stack.llama.pidfile logs/llama-server.pid)"
 HERMES_PIDFILE="$REPO/server/$(cfg stack.hermes.pidfile logs/hermes-gateway.pid)"
+CHAT_PORT="$(url_port "$(cfg stack.chat.health '')")"
+CHAT_PIDFILE="$REPO/server/$(cfg stack.chat.pidfile logs/chat-model.pid)"
 DASH_PORT="$(url_port "$(cfg stack.dashboard.health '')")"
 DASH_PIDFILE="$REPO/server/$(cfg stack.dashboard.pidfile logs/hermes-dashboard.pid)"
 [ -n "$LLAMA_PORT" ] && PORTS="$PORTS $LLAMA_PORT"
 [ -n "$HERMES_PORT" ] && PORTS="$PORTS $HERMES_PORT"
+[ -n "$CHAT_PORT" ] && PORTS="$PORTS $CHAT_PORT"
 [ -n "$DASH_PORT" ] && PORTS="$PORTS $DASH_PORT"
 
 # --------------------------------------------------------------- environment
@@ -218,7 +221,7 @@ elif [ "$IS_MAC" = 0 ] && [ -n "$(unit_path mia-voice 2>/dev/null)" ]; then
 fi
 
 # 3) background processes started by start-mia.sh (incl. gateway/llama/dashboard)
-for pidfile in "$LOGDIR/mia-tts.pid" "$LOGDIR/mia.pid" "$HERMES_PIDFILE" "$LLAMA_PIDFILE" "$DASH_PIDFILE"; do
+for pidfile in "$LOGDIR/mia-tts.pid" "$LOGDIR/mia.pid" "$HERMES_PIDFILE" "$LLAMA_PIDFILE" "$DASH_PIDFILE" "$CHAT_PIDFILE"; do
   [ -f "$pidfile" ] || continue
   pid="$(cat "$pidfile" 2>/dev/null)"
   if [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null; then
