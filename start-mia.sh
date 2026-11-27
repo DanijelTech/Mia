@@ -2,9 +2,10 @@
 # Start Mia and open the HUD in your browser.
 #
 # Brings up the whole local stack, in order, skipping whatever already answers:
-#   1. llama-server  (the local 35B model Hermes thinks with — stack.llama in server.yaml)
-#   2. Hermes gateway (systemd unit or `hermes gateway run` — stack.hermes)
-#   3. Mia voice server + local TTS service
+#   1. llama-server  (Gemma4-12B na GPU 0, port 18083 — stack.llama v server.yaml)
+#   2. Hermes gateway (systemd unit ali `hermes gateway run`)
+#   3. Mia voice server + Maya1 TTS (na GPU 1, ločen od LLM)
+#   4. Piper fallback TTS (CPU, če ni GPU na voljo)
 #
 #   ./start-mia.sh                    # start (systemd if installed, else background), wait, open
 #   ./start-mia.sh --no-open          # just start and print the URL/token
@@ -128,13 +129,42 @@ HERMES_TIMEOUT="$(cfg stack.hermes.start_timeout 90)"
 HERMES_UNIT="$(cfg stack.hermes.unit '')"
 HERMES_PIDFILE="$REPO/server/$(cfg stack.hermes.pidfile logs/hermes-gateway.pid)"
 HERMES_LOG="$REPO/server/$(cfg stack.hermes.log logs/hermes-gateway.out)"
+
+TTS_ENGINE="$(cfg tts.http.engine piper)"
+TTS_GPU_ARGS=()
+if [ "$TTS_ENGINE" = "maya1" ]; then
+  MAYA1_GPU_ID="$(cfg tts.maya1.gpu_id '1')"
+  MAYA1_VOICE="$(cfg tts.maya1.voice zenski-nezni)"
+  if [ -n "${MAYA1_GPU_ID:-}" ] && [ "$MAYA1_GPU_ID" != "auto" ]; then
+    TTS_GPU_ARGS+=("--gpu-id" "$MAYA1_GPU_ID")
+  fi
+  if [ -n "${MAYA1_VOICE:-}" ]; then
+    TTS_GPU_ARGS+=("--voice" "$MAYA1_VOICE")
+  fi
+fi
+
 DASH_HEALTH="$(cfg stack.dashboard.health '')"
+
 DASH_TIMEOUT="$(cfg stack.dashboard.start_timeout 180)"
 DASH_PIDFILE="$REPO/server/$(cfg stack.dashboard.pidfile logs/hermes-dashboard.pid)"
 DASH_LOG="$REPO/server/$(cfg stack.dashboard.log logs/hermes-dashboard.out)"
 
-# ------------------------------------------------------------------ 1. start
-port_open() { curl -s -m 1 -o /dev/null "$1" 2>/dev/null; }
+# ------------------------------------------------------------------ utilities
+
+port_open() { # port_open <url> — return 0 if the host:port in $1 is reachable
+  local _host _port
+  # Strip scheme and leading slashes; extract host:port via bash regex
+  if [[ "$1" =~ ^[hH][tT][tT][pP]://([^/:]+):([0-9]+) ]]; then
+    _port="${BASH_REMATCH[2]}"
+  elif command -v curl >/dev/null 2>&1; then
+    # Fallback to curl for URLs with IPv6 or other formats
+    _port=$(curl -sI --connect-timeout 1 "$1" 2>/dev/null | head -1) || return 1
+  else
+    return 1
+  fi
+  [ -z "${_port:-}" ] && return 1
+  (echo >/dev/tcp/127.0.0.1/"$_port") 2>/dev/null
+}
 
 wait_health() {  # wait_health <url> <seconds> — poll until the endpoint answers
   local deadline=$(( $(date +%s) + $2 ))
@@ -187,7 +217,7 @@ if [ "$DO_START" = 1 ]; then
       else
         [ -n "$LLAMA_SUPERVISOR" ] && [ -x "$LLAMA_SUPERVISOR" ] \
           && LLAMA_ARGV=("$LLAMA_SUPERVISOR" "${LLAMA_ARGV[@]}")
-        info "starting llama-server (a 35B model needs minutes to load)…"
+        info "starting llama-server (Gemma4-12B, GPU 0) — loading GGUF takes minutes…"
         start_background "llama-server" "$LLAMA_PIDFILE" "$LLAMA_LOG" "${LLAMA_ARGV[@]}"
         if wait_health "$LLAMA_HEALTH" "$LLAMA_TIMEOUT"; then
           info "llama-server is up"
@@ -259,14 +289,23 @@ if [ "$DO_START" = 1 ]; then
     if port_open "$TTS_HEALTH"; then
       info "TTS service already answering"
     elif unit_exists mia-tts; then
-      timeout 20 "${SCTL[@]}" start mia-tts && info "systemd: mia-tts started"
+      timeout 20 "${SCTL[@]}" start mia-tts && info "systemd: $HERMES_UNIT started"
     elif [ -f "$REPO/server/scripts/gepard_tts.py" ]; then
-      info "starting TTS service (engine: $TTS_ENGINE_CFG)…"
-      TTS_ARGV=()
-      read_argv tts.http.args TTS_ARGV
-      start_background "TTS service" "$REPO/server/logs/mia-tts.pid" "$REPO/server/logs/mia-tts.out" \
-        "$PY" "$REPO/server/scripts/gepard_tts.py" --serve --engine "$TTS_ENGINE_CFG" \
-          --fallback-piper "${TTS_ARGV[@]}"
+      if [ "$TTS_ENGINE_CFG" = "maya1" ]; then
+        info "starting TTS service (Maya1, GPU ${TTS_MAYA1_GPU_ID:-1}, voice: $TTS_MAYA1_VOICE)…"
+        # Maya1 mora biti na GPU 1 — ne smemo ga mešati z llama-serverjem na GPU 0
+        CUDA_VISIBLE_DEVICES="${TTS_MAYA1_GPU_ID}" \
+          start_background "Maya1 TTS" "$REPO/server/logs/mia-tts.pid" "$REPO/server/logs/mia-tts.out" \
+            "$PY" "$REPO/server/scripts/gepard_tts.py" --serve --engine maya1 \
+              --device cuda --maya-voice "$TTS_MAYA1_VOICE"
+      else
+        info "starting TTS service (engine: $TTS_ENGINE_CFG)…"
+        TTS_ARGV=()
+        read_argv tts.http.args TTS_ARGV
+        start_background "TTS service" "$REPO/server/logs/mia-tts.pid" "$REPO/server/logs/mia-tts.out" \
+          "$PY" "$REPO/server/scripts/gepard_tts.py" --serve --engine "$TTS_ENGINE_CFG" \
+            --fallback-piper "${TTS_ARGV[@]}"
+      fi
     else
       warn "tts.provider is http but no TTS service could be started"
     fi
