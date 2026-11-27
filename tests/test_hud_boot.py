@@ -7,7 +7,6 @@ overlay on screen with only "MIA / HERMES NEVRALNI VMESNIK" visible.
 
 from __future__ import annotations
 
-import re
 import unittest
 from pathlib import Path
 

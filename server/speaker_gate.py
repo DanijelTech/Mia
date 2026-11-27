@@ -202,7 +202,7 @@ class SpeakerGate:
         if len(labels) != len(samples):
             raise ValueError("stages and samples length mismatch")
         grouped: dict[str, list[np.ndarray]] = {}
-        for label, sample in zip(labels, samples):
+        for label, sample in zip(labels, samples, strict=True):
             grouped.setdefault(str(label), []).append(sample)
         return self.enroll_distance(grouped, append=append)
 

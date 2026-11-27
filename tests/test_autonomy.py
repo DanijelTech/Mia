@@ -136,6 +136,33 @@ class PlannerTests(unittest.TestCase):
         self.assertTrue(result["ok"], result)
         self.assertFalse(target.exists())
 
+    def test_undo_outside_vocabulary_is_rejected(self):
+        target = self.home / "undo-dir"
+        plan = planner.make_plan([
+            planner.step_ctl(["files", "mkdir", str(target)],
+                             undo=[["rm", "-rf", str(target)]])],
+            name="bad-undo")
+        with self.assertRaises(planner.PreflightError):
+            self.planner.execute(plan)
+        self.assertFalse(target.exists())
+
+    def test_nested_destructive_plan_needs_confirmation(self):
+        target = self.home / "Documents" / "nested.txt"
+        target.write_text("nested")
+        nested = planner.make_plan([
+            planner.step_ctl(["files", "delete", str(target)], yes=True)],
+            name="nested")
+        outer = planner.make_plan([
+            {"kind": "plan", "label": "nested", "steps": nested["steps"]}],
+            name="outer")
+        with self.assertRaises(planner.NeedsConfirmation):
+            self.planner.execute(outer)
+        self.assertTrue(target.exists())
+        outer["confirmed"] = True
+        result = self.planner.execute(outer, name="outer")
+        self.assertTrue(result["ok"], result)
+        self.assertFalse(target.exists())
+
     def test_retries_transient_internal_failure(self):
         calls = {"n": 0}
 

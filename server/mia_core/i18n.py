@@ -202,7 +202,6 @@ _EXACT: dict[str, str] = {
         "The Hermes gateway is unreachable. Start hermes gateway and try again.",
     "Sistem brez systemd: storitve niso na voljo.":
         "The system has no systemd; services are unavailable.",
-    "Ni velikih datotek.": "No large files.",
     "Pozor, šefe.": "Attention, boss.",
     "Opazila sem spremembo.": "I noticed a change.",
     "Čas je za čiščenje diska.": "Time to clean the disk.",
@@ -356,6 +355,9 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
      r"expires in \1 days (\2)"),
     (re.compile(r"^(\d+) nalog teče več kot eno uro$"),
      r"\1 tasks have been running for over an hour"),
+    (re.compile(r"^(\d+) dni (\d+) h$"), r"\1 days \2 h"),
+    (re.compile(r"^(\d+) h (\d+) min$"), r"\1 h \2 min"),
+    (re.compile(r"^(\d+) min$"), r"\1 min"),
 ]
 
 # Health titles and short messages (exact).

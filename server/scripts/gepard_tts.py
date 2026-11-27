@@ -647,7 +647,8 @@ def run_server(engine: Engine, host: str, port: int, token: str, pitch: float = 
         try:
             payload = await request.json()
         except Exception:  # noqa: BLE001
-            raise HTTPException(status_code=400, detail="JSON body required")
+            raise HTTPException(status_code=400,
+                                detail="JSON body required") from None
         text = clean_text(str((payload or {}).get("text") or ""))
         if not text:
             raise HTTPException(status_code=400, detail="empty text")

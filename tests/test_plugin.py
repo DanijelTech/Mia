@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import sys
 import unittest
 from pathlib import Path
 
@@ -47,8 +46,8 @@ class PluginTests(unittest.TestCase):
     def test_handlers_use_the_api(self):
         calls = []
 
-        def fake(method, path, payload=None):
-            calls.append((method, path, payload))
+        def fake(method, path, payload=None, base=None):
+            calls.append((method, path, payload, base))
             if path.startswith("/status"):
                 return {"enabled": True, "db": {"episodes": 1}}
             if path.startswith("/brief"):
@@ -71,6 +70,11 @@ class PluginTests(unittest.TestCase):
         self.assertTrue(json.loads(self.tools.memory_status({}))["enabled"])
         tree = json.loads(self.tools.skill_tree({"query": "windows"}))
         self.assertEqual(tree["matches"][0]["name"], "mia-desktop")
+        self.assertTrue(json.loads(self.tools.music_play({"query": "x"}))["ok"])
+        self.assertTrue(json.loads(self.tools.music_stop({}))["ok"])
+        music = [c for c in calls if c[3]]
+        self.assertEqual([c[1] for c in music], ["/play", "/stop"])
+        self.assertTrue(all(c[3].endswith("/music") for c in music))
         self.assertTrue(calls)
 
     def test_missing_required_fields(self):

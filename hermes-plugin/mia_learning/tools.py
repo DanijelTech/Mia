@@ -17,6 +17,14 @@ BASE = (os.environ.get("MIA_LEARNING_URL")
         or os.environ.get("JARVIS_LEARNING_URL")
         or "http://127.0.0.1:8765/api/learning")
 
+# Music lives under /api/music, not /api/learning. Derive it from the same
+# host so a custom MIA_LEARNING_URL keeps working; allow an explicit override.
+MUSIC_BASE = (os.environ.get("MIA_MUSIC_URL")
+              or os.environ.get("JARVIS_MUSIC_URL")
+              or (BASE.rsplit("/learning", 1)[0] + "/music"
+                  if "/learning" in BASE
+                  else "http://127.0.0.1:8765/api/music"))
+
 
 def _token() -> str:
     return (os.environ.get("MIA_HUD_TOKEN")
@@ -24,10 +32,11 @@ def _token() -> str:
             or "")
 
 
-def _request(method: str, path: str, payload: dict | None = None) -> dict:
+def _request(method: str, path: str, payload: dict | None = None,
+             base: str | None = None) -> dict:
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(
-        BASE.rstrip("/") + path, data=data, method=method,
+        (base or BASE).rstrip("/") + path, data=data, method=method,
         headers={"Content-Type": "application/json", "X-Mia-Token": _token()},
     )
     try:
@@ -109,8 +118,10 @@ def skill_tree(args: dict, **kwargs) -> str:
 def music_play(args: dict, **kwargs) -> str:
     payload = {"query": args.get("query") or "",
                "desktop": bool(args.get("desktop", True))}
-    return json.dumps(_request("POST", "/music/play", payload), ensure_ascii=False)
+    return json.dumps(_request("POST", "/play", payload, base=MUSIC_BASE),
+                      ensure_ascii=False)
 
 
 def music_stop(args: dict, **kwargs) -> str:
-    return json.dumps(_request("POST", "/music/stop", {}), ensure_ascii=False)
+    return json.dumps(_request("POST", "/stop", {}, base=MUSIC_BASE),
+                      ensure_ascii=False)

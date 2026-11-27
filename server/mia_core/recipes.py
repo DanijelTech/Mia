@@ -18,17 +18,17 @@ from .db import Store
 _STOP = {
     # Slovenian
     "mi", "me", "se", "si", "smo", "ste", "je", "so", "bi", "bo", "da", "ne",
-    "in", "ter", "pa", "na", "za", "od", "do", "z", "s", "k", "h", "v", "na",
+    "in", "ter", "pa", "na", "za", "od", "do", "z", "s", "k", "h", "v",
     "prosim", "hvala", "zdaj", "sedaj", "potem", "prej", "lahko", "ali", "ki",
     "to", "ta", "te", "ti", "tisti", "tista", "moj", "moja", "moje", "tvoj",
     "tvoja", "tvoje", "mia", "mijo", "mija", "mio", "sefe", "šefe", "gospa",
     "gospod", "daj", "no", "ja", "ok", "okej", "kar", "kot", "tako", "zelo",
     # Serbian/Croatian
-    "molim", "te", "sam", "smo", "nije", "nema", "daj", "ajde", "hajde",
-    "molimte", "brate", "šefe", "gde", "gdje", "šta", "sta", "kako", "koji",
+    "molim", "sam", "nije", "nema", "ajde", "hajde",
+    "molimte", "brate", "gde", "gdje", "šta", "sta", "kako", "koji",
     # English
-    "the", "a", "an", "please", "can", "you", "could", "would", "to", "for",
-    "of", "and", "or", "is", "are", "it", "this", "that", "my", "me", "i",
+    "the", "a", "an", "please", "can", "you", "could", "would", "for",
+    "of", "and", "or", "is", "are", "it", "this", "that", "my", "i",
     "want", "need",
 }
 

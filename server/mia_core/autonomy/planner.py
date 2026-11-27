@@ -160,12 +160,31 @@ def make_plan(steps: list[dict], name: str = "načrt", *,
 
 
 def is_destructive(step: dict) -> bool:
+    if step.get("kind") == "plan":
+        if step.get("destructive"):
+            return True
+        return any(is_destructive(s) for s in (step.get("steps") or []))
     if step.get("kind") != "ctl":
         return False
     action = step.get("action") or []
     if len(action) >= 2 and (action[0], action[1]) in DESTRUCTIVE_TOKENS:
         return True
     return step.get("yes", False)
+
+
+def _sanitize_undo(value: Any) -> list[list[str]]:
+    """Undo commands run with --yes during rollback, so they must stay inside
+    the same mia-ctl vocabulary as normal steps."""
+    out: list[list[str]] = []
+    for item in value or []:
+        if isinstance(item, str):
+            item = shlex.split(item)
+        if not isinstance(item, list) or not item:
+            raise PreflightError("undo must be a non-empty list of argv lists")
+        if str(item[0]) not in CTL_COMMANDS:
+            raise PreflightError(f"undo command {item[0]!r} is not allowed")
+        out.append([str(x) for x in item])
+    return out
 
 
 def sanitize_plan(plan: dict) -> dict:
@@ -198,7 +217,7 @@ def sanitize_plan(plan: dict) -> dict:
                                   retries=int(raw.get("retries") or 0),
                                   timeout=float(raw.get("timeout") or 60),
                                   on_fail=str(raw.get("on_fail") or "abort"),
-                                  undo=raw.get("undo") or [],
+                                  undo=_sanitize_undo(raw.get("undo")),
                                   require_verified=bool(raw.get("require_verified"))))
         elif kind == "python":
             built = step_python(str(raw.get("action") or ""),
@@ -233,7 +252,9 @@ def sanitize_plan(plan: dict) -> dict:
         elif kind == "plan":
             nested = sanitize_plan({"steps": raw.get("steps") or []})
             steps.append({"kind": "plan", "label": str(raw.get("label") or "podnačrt"),
-                          "steps": nested["steps"], "on_fail": "abort",
+                          "steps": nested["steps"],
+                          "destructive": bool(nested.get("destructive")),
+                          "on_fail": "abort",
                           "retries": 0, "timeout": 300, "undo": [],
                           "expect": {}, "require_verified": False})
     return {"name": str(plan.get("name") or "načrt"),
@@ -531,7 +552,7 @@ class Planner:
         if kind == "plan":
             nested = make_plan(step.get("steps") or [],
                                name=str(step.get("label") or "podnačrt"),
-                               confirmed=True)
+                               confirmed=bool(plan.get("confirmed")))
             outcome = self.execute(nested, name=step.get("label") or "podnačrt",
                                    source="subplan")
             return {"ok": outcome["ok"], "output": outcome,

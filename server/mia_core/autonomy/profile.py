@@ -681,7 +681,7 @@ class SystemProfile:
         battery = _battery()
         temps = _temperatures()
         load = _load_average()
-        net = self.data.get("network") or {}
+        net = _network()
         return {
             "ts": time.time(),
             "cpu_percent": _cpu_percent(sample_seconds),
@@ -704,8 +704,9 @@ class SystemProfile:
             "max_temp_c": max((t["celsius"] for t in temps), default=None),
             "uptime": _uptime(),
             "wifi_connected": bool((net.get("wifi") or {}).get("connected")),
-            "network_up": any(i.get("state") == "up"
-                              for i in (net.get("interfaces") or [])),
+            "network_up": (any(i.get("state") == "up"
+                               for i in (net.get("interfaces") or []))
+                           or bool(net.get("addresses"))),
         }
 
     # ------------------------------------------------------------ comparison

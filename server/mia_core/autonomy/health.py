@@ -145,7 +145,12 @@ def check(profile: Any, cfg: dict | None = None, store: Any = None) -> dict:
                              remediation={"notify": "Nekatere storitve so v napaki."},
                              category="service"))
 
-    for cert in (Path("server/certs/cert.pem"), Path.home() / ".config/mia/cert.pem"):
+    repo_cert = Path(__file__).resolve().parents[3] / "server" / "certs" / "cert.pem"
+    configured = str(((cfg.get("server") or {}).get("tls_cert") or "")).strip()
+    candidates = [repo_cert, Path.home() / ".config/mia/cert.pem"]
+    if configured:
+        candidates.insert(0, Path(configured).expanduser())
+    for cert in candidates:
         days = _cert_days(cert)
         if days is not None:
             level = "critical" if days < 7 else "warn" if days < 30 else "ok"

@@ -759,7 +759,7 @@ async def _service_items() -> list[dict]:
     items = _stack_services()
     states = await asyncio.gather(*(asyncio.to_thread(_probe, item["detail"])
                                     for item in items))
-    for item, up in zip(items, states):
+    for item, up in zip(items, states, strict=False):
         item["state"] = "up" if up else "down"
     return items
 
@@ -3935,11 +3935,12 @@ async def _continuous_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: C
             pending, conn.pending_utterance = conn.pending_utterance, None
             if pending:
                 _start_continuous_turn(ws, pipeline, conn, pending)
-                return
-            try:
-                await ws.send_json({"type": "status", "message": "continuous listening"})
-            except Exception:
-                pass
+            else:
+                try:
+                    await ws.send_json({"type": "status",
+                                        "message": "continuous listening"})
+                except Exception:
+                    pass
 
 
 def _start_continuous_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnState,
