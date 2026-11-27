@@ -184,6 +184,10 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   it exits 3 with a message. A failed `windowclose` keeps its registry entry.
 - `server/hud/index.html::dismissPanel()` blanks the iframe/video source before
   the 700 ms exit animation, otherwise two panels overlap audibly.
+- `start-mia.sh` checks the `-m`/`--model` path in `stack.*.argv` before
+  launching llama-server or the chat model. A wrong path used to burn the whole
+  timeout; now it fails in a second and lists the `.gguf` files that do exist
+  in that directory. Keep `model_path_of()` in sync with both launch blocks.
 - `start-mia.sh` health means `http_ready` (HTTP status < 500), not "the port
   answers". llama-server binds early and returns 503 `Loading model` until the
   GGUF is loaded; a bare socket check reported "up" while the 12B model was

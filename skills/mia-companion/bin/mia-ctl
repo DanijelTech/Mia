@@ -2449,6 +2449,12 @@ def _active_window_text() -> str:
 def verify_result(action: str, args: argparse.Namespace, data: Any) -> dict:
     """Post-condition check. Only `verified` evidence promotes a recipe."""
     try:
+        if action == "media close":
+            data = data or {}
+            closed = int(data.get("closed") or 0)
+            return {"status": "verified" if closed else "unknown",
+                    "method": "window_registry",
+                    "evidence": str(data.get("output", ""))[:200]}
         if action == "screenshot":
             path = Path(str((data or {}).get("path", "")))
             ok = path.exists() and path.stat().st_size > 0

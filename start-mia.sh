@@ -204,6 +204,38 @@ hint_from_log() { # hint_from_log <logfile> — the usual llama-server launch fa
   esac
 }
 
+model_path_of() { # model_path_of <argv...> — the -m / --model value, if any
+  local prev="" a
+  for a in "$@"; do
+    case "$prev" in -m|--model) printf '%s\n' "$a"; return 0 ;; esac
+    case "$a" in -m=*|--model=*) printf '%s\n' "${a#*=}"; return 0 ;; esac
+    prev="$a"
+  done
+  return 1
+}
+
+check_model_file() { # check_model_file <label> <argv...> — 0 when the GGUF exists
+  local label="$1"; shift
+  local path dir found
+  path="$(model_path_of "$@")" || return 0
+  [ -e "$path" ] && return 0
+  warn "$label: model file not found — $path"
+  dir="$(dirname "$path")"
+  if [ -d "$dir" ]; then
+    found="$(find "$dir" -maxdepth 2 -type f -name '*.gguf' 2>/dev/null | head -n 5)"
+    if [ -n "$found" ]; then
+      info "GGUF files that do exist under $dir:"
+      printf '%s\n' "$found" | sed 's/^/      /'
+      info "fix: point stack.*.argv in server/config/server.yaml at one of them"
+    else
+      info "no .gguf files under $dir — check the path or download the model"
+    fi
+  else
+    info "directory $dir does not exist — is the disk mounted? (lsblk / mount | grep -i kameleon)"
+  fi
+  return 1
+}
+
 report_failed() { # report_failed <label> <logfile> <rc> <timeout> [pidfile]
   case "$3" in
     2) warn "$1 exited during startup — see $2" ;;
@@ -270,6 +302,8 @@ if [ "$DO_START" = 1 ]; then
         wait_health "$LLAMA_HEALTH" "$LLAMA_TIMEOUT"; rc=$?
         [ "$rc" = 0 ] && info "llama-server is up" \
           || { warn "llama-server did not become ready within ${LLAMA_TIMEOUT}s"; DEGRADED+=("llama-server"); }
+      elif ! check_model_file "llama-server" "${LLAMA_ARGV[@]}"; then
+        DEGRADED+=("llama-server")
       else
         [ -n "$LLAMA_SUPERVISOR" ] && [ -x "$LLAMA_SUPERVISOR" ] \
           && LLAMA_ARGV=("$LLAMA_SUPERVISOR" "${LLAMA_ARGV[@]}")
@@ -295,6 +329,8 @@ if [ "$DO_START" = 1 ]; then
         wait_health "$CHAT_HEALTH" "$CHAT_TIMEOUT"; rc=$?
         [ "$rc" = 0 ] && info "chat model is up" \
           || { warn "chat model did not become ready within ${CHAT_TIMEOUT}s"; DEGRADED+=("chat model"); }
+      elif ! check_model_file "chat model" "${CHAT_ARGV[@]}"; then
+        DEGRADED+=("chat model")
       else
         info "starting chat model (fast conversation)…"
         start_background "chat model" "$CHAT_PIDFILE" "$CHAT_LOG" "${CHAT_ARGV[@]}"
