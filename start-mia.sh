@@ -14,12 +14,14 @@
 #   ./start-mia.sh --host 192.168.1.10
 #   ./start-mia.sh --wait 180         # longer wait (first run downloads the Whisper model)
 #   ./start-mia.sh --no-token-in-url  # open /hud/ without the one-click login token
+#   ./start-mia.sh --version          # print the version and exit
 #
 # Exit codes: 0 ok · 1 not installed · 2 server did not come up ·
 #             3 HUD is up, but part of the stack (llama/chat/Hermes/dashboard) is not ready
 set -uo pipefail
 cd "$(dirname "$0")"
 REPO="$PWD"
+VERSION="$(cat "$REPO/VERSION" 2>/dev/null || git -C "$REPO" describe --tags --always 2>/dev/null || echo unknown)"
 
 DO_START=1
 DO_OPEN=1
@@ -33,6 +35,7 @@ while [ $# -gt 0 ]; do
     --no-token-in-url) TOKEN_IN_URL=0 ;;
     --wait) WAIT_S="${2:-90}"; shift ;;
     --host) HOST="${2:-}"; shift ;;
+    --version) printf 'Mia %s\n' "$VERSION"; exit 0 ;;
     -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
   esac
@@ -311,6 +314,7 @@ unit_exists() {  # ask the filesystem, never systemd (a dead manager would hang)
 }
 
 if [ "$DO_START" = 1 ]; then
+  info "version: $VERSION"
   say "1/4 Starting the brain (llama-server + Hermes gateway)"
 
   if [ -z "$LLAMA_HEALTH" ] && [ -z "$HERMES_HEALTH" ]; then

@@ -67,6 +67,16 @@ Zakaj Sessions API in ne `/v1/responses` ali `/v1/runs`: v Hermesu v0.16 so seje
 edina površina, ki v enem toku združuje imenovan trajni spomin, ID krogov,
 dogodke orodij in dogodke odobritev.
 
+## Verzioniranje
+
+
+`VERSION` je en sam vir resnice (semantično verzioniranje). Berejo ga
+`mia_core.__version__`, `/api/version`, glava/noga HUD-a in `--version` pri
+`install.sh`, `uninstall.sh`, `update.sh`, `start-mia.sh`, `stop-mia.sh` in
+`build-package.sh`. Izdaje so opisane v `CHANGELOG.md`; postopek je v
+[RELEASING.md](RELEASING.md). Namestitveni manifest shrani različico, zato
+odstranjevalnik in podpora vesta, katera izdaja je ustvarila katere datoteke.
+
 ## Učenje, spomin in drevo znanja
 
 Pred vsakim krogom strežnik sestavi omejen `[MIA SPOMIN …]` brief iz lokalne

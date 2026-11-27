@@ -1,0 +1,11 @@
+# Optional / heavy extras. Install only what your TTS engine needs.
+# Gepard:
+#   accelerate
+#   nemo_toolkit[tts]
+#   git+https://github.com/nineninesix-ai/gepard-inference
+# Maya1:
+#   accelerate transformers peft snac soundfile phonemizer
+# Cloud (optional, never used by default):
+#   elevenlabs
+# Speaker verification (distance calibration):
+#   speechbrain torch torchaudio

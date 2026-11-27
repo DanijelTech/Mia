@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 # Build a distributable tarball of Mia (source + installers) for an offline machine.
 #   ./build-package.sh [VERSION]
+#   ./build-package.sh --version   # print the version and exit
 # Excludes local state: voices, certs, logs, boot audio, dist/, caches, server.yaml.
 set -uo pipefail
 cd "$(dirname "$0")"
 REPO="$PWD"
-VER="${1:-$(git describe --tags --always 2>/dev/null || date +%Y%m%d)}"
+DEFAULT_VER="$(cat "$REPO/VERSION" 2>/dev/null || git describe --tags --always 2>/dev/null || date +%Y%m%d)"
+case "${1:-}" in
+  --version) printf 'Mia %s\n' "$DEFAULT_VER"; exit 0 ;;
+  --help) sed -n '2,6p' "$0" | sed 's/^# \\{0,1\\}//'; exit 0 ;;
+esac
+VER="${1:-$DEFAULT_VER}"
 NAME="mia-$VER"
 OUT="$REPO/dist/$NAME.tar.gz"
 mkdir -p "$REPO/dist"

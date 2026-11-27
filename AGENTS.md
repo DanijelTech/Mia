@@ -9,6 +9,9 @@ Maya1 (TTS), a local LLM behind Hermes, and a browser HUD.
 Documentation roles: `README.md` is the English main README, `README.sl.md` the
 Slovenian original; `docs/` is Slovenian, `docs/en/` English, and every page
 links its counterpart. Keep both sides in sync when behaviour changes.
+`VERSION` is the single source of truth (semver); `/api/version`, the HUD badge
+and every script's `--version` read it. Releases: bump `VERSION`, update
+`CHANGELOG.md`, follow `docs/RELEASING.md`, tag `vX.Y.Z`.
 
 The current major addition is the **learning/knowledge core** and the
 **audited computer-control CLI**:
@@ -199,6 +202,8 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   adaptive endpoint timing.
 - `tests/test_plugin_registration.py` — both Hermes plugins register every
   declared tool.
+- `tests/test_version.py` — `VERSION` is semver, matches `mia_core.__version__`,
+  is in `CHANGELOG.md`, and every script answers `--version`.
 - Keep tests hermetic: use `tempfile`, set `HOME`/`XDG_*` for `mia-ctl`.
 
 ## Known pitfalls (hard-won)

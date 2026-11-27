@@ -1,0 +1,11 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["server/voices", "server/logs", "server/certs", "dist", ".git"]
+
+[tool.ruff.lint]
+select = ["F", "E9", "B"]
+
+[tool.coverage.run]
+source = ["server", "client", "worker", "hermes-plugin"]
+omit = ["*/tests/*", "server/voices/*"]

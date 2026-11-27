@@ -6,15 +6,20 @@
 #   sudo ./uninstall.sh --yes       # root/system install: services + files
 #   ./uninstall.sh --purge-deps     # also pip-uninstall the packages it added
 #   ./uninstall.sh --keep-data      # keep voices/certs/audio/logs/config
+#   ./uninstall.sh --force          # allow the no-manifest fallback (may delete local data)
+#   ./uninstall.sh --version        # print the version and exit
 #
 # What it never touches: Hermes itself, its sessions/memory, your models, the
 # Mia source tree (delete the folder yourself if you want that too).
 set -uo pipefail
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VERSION="$(cat "$REPO_DIR/VERSION" 2>/dev/null || echo unknown)"
 
 ASSUME_YES=0
 DRY_RUN=0
 PURGE_DEPS=0
 KEEP_DATA=0
+FORCE=0
 MANIFEST=""
 PYTHON="${PYTHON:-python3}"
 
@@ -24,8 +29,10 @@ while [ $# -gt 0 ]; do
     --dry-run) DRY_RUN=1 ;;
     --purge-deps) PURGE_DEPS=1 ;;
     --keep-data) KEEP_DATA=1 ;;
+    --force) FORCE=1 ;;
     --manifest) MANIFEST="${2:-}"; shift ;;
     --python) PYTHON="${2:-}"; shift ;;
+    --version) printf 'Mia %s\n' "$VERSION"; exit 0 ;;
     -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
   esac
@@ -48,8 +55,6 @@ confirm() {
   case "$a" in y|Y|yes|YES) return 0 ;; *) return 1 ;; esac
 }
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 if [ -z "$MANIFEST" ]; then
   if [ -f "${XDG_STATE_HOME:-/var/lib}/mia/install-manifest.json" ] && [ "$(id -u)" = "0" ]; then
     MANIFEST="${XDG_STATE_HOME:-/var/lib}/mia/install-manifest.json"
@@ -63,8 +68,13 @@ fi
 say "Mia uninstaller"
 if [ -n "$MANIFEST" ] && [ -f "$MANIFEST" ]; then
   info "manifest: $MANIFEST"
+elif [ "$FORCE" = 1 ]; then
+  warn "no install manifest found — --force uses the fallback paths inside $REPO_DIR"
 else
-  warn "no install manifest found — falling back to known locations inside $REPO_DIR"
+  warn "no install manifest found"
+  info "refusing to guess and delete local data."
+  info "re-run with --force to use the fallback, or pass --manifest PATH."
+  exit 2
 fi
 [ "$DRY_RUN" = 1 ] && info "dry-run: nothing will be removed"
 

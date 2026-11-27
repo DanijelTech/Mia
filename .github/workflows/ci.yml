@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy PyYAML ruff
+      - name: Unit tests (stdlib unittest)
+        run: python -m unittest discover -s tests -v
+      - name: Ruff (F, E9, B)
+        run: python -m ruff check server client worker hermes-plugin tests
+      - name: Compile Python entry points
+        run: |
+          python -m py_compile server/server.py server/*.py server/mia_core/*.py server/mia_core/autonomy/*.py client/client.py worker/*.py hermes-plugin/*/*.py
+      - name: Shell syntax
+        run: |
+          for f in install.sh uninstall.sh update.sh start-mia.sh stop-mia.sh build-package.sh server/scripts/*.sh; do
+            bash -n "$f" || exit 1
+          done
+      - name: Version consistency
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          v = Path('VERSION').read_text().strip()
+          assert v in Path('CHANGELOG.md').read_text(), 'CHANGELOG missing version'
+          print('version', v)
+          PY

@@ -13,6 +13,7 @@
 #   ./install.sh --yes --open         # install, start and open the HUD
 #
 # Common options:
+#   --version             print the version and exit
 #   --yes                 no prompts
 #   --mode system|user    force install mode (default: root -> system)
 #   --python PATH         interpreter to install into (default: python3)
@@ -37,7 +38,7 @@ set -uo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVER_DIR="$REPO_DIR/server"
-VERSION="$(git -C "$REPO_DIR" describe --tags --always 2>/dev/null || echo unknown)"
+VERSION="$(cat "$REPO_DIR/VERSION" 2>/dev/null || git -C "$REPO_DIR" describe --tags --always 2>/dev/null || echo unknown)"
 
 MODE=""
 PYTHON="${PYTHON:-python3}"
@@ -83,6 +84,7 @@ while [ $# -gt 0 ]; do
     --hermes-env) HERMES_ENV="${2:-}"; shift ;;
     --hermes-home) HERMES_HOME="${2:-}"; shift ;;
     --port-tts) PORT_TTS="${2:-}"; shift ;;
+    --version) printf 'Mia %s\n' "$VERSION"; exit 0 ;;
     -h|--help) sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
   esac
@@ -297,7 +299,7 @@ fi
 pip_install piper-tts || warn "piper-tts missing: local voice unavailable"
 
 if [ "$TTS_ENGINE" = "gepard" ]; then
-  say "1b/7 Gepard TTS extras (heavy, ~3 GB)"
+  say "1b/8 Gepard TTS extras (heavy, ~3 GB)"
   pip_install accelerate || warn "accelerate missing: no GPU/RAM layer split"
   if confirm "Install NeMo toolkit for the NanoCodec (large download)?"; then
     pip_install "nemo_toolkit[tts]" || warn "nemo_toolkit failed — Gepard cannot decode audio"
@@ -305,7 +307,7 @@ if [ "$TTS_ENGINE" = "gepard" ]; then
   pip_install "git+https://github.com/nineninesix-ai/gepard-inference" \
     || warn "gepard-inference failed — start the TTS service with --engine piper instead"
 elif [ "$TTS_ENGINE" = "maya1" ]; then
-  say "1b/7 Maya1 TTS extras (transformers + SNAC + phonemizer)"
+  say "1b/8 Maya1 TTS extras (transformers + SNAC + phonemizer)"
   pip_install accelerate transformers peft snac soundfile phonemizer \
     || warn "Maya1 Python deps incomplete — the service will fall back to Piper"
   if [ "$DO_SYSTEM_PKGS" = 1 ]; then
@@ -767,6 +769,7 @@ cat <<DONE
 
 $([ "$DRY_RUN" = 1 ] && printf '\033[1;33mDry run complete — nothing was changed.\033[0m'    || { [ "$SERVICE_OK" = "no" ] && printf '\033[1;33mInstalled, but the service is NOT running (see above).\033[0m'         || printf '\033[1;32mInstalled.\033[0m'; })
 
+  version     $VERSION
   config      $CFG
   manifest    $MANIFEST
   python      $($PYTHON -c 'import sys;print(sys.executable)')
@@ -779,14 +782,15 @@ $([ "$DRY_RUN" = 1 ] && printf '\033[1;33mDry run complete — nothing was chang
   learning    ${BIN_DIR:-$HOME/.local/bin}/mia-learn  ·  $HOME/.local/state/mia/learning.db
   autonomy    ${BIN_DIR:-$HOME/.local/bin}/mia-auto  ·  jobs, rules, health, adaptation
   control     $HOME/.config/mia/control.json  ·  $HOME/.local/state/mia/control-audit.jsonl
-  skills      $HERMES_HOME/skills (8 skills, validated)
+  skills      $HERMES_HOME/skills ($(ls -d "$HERMES_HOME"/skills/mia-* 2>/dev/null | wc -l | tr -d ' ') skills, validated)
   stt device  $(grep -m1 -E '^  device:' "$CFG" 2>/dev/null | awk '{print $2}')$( [ "$(grep -m1 -E '^  device:' "$CFG" 2>/dev/null | awk '{print $2}')" = "cpu" ] && echo " (GPU free for the LLM)" || echo " — if your LLM launcher says 'GPU busy', run: ./install.sh --stt-device cpu" )
   HUD URL     $(hud_url)
 
 
 Next steps
-  1. Hermes: point your local model at it (Qwen3 with thinking disabled) —
-     Mia only forces the reply language, the model lives in Hermes' config.
+  1. Hermes: point your local model at it (any OpenAI-compatible local
+     llama-server) — Mia only forces the reply language, the model lives in
+     Hermes' config.
   2. Open the HUD and enter the token from $HERMES_ENV.
   3. If you switched TTS to Gepard: start the TTS service and set
      tts.provider: http (see docs/SETUP.md).

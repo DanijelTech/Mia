@@ -30,6 +30,7 @@ import shutil
 import signal
 import subprocess
 import re
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -84,6 +85,21 @@ def _anthropic_client(key: str):
     return Anthropic(api_key=key)
 
 ROOT = Path(__file__).resolve().parent
+
+
+def _app_version() -> str:
+    for candidate in (ROOT.parent / "VERSION", ROOT / "VERSION"):
+        try:
+            value = candidate.read_text(encoding="utf-8").strip()
+            if value:
+                return value
+        except OSError:
+            pass
+    return "1.1.0"
+
+
+APP_VERSION = _app_version()
+APP_STARTED_AT = time.time()
 CONFIG_PATH = ROOT / "config" / "server.yaml"
 LOG_PATH = ROOT / "logs" / "latency.jsonl"
 STATE_PATH = ROOT / "logs" / "hermes_sessions.json"
@@ -1857,7 +1873,7 @@ def get_pipeline() -> VoicePipelineServer:
     return PIPELINE
 
 
-app = FastAPI(title="Hermes Voice Pipeline")
+app = FastAPI(title="Mia Voice + HUD", version=APP_VERSION)
 
 
 @app.on_event("startup")
@@ -2860,6 +2876,26 @@ async def update_settings(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "settings": SETTINGS, "updated": updated})
 
 
+@app.get("/api/version")
+async def version_info() -> JSONResponse:
+    """Version and runtime identity for scripts, HUD and support bundles."""
+    commit = ""
+    try:
+        commit = subprocess.run(
+            ["git", "-C", str(ROOT.parent), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=2).stdout.strip()
+    except Exception:
+        pass
+    return JSONResponse({
+        "name": "Mia",
+        "version": APP_VERSION,
+        "commit": commit,
+        "python": sys.version.split()[0],
+        "started_at": APP_STARTED_AT,
+        "uptime_seconds": round(time.time() - APP_STARTED_AT, 1),
+    })
+
+
 @app.get("/api/hud-config")
 async def hud_config() -> JSONResponse:
     """HUD behaviour switches: external media, UI language, TTS provider."""
@@ -2878,6 +2914,7 @@ async def hud_config() -> JSONResponse:
         "conversation": hermes.get("conversation") or "",
         "pitch_semitones": VOICE_SETTINGS.get("pitch_semitones", 0.0),
         "lang": str(UI_STATE.get("lang") or "sl"),
+        "version": APP_VERSION,
         "dashboard_port": int(((CFG.get("server") or {}).get("dashboard_proxy")
                                or {}).get("port") or 9443),
         "learning_enabled": bool(LEARNING.enabled),
@@ -4242,7 +4279,7 @@ def main() -> int:
     tls_ports = server.get("tls_ports") or ([server["tls_port"]] if server.get("tls_port") else [])
     cert = server.get("tls_cert")
     key = server.get("tls_key")
-    print(f"Starting Hermes voice server on ws://{host}:{port}/ws", flush=True)
+    print(f"Starting Mia v{APP_VERSION} on ws://{host}:{port}/ws", flush=True)
     if tls_ports and cert and key and (ROOT / cert).exists() and (ROOT / key).exists():
         servers = [uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="info"))]
         for tp in tls_ports:

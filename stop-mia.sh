@@ -9,11 +9,13 @@
 #   ./stop-mia.sh --restart      # stop, then ./start-mia.sh
 #   ./stop-mia.sh --free-ports   # also kill whatever still holds Mia's ports
 #   ./stop-mia.sh --wait 20      # seconds to wait for a graceful exit (default 10)
+#   ./stop-mia.sh --version      # print the version and exit
 #
 # Exit codes: 0 stopped or was not running · 2 something is still running
 set -uo pipefail
 cd "$(dirname "$0")"
 REPO="$PWD"
+VERSION="$(cat "$REPO/VERSION" 2>/dev/null || git -C "$REPO" describe --tags --always 2>/dev/null || echo unknown)"
 
 DO_RESTART=0
 STATUS_ONLY=0
@@ -25,6 +27,7 @@ while [ $# -gt 0 ]; do
     --restart) DO_RESTART=1 ;;
     --free-ports) FREE_PORTS=1 ;;
     --wait) WAIT_S="${2:-10}"; shift ;;
+    --version) printf 'Mia %s\n' "$VERSION"; exit 0 ;;
     -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
   esac
@@ -207,7 +210,7 @@ if [ "$STATUS_ONLY" = 1 ]; then
 fi
 
 # ------------------------------------------------------------------- stop it
-say "Stopping Mia"
+say "Stopping Mia v$VERSION"
 STOPPED=0
 
 # 1) macOS launchd agents

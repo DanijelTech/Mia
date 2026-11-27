@@ -67,6 +67,16 @@ Why the Sessions API and not `/v1/responses` or `/v1/runs`: on Hermes v0.16,
 sessions are the only surface that combines named persistent memory, run ids,
 tool events, and approval events in one stream.
 
+## Versioning
+
+
+`VERSION` is the single source of truth (semantic versioning). It is read by
+`mia_core.__version__`, `/api/version`, the HUD header/footer, and
+`--version` on `install.sh`, `uninstall.sh`, `update.sh`, `start-mia.sh`,
+`stop-mia.sh` and `build-package.sh`. Releases are documented in
+`CHANGELOG.md`; the process is in [RELEASING.md](RELEASING.md). The installer
+stores the version in its manifest so uninstall/support can identify a release.
+
 ## Learning, memory and the skill tree
 
 Before each turn the server builds a bounded `[MIA SPOMIN …]` brief from the

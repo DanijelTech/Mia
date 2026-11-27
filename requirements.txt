@@ -1,0 +1,13 @@
+# Core runtime for Mia (the installer is the recommended path; this file is for
+# manual/venv installs and CI). Keep it in sync with install.sh.
+fastapi>=0.110
+uvicorn>=0.27
+requests>=2.31
+PyYAML>=6.0
+numpy>=1.26
+psutil>=5.9
+RealtimeSTT>=0.3
+faster-whisper>=1.0
+silero-vad>=5.0
+piper-tts>=1.2
+websockets>=12.0

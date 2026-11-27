@@ -543,6 +543,10 @@
 
   let stored = null;
   try { stored = localStorage.getItem(STORE); } catch (e) {}
+  // ?lang=en is handy for screenshots, kiosk links and support bookmarks.
+  let queryLang = null;
+  try { queryLang = new URLSearchParams(location.search).get("lang"); } catch (e) {}
+  if (queryLang === "en" || queryLang === "sl") stored = queryLang;
   let lang = stored === "en" ? "en" : "sl";
 
   function translate(text) {

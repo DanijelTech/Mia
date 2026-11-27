@@ -2,6 +2,10 @@
 
 > Slovenian documentation: [README.sl.md](README.sl.md) · [docs/](docs/) · [docs/en/](docs/en/)
 
+**Version 1.1.0** · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Releasing](docs/en/RELEASING.md)
+
+![Mia English HUD — voice link, brain, live feed and system panels](docs/images/hud-en.png)
+
 A self-hosted, Iron-Man-style voice assistant and command center built on top of
 [Hermes Agent](https://github.com/NousResearch/hermes-agent) (NousResearch's
 open-source autonomous agent). Talk to a *real* agent — one with persistent
@@ -197,6 +201,23 @@ It points `llm.chat.base_url` at the main llama-server (port from
 the whole `stack.chat` block, so the second model is never started. Comments in `server.yaml` are preserved and the
 previous file is saved as `server.yaml.bak-<date>`.
 
+## Version & updates
+
+The release version lives in [`VERSION`](VERSION) and is shown in the HUD header
+and footer, in `/api/version`, and by every script:
+
+```bash
+./start-mia.sh --version        # Mia 1.1.0
+./update.sh --check             # what is new on origin/main
+./update.sh                     # fast-forward, restart, remind about HUD/install
+./build-package.sh              # dist/mia-1.1.0.tar.gz for an offline machine
+```
+
+`update.sh` refuses a dirty tree, fetches full history from a shallow clone,
+never overwrites `server.yaml`, voices, certificates, logs or the token, and
+tells you when `install.sh` must run again. Release history:
+[CHANGELOG.md](CHANGELOG.md); process: [docs/en/RELEASING.md](docs/en/RELEASING.md).
+
 ## Architecture
 
 ```
@@ -376,6 +397,15 @@ evening.
 ## Repo layout
 
 ```
+VERSION          single source of truth for the release version
+pyproject.toml   ruff/coverage tooling configuration
+requirements.txt core runtime deps (manual/venv installs; installer is canonical)
+Makefile         test · lint · shellcheck · compile · package · version
+.github/workflows/ci.yml  tests, ruff, compile, shell and version checks
+CHANGELOG.md     release history (semantic versioning)
+SECURITY.md      threat model, token/control guarantees, hardening checklist
+CONTRIBUTING.md  how to add a control command, skill, route, HUD string or test
+docs/images/     screenshots used by the README (English HUD)
 server/          FastAPI voice pipeline + HUD host (the core of this project)
 server/hud/      single-file HUD (vanilla JS, no build step)
 server/continuous.py  VAD segmentation + wake gate for always-on listening

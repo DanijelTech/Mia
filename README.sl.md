@@ -15,6 +15,10 @@ oblaka ne potrebuješ nobenega ključa.
 
 > English documentation: [README.md](README.md) · [docs/en/](docs/en/)
 
+**Različica 1.1.0** · [Dnevnik sprememb](CHANGELOG.md) · [Varnost](SECURITY.md) · [Prispevanje](CONTRIBUTING.md) · [Izdajanje](docs/RELEASING.md)
+
+![Angleški HUD Mie — glasovna povezava, možgani, prikaz v živo in sistemske plošče](docs/images/hud-en.png)
+
 ## Predstavitev
 
 Izvirni projekt ([eadmin2/jarvis_ai](https://github.com/eadmin2/jarvis_ai)) ima
@@ -201,6 +205,23 @@ Skript nastavi `llm.chat.base_url` na glavni llama-server (vratca iz
 cel `stack.chat`, tako da se drugi model ne zaganja več. Kommentarji v `server.yaml` ostanejo, prejšnja različica pa se
 shrani kot `server.yaml.bak-<datum>`.
 
+## Različica in posodobitve
+
+Različica je v [`VERSION`](VERSION); prikaže se v glavi/nogi HUD-a, v
+`/api/version` in pri vsaki skripti:
+
+```bash
+./start-mia.sh --version        # Mia 1.1.0
+./update.sh --check             # kaj je novega na origin/main
+./update.sh                     # fast-forward, restart, opomnik za HUD/install
+./build-package.sh              # dist/mia-1.1.0.tar.gz za offline stroj
+```
+
+`update.sh` zavrne umazano drevo, pri shallow klonu potegne celotno zgodovino,
+nikoli ne prepiše `server.yaml`, glasov, certifikatov, logov ali žetona, in
+pove, kdaj je treba znova pognati `install.sh`. Zgodovina:
+[CHANGELOG.md](CHANGELOG.md); postopek: [docs/RELEASING.md](docs/RELEASING.md).
+
 ## Arhitektura
 
 ```
@@ -359,6 +380,15 @@ macOS-a (TCC pri zunanjih diskih in poti do logov).
 ## Struktura repozitorija
 
 ```
+VERSION          en sam vir resnice za različico
+pyproject.toml   nastavitve ruff/coverage
+requirements.txt osnovne odvisnosti (ročna/venv namestitev; installer je merodajen)
+Makefile         test · lint · shellcheck · compile · package · version
+.github/workflows/ci.yml  testi, ruff, compile, shell in preverjanje različice
+CHANGELOG.md     zgodovina izdaj (semantično verzioniranje)
+SECURITY.md      varnostni model, žeton, nadzor in utrjevanje
+CONTRIBUTING.md  kako dodati ukaz, veščino, pot, HUD niz ali test
+docs/images/     posnetki zaslona za README (angleški HUD)
 server/          FastAPI glasovni cevovod + gostitelj HUD-a (jedro projekta)
 server/hud/      HUD v eni datoteki (vanilla JS, brez gradnje)
 server/continuous.py  VAD segmentacija, budnica (wake gate) za neprestano poslušanje

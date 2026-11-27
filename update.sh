@@ -7,10 +7,12 @@
 #   ./update.sh --check         # only show what is new
 #   ./update.sh --no-restart    # pull, do not touch the service
 #   ./update.sh --branch main   # different branch
+#   ./update.sh --version       # print the version and exit
 #
 # Exit codes: 0 updated or already current · 1 dirty tree · 2 git error
 set -uo pipefail
 cd "$(dirname "$0")"
+VERSION="$(cat VERSION 2>/dev/null || git describe --tags --always 2>/dev/null || echo unknown)"
 
 BRANCH="main"
 CHECK_ONLY=0
@@ -20,6 +22,7 @@ while [ $# -gt 0 ]; do
     --check) CHECK_ONLY=1 ;;
     --no-restart) DO_RESTART=0 ;;
     --branch) BRANCH="${2:-main}"; shift ;;
+    --version) printf 'Mia %s\n' "$VERSION"; exit 0 ;;
     -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
   esac
@@ -76,11 +79,11 @@ git merge --ff-only --quiet "origin/$BRANCH" || { echo "fast-forward failed (div
 CHANGED="$([ -n "$old" ] && git diff --name-only "$old..HEAD" || git ls-tree -r --name-only HEAD)"
 
 needs_install=0
-grep -qE '^(install\.sh|launchd/|server/scripts/mia-(start|stop|restart|health)\.sh|server/scripts/make-certs\.sh|skills/|server/mia_core/)' <<<"$CHANGED" && needs_install=1
+grep -qE '^(install\.sh|uninstall\.sh|update\.sh|build-package\.sh|launchd/|hermes-plugin/|start-mia\.sh|stop-mia\.sh|server/scripts/|skills/|server/mia_core/|server/config/)' <<<"$CHANGED" && needs_install=1
 skills_changed=0
 grep -qE '^skills/' <<<"$CHANGED" && skills_changed=1
 hud_changed=0
-grep -qE '^server/(hud/|server\.py|tts\.py)' <<<"$CHANGED" && hud_changed=1
+grep -qE '^server/(hud/|server\.py|tts\.py|continuous\.py|speaker_gate\.py|calibration\.py|chat_brain\.py)' <<<"$CHANGED" && hud_changed=1
 
 # ----------------------------------------------------------------- restart
 if [ "$DO_RESTART" = 1 ]; then

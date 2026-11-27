@@ -32,6 +32,7 @@ header{
   clip-path:polygon(0 0,100% 0,100% 70%,calc(100% - 16px) 100%,16px 100%,0 70%);
 }
 header h1{font-family:'Orbitron'; font-size:19px; letter-spacing:8px; color:var(--cyan); text-shadow:0 0 12px #00e5ff88}
+header h1 .ver{font-size:9px; letter-spacing:2px; color:var(--txt-dim); vertical-align:middle; margin-left:6px}
 header .sub{font-size:12px; letter-spacing:3px; color:var(--txt-dim)}
 #clock{font-family:'Orbitron'; font-size:15px; letter-spacing:2px; color:var(--teal)}
 .col{display:flex; flex-direction:column; gap:8px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent}
@@ -272,8 +273,8 @@ footer{
 </div>
 <div id="grid">
   <header>
-    <h1>MIA</h1>
-    <div class="sub">HERMES AGENTNI VMESNIK &nbsp;//&nbsp; <span id="connState">POVEZAVA PREKINJENA</span></div>
+    <h1>MIA <span class="ver" id="appVer">v—</span></h1>
+    <div class="sub">HERMES AGENTNI VMESNIK // <span id="connState">POVEZAVA PREKINJENA</span></div>
     <div id="clock">--:--:--</div>
   </header>
 
@@ -455,7 +456,7 @@ footer{
   <footer>
     <span></span>
     <span id="footMsg">PRIPRAVLJEN</span>
-    <span>NOUS HERMES AGENT v0.16</span>
+    <span id="footVer">MIA</span>
   </footer>
 </div>
 
@@ -1540,6 +1541,8 @@ if($("pitchSlider")){
 fetch("/api/hud-config").then(r=>r.json()).then(c=>{
   ALLOW_EXTERNAL=!!c.allow_external_media;
   if(c.dashboard_port)DASH_PORT=+c.dashboard_port;
+  if($("appVer")&&c.version)$("appVer").textContent="v"+c.version;
+  if($("footVer")&&c.version)$("footVer").textContent="MIA v"+c.version;
   if($("pitchSlider")&&c.pitch_semitones!=null){
     const hz=Math.round(PITCH_BASE_HZ*Math.pow(2,c.pitch_semitones/12));
     $("pitchSlider").value=Math.max(70,Math.min(240,hz)); pitchLabel(+$("pitchSlider").value);
