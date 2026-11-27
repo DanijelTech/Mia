@@ -179,8 +179,9 @@ python3 server/scripts/use_single_model.py             # zapiše + naredi .bak
 ```
 
 Skript nastavi `llm.chat.base_url` na glavni llama-server (vratca iz
-`stack.llama.health`) in zakomentira cel `stack.chat`, tako da se drugi model
-ne zaganja več. Kommentarji v `server.yaml` ostanejo, prejšnja različica pa se
+`stack.llama.health`), `llm.chat.model` pa na `--alias` glavnega modela
+(npr. `HauhauCS/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced`), in zakomentira
+cel `stack.chat`, tako da se drugi model ne zaganja več. Kommentarji v `server.yaml` ostanejo, prejšnja različica pa se
 shrani kot `server.yaml.bak-<datum>`.
 
 ## Arhitektura

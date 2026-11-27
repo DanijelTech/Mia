@@ -70,6 +70,31 @@ def _set_value(lines: list[str], index: int, value: str) -> None:
     lines[index] = " " * _indent(lines[index]) + f"{key}: {value}"
 
 
+def llama_alias(text: str) -> str | None:
+    """Read the model alias from stack.llama.argv (--alias VALUE)."""
+    lines = text.splitlines()
+    stack = _top_index(lines, "stack")
+    if stack is None:
+        return None
+    llama = _child_index(lines, stack, "llama")
+    if llama is None:
+        return None
+    argv = _child_index(lines, llama, "argv")
+    if argv is None:
+        return None
+    items: list[str] = []
+    for i in range(argv, _block_end(lines, argv)):
+        item = lines[i].strip()
+        if item.startswith("- "):
+            items.append(item[2:].strip().strip('"').strip("'"))
+    for i, item in enumerate(items):
+        if item in ("--alias", "-a") and i + 1 < len(items):
+            return items[i + 1]
+        if item.startswith("--alias="):
+            return item.split("=", 1)[1]
+    return None
+
+
 def llama_port(text: str) -> str | None:
     """Read the port from stack.llama.health (the agent's llama-server)."""
     lines = text.splitlines()
@@ -86,21 +111,24 @@ def llama_port(text: str) -> str | None:
     return match.group(1) if match else None
 
 
-def rewrite_config(text: str, port: str = DEFAULT_PORT) -> tuple[str, list[str]]:
+def rewrite_config(text: str, port: str = DEFAULT_PORT,
+                   model: str | None = None) -> tuple[str, list[str]]:
     """Return (new_text, notes). Pure: no file access."""
     lines = text.splitlines()
     notes: list[str] = []
+    model = model or llama_alias(text) or "local"
 
     llm = _top_index(lines, "llm")
     chat = _child_index(lines, llm, "chat") if llm is not None else None
     if chat is None:
         notes.append("llm.chat not found — add it by hand if you want the fast "
                      "chat path: router.enabled: true, chat.enabled: true, "
-                     f"chat.base_url: http://127.0.0.1:{port}/v1, chat.model: local")
+                     f"chat.base_url: http://127.0.0.1:{port}/v1, "
+                     f"chat.model: {model}")
     else:
         for key, value in (("enabled", "true"),
                            ("base_url", f"http://127.0.0.1:{port}/v1"),
-                           ("model", "local")):
+                           ("model", model)):
             index = _child_index(lines, chat, key)
             if index is None:
                 insert_at = _block_end(lines, chat)
@@ -140,6 +168,8 @@ def main(argv: list[str] | None = None) -> int:
                     "and disable stack.chat.")
     parser.add_argument("--config", help="path to server.yaml")
     parser.add_argument("--port", help=f"llama-server port (default {DEFAULT_PORT})")
+    parser.add_argument("--model", help="label for llm.chat.model "
+                                       "(default: stack.llama --alias)")
     parser.add_argument("--dry-run", action="store_true",
                         help="print the result, change nothing")
     args = parser.parse_args(argv)
@@ -150,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     text = path.read_text(encoding="utf-8")
     port = args.port or llama_port(text) or DEFAULT_PORT
-    new, notes = rewrite_config(text, port)
+    new, notes = rewrite_config(text, port, args.model)
 
     for note in notes:
         print(f" - {note}")

@@ -24,7 +24,8 @@ llm:
   chat:
     enabled: true             # true only works when base_url answers
     base_url: http://127.0.0.1:18083/v1
-    model: local              # label; llama-server ignores it for one model
+    model: local              # label; ignored by a single-model llama-server.
+                              # use_single_model.py fills in stack.llama --alias
     max_tokens: 160
     temperature: 0.6
     history_turns: 8

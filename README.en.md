@@ -173,8 +173,9 @@ python3 server/scripts/use_single_model.py             # write it + keep a .bak
 ```
 
 It points `llm.chat.base_url` at the main llama-server (port from
-`stack.llama.health`) and comments out the whole `stack.chat` block, so the
-second model is never started. Comments in `server.yaml` are preserved and the
+`stack.llama.health`), sets `llm.chat.model` to the main model's `--alias`
+(e.g. `HauhauCS/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced`) and comments out
+the whole `stack.chat` block, so the second model is never started. Comments in `server.yaml` are preserved and the
 previous file is saved as `server.yaml.bak-<date>`.
 
 ## Architecture

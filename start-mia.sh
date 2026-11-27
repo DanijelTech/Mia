@@ -214,6 +214,16 @@ model_path_of() { # model_path_of <argv...> — the -m / --model value, if any
   return 1
 }
 
+alias_of() { # alias_of <argv...> — the --alias value, if any
+  local prev="" a
+  for a in "$@"; do
+    case "$prev" in --alias|-a) printf '%s\n' "$a"; return 0 ;; esac
+    case "$a" in --alias=*) printf '%s\n' "${a#*=}"; return 0 ;; esac
+    prev="$a"
+  done
+  return 1
+}
+
 check_model_file() { # check_model_file <label> <argv...> — 0 when the GGUF exists
   local label="$1"; shift
   local path dir found
@@ -307,7 +317,10 @@ if [ "$DO_START" = 1 ]; then
       else
         [ -n "$LLAMA_SUPERVISOR" ] && [ -x "$LLAMA_SUPERVISOR" ] \
           && LLAMA_ARGV=("$LLAMA_SUPERVISOR" "${LLAMA_ARGV[@]}")
-        info "starting llama-server (Gemma4-12B, GPU 0) — loading GGUF takes minutes…"
+        LLAMA_LABEL="$(alias_of "${LLAMA_ARGV[@]}" 2>/dev/null || true)"
+        [ -n "$LLAMA_LABEL" ] || LLAMA_LABEL="$(basename "$(model_path_of "${LLAMA_ARGV[@]}" 2>/dev/null || true)" .gguf)"
+        [ -n "$LLAMA_LABEL" ] || LLAMA_LABEL="local model"
+        info "starting llama-server ($LLAMA_LABEL, GPU 0) — loading GGUF takes minutes…"
         start_background "llama-server" "$LLAMA_PIDFILE" "$LLAMA_LOG" "${LLAMA_ARGV[@]}"
         wait_health "$LLAMA_HEALTH" "$LLAMA_TIMEOUT" "$LLAMA_PIDFILE"; rc=$?
         [ "$rc" = 0 ] && info "llama-server is up" \

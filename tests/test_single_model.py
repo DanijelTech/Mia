@@ -41,6 +41,8 @@ stack:
       - /home/user/llama.cpp/build/bin/llama-server
       - -m
       - /mnt/models/models/HauhauCS/Gemma4-12B/Gemma4-12B-Q4_K_M.gguf
+      - --alias
+      - HauhauCS/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced
       - --port
       - "18083"
   chat:
@@ -73,7 +75,8 @@ class SingleModelRewriteTests(unittest.TestCase):
     def test_chat_brain_points_at_the_main_server(self):
         self.assertIn("base_url: http://127.0.0.1:18083/v1", self.new)
         self.assertNotIn("18084/v1", self.new)
-        self.assertIn("    model: local\n", self.new)
+        self.assertIn("    model: HauhauCS/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced\n",
+                      self.new)
 
     def test_stack_chat_is_commented_out(self):
         self.assertIn(usm.MARKER, self.new)
@@ -108,6 +111,14 @@ class SingleModelRewriteTests(unittest.TestCase):
         again, notes = usm.rewrite_config(self.new, "18083")
         self.assertEqual(again, self.new)
         self.assertFalse([n for n in notes if "stack.chat" in n])
+
+    def test_model_label_falls_back_to_local_without_an_alias(self):
+        plain = CONFIG.replace(
+            "      - --alias\n"
+            "      - HauhauCS/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced\n", "")
+        self.assertIsNone(usm.llama_alias(plain))
+        new, _ = usm.rewrite_config(plain, "18083")
+        self.assertIn("    model: local\n", new)
 
     def test_port_comes_from_the_llama_health_url(self):
         self.assertEqual(usm.llama_port(CONFIG), "18083")
