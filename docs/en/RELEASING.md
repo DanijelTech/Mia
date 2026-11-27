@@ -29,6 +29,8 @@ HUD badge, `./install.sh --version`, `./start-mia.sh --version`,
    `dist/mia-<version>.tar.gz` (no voices, certs, logs or `server.yaml`).
 6. **Commit**: `git add -A && git commit -m "release: vX.Y.Z"`.
 7. **Tag**: `git tag -a vX.Y.Z -m "Mia vX.Y.Z" && git push origin main --tags`.
+   The `Release` workflow then builds `dist/mia-X.Y.Z.tar.gz` and creates the
+   GitHub release automatically.
 8. **Install test** on a clean machine: `sudo ./install.sh --yes --open`,
    open the HUD, run one voice turn, `./stop-mia.sh --status`, then
    `./uninstall.sh --dry-run`.

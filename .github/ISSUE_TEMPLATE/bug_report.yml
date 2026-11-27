@@ -1,0 +1,89 @@
+name: Bug report
+description: Something in Mia is broken or behaves differently than documented.
+title: "[bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please redact tokens, API keys, e-mail addresses, IPs, local paths and voice samples before posting.
+  - type: input
+    id: version
+    attributes:
+      label: Mia version
+      description: Output of `./start-mia.sh --version` or `/api/version`.
+      placeholder: "Mia 1.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install mode
+      options:
+        - system (root, systemd)
+        - user (systemd --user)
+        - manual venv / python server.py
+        - offline package
+        - other
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS, desktop and Python
+      placeholder: "Debian 13, GNOME/Wayland, Python 3.13"
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Voice pipeline (STT/TTS/wake/barge-in)
+        - HUD / browser
+        - Learning / memory / skill tree
+        - Autonomy / plans / scheduler / health
+        - Hermes plugin
+        - Installer / update / uninstall
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: The exact command or voice phrase, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: "`server/logs/latency.jsonl`, `server/logs/mia.out` or `journalctl --user -u mia-voice -n 50`. Redact secrets."
+      render: text
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots / additional context
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and Discussions.
+          required: true
+        - label: I removed tokens, keys, e-mail addresses, IPs, paths and voice samples.
+          required: true
+        - label: I read the relevant README/docs section.
+          required: true

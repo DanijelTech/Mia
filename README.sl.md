@@ -15,6 +15,12 @@ oblaka ne potrebuješ nobenega ključa.
 
 > English documentation: [README.md](README.md) · [docs/en/](docs/en/)
 
+[![CI](https://github.com/DanijelTech/Mia/actions/workflows/ci.yml/badge.svg)](https://github.com/DanijelTech/Mia/actions/workflows/ci.yml)
+[![Licenca: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Različica](https://img.shields.io/badge/version-1.1.0-00e5ff.svg)](VERSION)
+[![PRs dobrodošli](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Dostopnost](https://img.shields.io/badge/accessibility-statement-blue.svg)](ACCESSIBILITY.md)
+
 **Različica 1.1.0** · [Dnevnik sprememb](CHANGELOG.md) · [Varnost](SECURITY.md) · [Prispevanje](CONTRIBUTING.md) · [Izdajanje](docs/RELEASING.md)
 
 ![Angleški HUD Mie — glasovna povezava, možgani, prikaz v živo in sistemske plošče](docs/images/hud-en.png)
@@ -388,6 +394,12 @@ Makefile         test · lint · shellcheck · compile · package · version
 CHANGELOG.md     zgodovina izdaj (semantično verzioniranje)
 SECURITY.md      varnostni model, žeton, nadzor in utrjevanje
 CONTRIBUTING.md  kako dodati ukaz, veščino, pot, HUD niz ali test
+CODE_OF_CONDUCT.md  Contributor Covenant 2.1 + zasebna prijava
+SUPPORT.md       kje vprašati, kaj priložiti, pričakovanja
+GOVERNANCE.md    vloge, konsenz, pregled in odločitve o izdajah
+ROADMAP.md       smer in naloge za začetnike
+ACCESSIBILITY.md podprta okolja, znane ovire, prijava
+.github/         predloge issue/PR in CI
 docs/images/     posnetki zaslona za README (angleški HUD)
 server/          FastAPI glasovni cevovod + gostitelj HUD-a (jedro projekta)
 server/hud/      HUD v eni datoteki (vanilla JS, brez gradnje)
@@ -422,7 +434,8 @@ skills/mia-companion/bin/  mia-open, mia-close, mia-volume, mia-artists,
 tests/           unittest suite za mia_core, mia-ctl in drevo veščin
 launchd/         predloge za samodejni zagon na macOS (pripombe o TCC in FD limitih)
 docs/            slovenska dokumentacija: SETUP, ARCHITECTURE, LEARNING, CONTROL,
-                 AUTONOMY, CALIBRATION, CAPABILITIES, TROUBLESHOOTING
+                 AUTONOMY, CALIBRATION, CAPABILITIES, TROUBLESHOOTING, RELEASING,
+                 COMMUNITY
 docs/en/         ista dokumentacija v angleščini
 install.sh       namestitev (brez venv, root ali uporabnik) + manifest
 start-mia.sh     zbudi cel sklad (stack: llama → Hermes → dashboard → Mia + TTS), odpre HUD
@@ -446,6 +459,39 @@ build-package.sh arhiv za namestitev na stroju brez interneta
 - Vsako nadzorno dejanje gre v revizijo; skrivnosti v argumentih se prekrijejo.
 - Spomin se shranjuje lokalno; vsa besedila se pred shranjevanjem prekrijejo.
 - Zasnovano za LAN — tega ne odpiraj na internet.
+
+## Skupnost in prispevanje
+
+Mia se razvija odprto. Ne glede na to, ali govoriš slovensko, angleško ali
+Python, obstaja koristen način za pomoč.
+
+- **[Kodeks ravnanja](CODE_OF_CONDUCT.md)** — standard, ki ga spoštujemo.
+- **[Prispevanje](CONTRIBUTING.md)** — namestitev, testi, kako dodati ukaz,
+  veščino, pot v možganih, HUD niz, prevod ali orodje vtičnika.
+- **[Podpora](SUPPORT.md)** — kje vprašati, prijaviti napako ali predlagati
+  funkcijo in kaj priložiti.
+- **[Upravljanje](GOVERNANCE.md)** — vloge, konsenz, pregled in odločitve o
+  izdajah.
+- **[Načrt](ROADMAP.md)** — kaj je naslednje in katere naloge so primerne za
+  začetnike.
+- **[Dostopnost](ACCESSIBILITY.md)** — podprta okolja, znane ovire in kako
+  prijaviti oviro.
+- **[Varnost](SECURITY.md)** — zasebna prijava ranljivosti, žeton in garancije
+  nadzora.
+- **[Priročnik za skupnost](docs/COMMUNITY.md)** — oznake, nastavitve GitHuba in
+  kontrolni seznam ob objavi.
+
+**Kako lahko pomagaš zdaj**
+
+- Preizkusi `./install.sh` na svoji distribuciji/namizju in sporoči, kaj deluje.
+- Prevedi en HUD niz ali eno oznako zmogljivosti (SLO ↔ ENG).
+- Dodaj test za ukaz, ki ga res uporabljaš.
+- Izboljšaj tipkovnico, bralnik zaslona ali kontrast v HUD-u.
+- Deli 30-sekundni demo ali posnetek svoje postavitve v Discussions.
+- Odpri majhen, testiran PR z oznako **good first issue**.
+
+Če ti Mia koristi, zvezdica pomaga drugim, da jo najdejo — a odgovor na
+vprašanje ali pregled PR-ja pomaga še bolj.
 
 ## Zasluge in licenca
 

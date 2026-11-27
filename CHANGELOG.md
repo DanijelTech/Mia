@@ -30,6 +30,10 @@ pipeline, learning core, HUD, Hermes plugins and installers.
 - **Project tooling**: `pyproject.toml` (ruff/coverage), `Makefile`
   (test/lint/shellcheck/compile/package/version), `requirements.txt`,
   `requirements-optional.txt` and a GitHub Actions CI workflow.
+- **Community standards**: `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1),
+  `SUPPORT.md`, `GOVERNANCE.md`, `ROADMAP.md`, `ACCESSIBILITY.md`, bug/feature/
+  accessibility issue templates, a pull request template, and a
+  `docs/COMMUNITY.md` + `docs/en/COMMUNITY.md` growth playbook.
 - **Tests**: i18n, continuous/wake/adaptive endpoint, plugin registration,
   worker stats, nested destructive plans, undo sanitization, anti-pattern
   hit counting, pitch forwarding.

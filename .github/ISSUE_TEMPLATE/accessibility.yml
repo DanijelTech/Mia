@@ -1,0 +1,61 @@
+name: Accessibility barrier
+description: Report a keyboard, screen-reader, contrast, motion, hearing or motor barrier.
+title: "[a11y] "
+labels: ["accessibility", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Accessibility barriers are treated as bugs. Please redact private data. See ACCESSIBILITY.md for the supported environments.
+  - type: textarea
+    id: barrier
+    attributes:
+      label: What barrier did you hit?
+      description: The exact page, button, voice command or flow, and what made it hard or impossible.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: "Firefox 130, Windows 11, NVDA 2025.1, 200% zoom"
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Barrier type
+      options:
+        - Keyboard only
+        - Screen reader
+        - Low vision / contrast / zoom
+        - Reduced motion / vestibular
+        - Hearing / captions
+        - Motor / switch / eye tracker
+        - Cognitive / language
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Blocks the task completely
+        - Makes the task very hard
+        - Annoying but workable
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested fix or workaround
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: I removed private data from screenshots/logs.
+          required: true

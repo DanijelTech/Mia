@@ -2,6 +2,12 @@
 
 > Slovenian documentation: [README.sl.md](README.sl.md) · [docs/](docs/) · [docs/en/](docs/en/)
 
+[![CI](https://github.com/DanijelTech/Mia/actions/workflows/ci.yml/badge.svg)](https://github.com/DanijelTech/Mia/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.1.0-00e5ff.svg)](VERSION)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Accessibility](https://img.shields.io/badge/accessibility-statement-blue.svg)](ACCESSIBILITY.md)
+
 **Version 1.1.0** · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Releasing](docs/en/RELEASING.md)
 
 ![Mia English HUD — voice link, brain, live feed and system panels](docs/images/hud-en.png)
@@ -405,6 +411,12 @@ Makefile         test · lint · shellcheck · compile · package · version
 CHANGELOG.md     release history (semantic versioning)
 SECURITY.md      threat model, token/control guarantees, hardening checklist
 CONTRIBUTING.md  how to add a control command, skill, route, HUD string or test
+CODE_OF_CONDUCT.md  Contributor Covenant 2.1 + private reporting channel
+SUPPORT.md       where to ask, what to include, response expectations
+GOVERNANCE.md    roles, lazy consensus, review and release decisions
+ROADMAP.md       direction and good first contributions
+ACCESSIBILITY.md supported environments, known barriers, reporting
+.github/         issue templates, PR template and CI workflow
 docs/images/     screenshots used by the README (English HUD)
 server/          FastAPI voice pipeline + HUD host (the core of this project)
 server/hud/      single-file HUD (vanilla JS, no build step)
@@ -441,7 +453,8 @@ skills/mia-companion/bin/  mia-open, mia-close, mia-volume, mia-artists,
 tests/           unittest suite for mia_core, mia-ctl and the skill tree
 launchd/         macOS auto-start templates with hard-won TCC + FD-limit notes
 docs/            Slovenian docs; docs/en/ the English copies
-                 (SETUP, ARCHITECTURE, LEARNING, CONTROL, AUTONOMY, CALIBRATION, CAPABILITIES)
+                 (SETUP, ARCHITECTURE, LEARNING, CONTROL, AUTONOMY, CALIBRATION, CAPABILITIES,
+                 RELEASING, COMMUNITY)
 install.sh       install (no venv, root or user) + manifest
 start-mia.sh     boots the whole stack (stack: llama → Hermes → dashboard → Mia + TTS), opens HUD
 stop-mia.sh      stops everything and frees RAM/VRAM; status, --restart, --free-ports
@@ -463,6 +476,38 @@ build-package.sh offline tarball for a machine without internet
   actions. Every control action is audited with secrets redacted.
 - Memory is stored locally; all text is redacted before storage.
 - LAN-only by design — do not port-forward this to the internet.
+
+## Community & contributing
+
+Mia is built in the open. Whether you speak Slovenian, English or Python, there
+is a useful place to help.
+
+- **[Code of Conduct](CODE_OF_CONDUCT.md)** — the standard we hold each other to.
+- **[Contributing](CONTRIBUTING.md)** — setup, tests, how to add a command,
+  skill, brain route, HUD string, translation or plugin tool.
+- **[Support](SUPPORT.md)** — where to ask a question, report a bug or request a
+  feature, and what to include.
+- **[Governance](GOVERNANCE.md)** — roles, lazy consensus, review and release
+  decisions.
+- **[Roadmap](ROADMAP.md)** — what is next and which tasks are good first issues.
+- **[Accessibility](ACCESSIBILITY.md)** — supported environments, known
+  barriers and how to report one.
+- **[Security](SECURITY.md)** — private vulnerability reporting, token and
+  control guarantees.
+- **[Community playbook](docs/en/COMMUNITY.md)** — labels, GitHub settings and
+  the launch checklist.
+
+**Ways to help that matter right now**
+
+- Test `./install.sh` on your distro/desktop and report what worked.
+- Translate one HUD string or one capability label (SLO ↔ ENG).
+- Add a test for a command you actually use.
+- Improve keyboard/screen-reader/contrast behaviour in the HUD.
+- Share a 30 s demo or a screenshot of your setup in Discussions.
+- Open a **good first issue**-sized PR; small and tested beats large and vague.
+
+If Mia is useful to you, a star helps other people find it — but answering a
+question or reviewing a PR helps even more.
 
 ## Credits & license
 

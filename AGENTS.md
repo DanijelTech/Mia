@@ -204,6 +204,8 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   declared tool.
 - `tests/test_version.py` — `VERSION` is semver, matches `mia_core.__version__`,
   is in `CHANGELOG.md`, and every script answers `--version`.
+- `tests/test_community.py` — the GitHub community standards files, README
+  links and the Contributor Covenant stay in place.
 - Keep tests hermetic: use `tempfile`, set `HOME`/`XDG_*` for `mia-ctl`.
 
 ## Known pitfalls (hard-won)

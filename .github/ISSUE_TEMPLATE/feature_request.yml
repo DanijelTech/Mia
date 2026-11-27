@@ -1,0 +1,58 @@
+name: Feature request
+description: Suggest an improvement, integration or new capability for Mia.
+title: "[feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem first, then the smallest useful solution. Local-first and latency-friendly proposals are preferred.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: What are you trying to do, and what is missing today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: The smallest change that would solve it.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Voice / STT / TTS
+        - HUD / accessibility
+        - Learning / memory
+        - Autonomy / automation
+        - Hermes plugin
+        - Installer / packaging
+        - Documentation / translation
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to implement or test this.
+        - label: I can help with documentation/translation.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and Discussions.
+          required: true
+        - label: This can work locally/offline by default (or I explained why it cannot).
+          required: true

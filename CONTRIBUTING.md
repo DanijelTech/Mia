@@ -3,6 +3,23 @@
 Mia is a local-first voice assistant: correctness, latency and privacy matter
 more than clever abstractions. Small, tested, explainable changes are welcome.
 
+By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). For
+questions and design discussion use [Discussions](https://github.com/DanijelTech/Mia/discussions);
+for a reproducible bug use the [issue templates](https://github.com/DanijelTech/Mia/issues/new/choose).
+See [SUPPORT.md](SUPPORT.md), [GOVERNANCE.md](GOVERNANCE.md) and
+[ROADMAP.md](ROADMAP.md).
+
+## Find something to work on
+
+- Issues labelled **good first issue**, **help wanted**, **documentation**,
+  **translation** or **accessibility**.
+- The [roadmap](ROADMAP.md) “good first contributions” list.
+- A command you use that has no test; a HUD string without an English pair; an
+  installer/desktop combination that is not documented.
+
+For a large change or a new dependency, open a Discussion or an issue first so
+we can agree on scope before you invest a weekend.
+
 ## Before you start
 
 - Read [`AGENTS.md`](AGENTS.md) — it documents the architecture, the hard-won
@@ -45,12 +62,40 @@ The development container may not have FastAPI/torch/RealtimeSTT. Do not import
 
 ## Pull requests
 
-- One focused change per PR, with a test for every behaviour change.
-- Update the relevant docs (`README.md`, `README.sl.md`, `docs/`,
-  `docs/en/`) and `AGENTS.md` when behaviour or a pitfall changes.
+1. Fork the repository and create a topic branch (`fix/wake-word`, `docs/english`,
+   `feat/tts-provider`). Do not work on `main`.
+2. Make one focused change; add or update a test for every behaviour change.
+3. Run the full checks locally:
+
+   ```bash
+   make test
+   make lint
+   make shellcheck
+   make compile
+   ```
+
+4. Fill in the PR template, link the issue, and include screenshots for HUD
+   changes. The PR template checklist is not decoration: CI and review use it.
+5. A maintainer/reviewer approves and merges. Keep the branch up to date if
+   `main` moved; do not force-push someone else's branch.
+
+Rules of thumb:
+
+- Update `README.md`, `README.sl.md`, `docs/` or `docs/en/` for user-visible
+  behaviour, and `AGENTS.md` for architecture facts or pitfalls.
 - Bump [`VERSION`](VERSION) and add a `CHANGELOG.md` entry for a release; see
   [`docs/RELEASING.md`](docs/RELEASING.md).
-- Run the full test suite before pushing.
+- Never commit secrets, tokens, local paths, IPs, voice samples or
+  `server/config/server.yaml`. See [`SECURITY.md`](SECURITY.md).
+- HUD changes: add both SLO and ENG strings (`server/hud/i18n.js`), test
+  keyboard/focus, and include a screenshot.
+- Accessibility: a barrier is a bug; use the Accessibility issue template and
+  the `accessibility` label.
+
+## Recognition
+
+Contributors are credited in release notes. Consistent reviewers may be invited
+to become reviewers or maintainers; see [GOVERNANCE.md](GOVERNANCE.md).
 
 ## Style
 

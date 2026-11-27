@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions, ideas and show-and-tell
+    url: https://github.com/DanijelTech/Mia/discussions
+    about: Ask "how do I…", share a setup, or discuss a design before opening an issue.
+  - name: Security vulnerability
+    url: https://github.com/DanijelTech/Mia/security/advisories/new
+    about: Report privately. Never open a public issue for a vulnerability.
+  - name: Support guide
+    url: https://github.com/DanijelTech/Mia/blob/main/SUPPORT.md
+    about: Where to ask what, and what to include in a bug report.
