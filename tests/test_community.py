@@ -12,7 +12,7 @@ class CommunityStandardsTests(unittest.TestCase):
     REQUIRED = (
         "README.md", "README.sl.md", "LICENSE", "CODE_OF_CONDUCT.md",
         "CONTRIBUTING.md", "SECURITY.md", "SUPPORT.md", "GOVERNANCE.md",
-        "ROADMAP.md", "ACCESSIBILITY.md", "CHANGELOG.md", "VERSION",
+        "ROADMAP.md", "ACCESSIBILITY.md", "CREDITS.md", "CHANGELOG.md", "VERSION",
         ".github/pull_request_template.md",
         ".github/ISSUE_TEMPLATE/bug_report.yml",
         ".github/ISSUE_TEMPLATE/feature_request.yml",

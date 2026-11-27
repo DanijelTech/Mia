@@ -1,6 +1,7 @@
-# MIA — Voice + HUD for Hermes Agent
+# Mia — your private voice assistant
 
-> Slovenian documentation: [README.sl.md](README.sl.md) · [docs/](docs/) · [docs/en/](docs/en/)
+**Mia lives on your machine. She listens, remembers, helps and speaks naturally
+— in Slovenian or English.**
 
 [![CI](https://github.com/DanijelTech/Mia/actions/workflows/ci.yml/badge.svg)](https://github.com/DanijelTech/Mia/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -8,517 +9,182 @@
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Accessibility](https://img.shields.io/badge/accessibility-statement-blue.svg)](ACCESSIBILITY.md)
 
-**Version 1.1.0** · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Releasing](docs/en/RELEASING.md)
+![Mia — English HUD with voice link, live brain, conversation and system panels](docs/images/hud-en.png)
 
-![Mia English HUD — voice link, brain, live feed and system panels](docs/images/hud-en.png)
+> Slovenian: [README.sl.md](README.sl.md) · Technical docs: [docs/en/](docs/en/) · [docs/](docs/)
 
-A self-hosted, Iron-Man-style voice assistant and command center built on top of
-[Hermes Agent](https://github.com/NousResearch/hermes-agent) (NousResearch's
-open-source autonomous agent). Talk to a *real* agent — one with persistent
-memory, terminal access, web search, file tools, and 80+ skills — through a
-glowing arc-reactor HUD in any browser on your LAN, or a push-to-talk client.
+## Meet Mia
 
-**Everything runs on your own hardware.** By default nothing leaves the
-machine: Whisper for speech-to-text, a local Piper voice for speech, a local
-model (llama-server) behind Hermes, and a local voiceprint for recognizing
-your voice. Cloud LLMs and ElevenLabs remain optional — the offline setup
-needs no API keys at all.
+Mia is a local-first voice assistant and desktop companion for people who want
+their computer to feel like a helpful presence, not another browser tab.
 
-## Demo
+She listens for your voice, answers out loud, opens what you ask for, remembers
+what matters and quietly handles the boring parts of your day. She runs on your
+own hardware. There is no account, no subscription and no cloud in the default
+setup.
 
-The original upstream project ([eadmin2/jarvis_ai](https://github.com/eadmin2/jarvis_ai))
-has a demo video; this fork runs with a local voice engine and a Slovenian UI,
-so its look and sound differ.
+Mia is her own project: a distinct assistant with her own HUD, memory,
+autonomy and control layer. She is not a chat window with a microphone
+attached. She is a small, private operating layer for your computer: a voice,
+a memory, a pair of hands and a calm screen you can glance at.
 
-## What it does
+## Why people choose Mia
 
-**Just say "Mia, …"** — nothing to click. The HUD starts continuous listening
-on load; a VAD (Silero) segments speech, the wake word opens the conversation,
-end-of-speech is detected automatically, and the reply streams back as speech,
-sentence by sentence, while the rest is still being generated. Typical round
-trip with a fast local TTS: 5–10 seconds.
+- **Private by default.** Your voice, your memory and your machine data stay on
+  your machine. Cloud models are optional, never required.
+- **She actually does things.** Open apps, close windows, play music, find a
+  file, set a reminder, check the disk, adjust the volume — not just talk about
+  it.
+- **She remembers you.** Preferences, routines, recipes and corrections become
+  durable local memory. You do not repeat yourself every morning.
+- **She learns your way of working.** When a procedure works, Mia keeps it.
+  When you say “not like that”, she remembers the correction.
+- **She speaks naturally.** Short spoken sentences, streamed as they are
+  generated, with a voice you can tune. Slovenian and English are first-class.
+- **She works offline.** Speech recognition, voice, memory and the agent loop
+  can all run locally.
+- **She is yours.** A HUD you can read at a glance, a CLI for power users, an
+  HTTP API for integrations and a skill tree you can extend.
 
-- **Speaker verification (voice calibration)** — Mia obeys only your voice:
-  an ECAPA-TDNN voiceprint is checked *before* transcription (~0.1 s), so
-  other people and the TV are silently ignored. One-command enrollment,
-  multi-language profiles supported (e.g. Slovenian + Serbian):
-  `python3 server/scripts/enroll_voice.py`
-- **Strict wake word** — reacts only to "Mia …" (tolerates typical Whisper
-  mishearings); household noise is dropped without processing, and known
-  Whisper hallucinations ("Hvala što pratite" …) are filtered out. English
-  greetings work too: "Hey Mia, …", "OK Mia, …"
-- **Adaptive endpointing** — a short command closes the turn in ~350–500 ms,
-  a longer sentence keeps the full 700 ms pause, so she neither cuts you off
-  nor waits a second after "stop"
-- **Natural interruption (barge-in)** — with a calibrated voiceprint you can
-  cut her off without repeating "Mia"; a cough or the TV no longer kills a
-  reply (the interruption is evaluated on the completed utterance, not on the
-  first noisy frame). Without a profile, strict wake stays mandatory
-- **Streaming speech** — TTS audio is sent chunk by chunk as the engine
-  produces it (not after the whole sentence), and a long clause without
-  punctuation is cut at the last natural break; the first word arrives sooner
-- **Optional spoken acknowledgement** — `hermes.ack_after_seconds: 3` makes
-  her say a short "Right away." when a local model is still thinking, instead
-  of leaving 10–30 s of silence
-- **Half-duplex stability** — no interruptions while processing/speaking
-  unless barge-in is enabled (noise cannot kill a turn); manual stop remains
-  (STOP button / Esc)
-- **Voice pitch slider** — the GLAS panel in the HUD tunes the voice from
-  70 to 240 Hz live; applies from the next sentence and persists
-- **Speaks Slovenian and Serbian** — replies in the language you speak
-- **Opens AND CLOSES desktop windows** — "open Google", "play me some music"
-  … and "close it": the `mia-open`/`mia-close` helpers (skills/mia-companion/bin)
-  record window ids, so the agent can reliably close what it opened; music
-  plays in a dedicated Chrome app window (found via `yt-dlp`)
-- **Background tasks** — programming in any folder, files, terminal, web
-  search, scheduled jobs, kanban; dangerous actions wait for your ALLOW/DENY
-- **Full local computer control** — `mia-ctl` is an audited, policy-checked
-  vocabulary for windows, apps, typing/clicking, screenshots, clipboard, media,
-  volume, brightness, power, processes, services and files (X11, Wayland,
-  macOS, Windows). Every action is audited.
-- **Distance voice calibration** — on first start Mia asks you to speak near,
-  mid-room and far from the microphone; she stores a separate voiceprint per
-  distance and recognises you anywhere in the house.
-- **Strict wake** — every turn must start with “Mia”; speech, TV, guests and
-  noise are rejected before transcription once the profile is calibrated.
-- **Verified success only** — a recipe is created only from a verified
-  post-condition (`mia-ctl verification.status=verified`) or your ✓ in the HUD
-  “was this right?” card. Unverified success stays a candidate.
-- **Durable memory and a knowledge tree** — every turn is stored in a local
-  SQLite database; habits, recipes and anti-patterns are derived from it. A
-  bounded `[MIA SPOMIN …]` brief is injected before every turn.
-- **Learns your workflows** — a proven procedure becomes a recipe and is
-  reused next time; "not right" creates an anti-pattern with a cause and fix.
-- **Granular skill tree** — `mia-companion` (persona) plus `mia-desktop`,
-  `mia-learning`, `mia-music`, `mia-browser`, `mia-productivity`,
-  `mia-diagnostics`; a validator checks names, parents and references.
-- **Capability checklist** — ~80 concrete abilities (windows, apps, input,
-  screenshots, clipboard, audio, displays, resources, processes, services,
-  files, Google, learning) with confirmed/learned/detected/empty/unsupported
-  statuses.
-- **Google answer vs show** — “search on Google and tell me” answers aloud in
-  the background; “show me on Google” opens your browser.
-- **HUD settings** — strict wake, speaker threshold, follow-up, require
-  profile, verification cards, learning, brief length, calibration and system
-  overview.
-- **Live agent activity** — watch tool calls happen with command previews
-- **Approval cards** — dangerous commands pause for your ALLOW/DENY
-- **Embedded dashboards** — kanban, the Hermes dashboard and chat pop up in
-  animated viewers (VIEWS), fully interactive
-- **Holographic media panels** — say *"show me … on screen"* and a panel
-  swoops in from Z-depth; the agent drives it through a bundled Hermes plugin
-  (`hud_display`); "clear the screen" sweeps them away
-- **Usage tracking** — tokens/day, turns, ElevenLabs quota bar
-- **Machines panel** — live CPU/GPU stats for the host and remote workers
-- **Privacy filter** — secret-shaped strings are redacted before any text
-  reaches cloud TTS
-- **Optional GPU ears** — point it at any NVIDIA machine on your LAN running
-  the included sidecar and transcription jumps to `large-v3-turbo` at ~0.2 s,
-  with automatic fallback to local Whisper when that machine is off
-- **Mobile-ready** — responsive layout + Add to Home Screen = full-screen
-  Mia app on your phone
+## What she can do
 
-## Computer control and learning (short version)
+**Talk**
+
+Continuous listening, a strict wake word, speaker recognition, natural
+interruption, push-to-talk and a typed chat that shares the same conversation.
+Ask a question, think out loud, or just say good morning.
+
+**Act**
+
+Open and close applications and windows, play music or video, search the web,
+read and write files, take screenshots, use the clipboard, control volume and
+brightness, lock or sleep the machine. Destructive actions ask first.
+
+**Remember**
+
+A local memory of episodes, preferences, habits, recipes and mistakes. Mia
+brings the relevant part back before the next request instead of asking you
+again.
+
+**Automate**
+
+Reminders, scheduled jobs, reactive rules (“when the disk is almost full…”),
+multi-step plans with verification and rollback, health checks and a task
+journal that survives restarts.
+
+**Show**
+
+A calm, readable HUD: voice state, live transcript, agent activity, memory,
+capabilities, system health, automations and media panels. It is a dashboard,
+not a toy — but it is allowed to look good.
+
+**Protect**
+
+A local access token, a strict allowlist for the agent bridge, secret
+redaction, an audited control vocabulary and a policy that says which folders
+and actions are allowed. See [SECURITY.md](SECURITY.md).
+
+## A day with Mia
+
+- **Morning.** “Mia, what is the weather and what do I have today?” She answers
+  while the coffee is still brewing and puts the day’s tasks on the HUD.
+- **Work.** “Mia, open the project folder and play something calm.” Windows
+  open, music starts, the HUD shows what is running.
+- **A correction.** “Not that playlist — the other one.” She switches, and the
+  correction becomes part of how she works with you.
+- **Evening.** “Mia, clean up the temp files and tell me if the disk is
+  healthy.” A plan runs, verifies itself and reports back.
+- **Quiet.** “Mia, good night.” Music stops, the volume drops, the screen locks.
+
+## Start in three steps
 
 ```bash
-mia-ctl doctor                     # what this machine supports
-mia-ctl windows list               # windows with ids
-mia-ctl apps launch firefox
-mia-ctl type "hello" --delay 15
-mia-ctl screenshot
-mia-ctl volume set 40
-mia-ctl files search "invoice" --root ~/Documents
-mia-ctl power lock
+git clone https://github.com/DanijelTech/Mia.git
+cd Mia
+sudo ./install.sh --yes --open
 ```
+
+The installer prepares the local stack, creates the access token, starts the
+service and opens the HUD already signed in. Then just say **“Mia, …”**.
+
+Day to day:
 
 ```bash
-mia-learn status                   # memory size, last mining
-mia-learn brief "open google"      # what Mia would know right now
-mia-learn habits
-mia-learn recipes
-mia-learn mistakes
-mia-learn remember --note "…"
-mia-learn feedback --verdict negative --note "prefer Chrome"
+./start-mia.sh          # start and open the HUD
+./stop-mia.sh           # stop everything, free RAM/VRAM
+./stop-mia.sh --status  # what is running, which ports
+./update.sh             # pull the latest release and restart
 ```
 
-The HUD has a **SPOMIN IN ZNANJE** panel; **ODPRI ZNANJE** opens the skill
-tree, habits, recipes, mistakes, episode log and search. Details:
-[docs/en/LEARNING.md](docs/en/LEARNING.md) and
-[docs/en/CONTROL.md](docs/en/CONTROL.md).
-
-## Autonomy — a mini sub-OS
-
-```bash
-mia-auto profile                   # what this machine is, what it lacks
-mia-auto adapt                     # install plan for missing tools
-mia-auto health                    # scored health + safe remediation
-mia-auto status                    # machine, health, jobs, tasks
-mia-auto do "remind me in 10 minutes to drink water"
-mia-auto jobs add "morning" --daily 08:00 --template health_report
-mia-auto tasks list                # resumable task journal
-mia-auto daemon --interval 30      # scheduler without the voice server
-```
-
-It detects OS/distro/init/package manager/desktop/backends, executes multi-step
-plans with verification, retries and rollback, keeps persistent jobs and
-reactive rules (“when the disk is full …”), watches health, and understands
-deterministic system commands before the LLM. HUD: `/hud/autonomy.html`.
-Details: [docs/en/AUTONOMY.md](docs/en/AUTONOMY.md).
-
-## Background (overview and manual override)
-
-The HUD page **V OZADJU** (`/hud/background.html`) lists what Mia is running in
-the background: media windows she opened, holographic panels, stack services
-(llama-server, chat model, Hermes, TTS) and active autonomy jobs. Each item can
-be closed or stopped by hand, and the **ROČNI NADZOR** switch turns off Mia's
-automatic window closing (for example when you want two things open at once).
-API: `/api/background`, `/api/background/close`,
-`/api/background/close-all`, `/api/background/override`.
-
-## HUD language (SLO / ENG)
-
-Every HUD page has **SLO** and **ENG** buttons in the bottom-right corner. The
-choice is stored in the browser and in `server/logs/ui-state.json`; choosing ENG
-translates the whole interface (panels, buttons, tables, alerts, the SETTINGS,
-AUTONOMY, CAPABILITIES, KNOWLEDGE and BACKGROUND pages) and makes Mia answer in
-English. The language is not only cosmetic: deterministic replies are localized
-too — clock and date, weather, volume confirmations, media and Google
-confirmations, autonomy answers, calibration prompts and the "was this right?"
-flow all follow the switch (`server/mia_core/i18n.py`). The Slovenian original
-stays in the source; `tests/test_hud_i18n.py` fails if a new static string has
-no translation, and `tests/test_i18n.py` covers the server-side replies.
-
-## One model (Gemma) — no second GGUF
-
-By default the fast chat path asks the **same llama-server as the agent**
-(Gemma), so a second model is not needed. If `server/config/server.yaml` still
-has a `stack.chat` block with a Qwen/chat GGUF (wrong path or an unwanted second
-model), run the migration:
-
-```bash
-python3 server/scripts/use_single_model.py --dry-run   # show the change
-python3 server/scripts/use_single_model.py             # write it + keep a .bak
-./stop-mia.sh && ./start-mia.sh
-```
-
-It points `llm.chat.base_url` at the main llama-server (port from
-`stack.llama.health`), sets `llm.chat.model` to the main model's `--alias`
-(e.g. `HauhauCS/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced`) and comments out
-the whole `stack.chat` block, so the second model is never started. Comments in `server.yaml` are preserved and the
-previous file is saved as `server.yaml.bak-<date>`.
-
-## Version & updates
-
-The release version lives in [`VERSION`](VERSION) and is shown in the HUD header
-and footer, in `/api/version`, and by every script:
-
-```bash
-./start-mia.sh --version        # Mia 1.1.0
-./update.sh --check             # what is new on origin/main
-./update.sh                     # fast-forward, restart, remind about HUD/install
-./build-package.sh              # dist/mia-1.1.0.tar.gz for an offline machine
-```
-
-`update.sh` refuses a dirty tree, fetches full history from a shallow clone,
-never overwrites `server.yaml`, voices, certificates, logs or the token, and
-tells you when `install.sh` must run again. Release history:
-[CHANGELOG.md](CHANGELOG.md); process: [docs/en/RELEASING.md](docs/en/RELEASING.md).
-
-## Architecture
-
-```
- Browser HUD (any LAN device)          Host machine (tested: Linux + systemd; macOS with tweaks)
- ── https/wss :8766 ─────────┐   ┌──────────────────────────────────────┐
-   mic · speaker · panels    ├──►│ voice pipeline server (this repo)    │
-                             │   │  VAD + wake word + speaker voiceprint│   ┌──────────────────┐
- Push-to-talk client         │   │  STT: faster-whisper (local)         │   │ llama-server     │
- ── ws :8765 ────────────────┘   │  TTS: local Piper (or Gepard/Maya1)  ├──►│ (local LLM)      │
-                                 │  HUD + auth + TLS proxy              │   ├──────────────────┤
-                                 └──────────────────────────────────────┘──►│ Hermes Agent     │
-                                             │                              │  API :8642 (lo)  │
-                                             └── :9443 proxy ──────────────►│  memory · tools  │
-                                                (kanban/dash/chat :9119)    │  skills · cron   │
-                                                                             └──────────────────┘
-```
-
-One brain, many faces: voice and typed chat share a single persistent Hermes
-session, so each knows what you said to the other — and memory survives every
-restart.
-
-**Voice pipeline latency budget**: Silero VAD frames (32 ms) → adaptive
-endpointing (350–700 ms of silence, shorter for short commands) → faster-whisper
-(`condition_on_previous_text: false`, no timestamps, `int8` on CPU) → Hermes
-SSE stream → sentence splitter that also cuts a long clause at a natural break
-→ TTS chunks forwarded to the browser the moment they exist. The HUD schedules
-them back-to-back on WebAudio, so the first word is heard before the full reply
-is generated. `hermes.ack_after_seconds` covers a slow model with a short
-spoken acknowledgement.
-
-**Learning and control**: every accepted turn is stored in
-`~/.local/state/mia/learning.db`; before the next turn the server injects a
-bounded brief with habits, recipes and anti-patterns. `mia-ctl` actions go
-through policy and audit (`control-audit.jsonl`) and are learned too. The skill
-tree lives in `skills/`; the HUD panel **SPOMIN IN ZNANJE** shows it all.
-
-**Whole-stack management**: with a `stack:` section in `server.yaml`,
-`start-mia.sh` boots llama-server (local model) → Hermes gateway → Hermes
-dashboard → TTS service → voice server in order (each step skipped when
-already up), and `stop-mia.sh` stops everything in reverse, freeing RAM/VRAM.
-See `server/config/server.example.yaml`.
-
-## Quick start (one command)
-
-```bash
-git clone https://github.com/DanijelTech/Mia.git && cd Mia && sudo ./install.sh --yes --open
-```
-
-That single line clones the repo, installs the Python packages into the system
-interpreter (no virtualenv), downloads the Slovenian voice, generates the TLS
-certificate, adds `MIA_HUD_TOKEN` to `~/.hermes/.env`, writes and starts the
-systemd unit, then opens the HUD in your browser **already logged in**
-(`?token=` is converted to a cookie and stripped from the URL).
-
-Without root, drop `sudo` — it installs into `pip --user` and `systemctl --user`.
-Variants:
-
-```bash
-sudo ./install.sh --yes --open --with-maya1   # best Slovenian pronunciation
-sudo ./install.sh --yes --open --with-gepard  # lighter GPU voice
-./install.sh --dry-run                        # see everything first
-```
-
-Afterwards, start/open again at any time with:
-
-```bash
-./start-mia.sh                # start (if needed), wait, open the HUD
-./start-mia.sh --no-open      # just start and print URL + token
-./stop-mia.sh                 # stop the voice server (and the TTS service)
-./stop-mia.sh --status        # what is running, which ports are held
-./stop-mia.sh --restart       # stop, start again and open
-./stop-mia.sh --free-ports    # if a port stays held, kill its owner
-./update.sh               # pull the latest release from GitHub and restart
-./update.sh --check       # only show what is new
-```
-
-The certificate is self-signed, so the browser asks once — accept it.
+Offline machine? `./build-package.sh` creates a portable archive with the
+installer included.
 
 ## Requirements
 
-- A machine for the server (tested: Linux + systemd, 2× GPU for a local 35B
-  model; macOS works with tweaks, launchd instead of systemd)
-- [Hermes Agent](https://hermes-agent.nousresearch.com/docs/) installed and
-  configured with an LLM provider (by default a local model via llama-server)
-- Python 3.11+
-- TTS: local **Piper** (default, fast, no key, fully offline), the more natural
-  **Gepard** service, the **Maya1** service (best Slovenian pronunciation, slow
-  on CPU), or an [ElevenLabs](https://elevenlabs.io) API key for cloud voices —
-  the two local services fall back to CPU/RAM when the GPU is busy
-- Any modern browser on the LAN
-- Optional: `speechbrain` (voice calibration), `yt-dlp` (YouTube music),
-  `xdotool` (reliable window closing), `ffmpeg` (pitch shifting)
+- A computer that can run a local speech model and a local LLM (CPU is enough
+  to start; a GPU makes conversation faster).
+- Python 3.11+.
+- A microphone and a modern browser on the same network.
+- An open-source local agent runtime behind Mia — the installer and the
+  [setup guide](docs/en/SETUP.md) connect it for you.
+- Optional: a GPU, a second machine for speech, or a cloud voice if you choose.
 
-## Install
+The tested default is Linux with systemd. macOS works with launchd; the setup
+guide documents the known platform notes. Windows can run the voice client and
+the GPU worker.
 
-One command, no virtualenv (installs into the system Python, which is how a
-root Hermes install runs anyway):
+## Documentation
 
-```bash
-sudo ./install.sh                  # system-wide (root): deps, voice, cert, token, systemd
-./install.sh --dry-run             # show every action first
-sudo ./install.sh --with-gepard    # + optional Gepard TTS service
-sudo ./install.sh --with-maya1     #   or Maya1 (best SL pronunciation)
-```
-
-It records everything it creates in a manifest, so removal is exact:
-
-```bash
-sudo ./uninstall.sh --dry-run      # preview
-sudo ./uninstall.sh                # stop services, remove units, certs, voices, token line
-sudo ./uninstall.sh --purge-deps   # ...and pip-uninstall the packages it added
-```
-
-Offline machine? `./build-package.sh` produces a tarball (installer included,
-no voices) that you can copy over and run with `./install.sh`.
-
-Manual walkthrough (and what the installer automates) is in
-[docs/en/SETUP.md](docs/en/SETUP.md). Short version without the installer:
-
-```bash
-# 1. Enable the Hermes Agent API server
-cat >> ~/.hermes/.env <<EOF
-API_SERVER_ENABLED=true
-API_SERVER_KEY=$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')
-MIA_HUD_TOKEN=$(python3 -c 'import secrets;print("mia-"+secrets.token_hex(3))')
-ELEVENLABS_API_KEY=your-key-here
-EOF
-hermes gateway   # or set up its LaunchAgent / service
-
-# 2. This repo
-git clone https://github.com/DanijelTech/Mia.git
-cd Mia/server
-python3 -m venv .venv
-.venv/bin/pip install fastapi uvicorn requests pyyaml numpy anthropic \
-    RealtimeSTT faster-whisper silero-vad websockets psutil
-cp config/server.example.yaml config/server.yaml   # edit: your ElevenLabs voice_id etc.
-scripts/make-certs.sh                              # self-signed TLS (browser mic needs it)
-scripts/make-boot-audio.sh YourName                # one-time boot greeting synthesis
-
-# 3. Local voice (offline, Slovenian/Serbian) — skip if using ElevenLabs
-.venv/bin/pip install piper-tts
-scripts/get-voice.sh sl
-
-# 4. Run
-.venv/bin/python server.py
-# open https://YOUR_HOST/hud/ → accept cert → enter your MIA_HUD_TOKEN → talk
-```
-
-Offline voice stack (Piper + local Whisper + local LLM, no cloud calls) is
-documented in [docs/SETUP.md](docs/SETUP.md#2-the-voice-local-piper-offline-or-elevenlabs-cloud).
-
-For auto-start on boot, see [launchd/](launchd/) (macOS) — the plists document
-two non-obvious macOS traps (external-drive TCC and log paths) that cost us an
-evening.
-
-## Usage
-
-| Action | How |
+| I want to… | Read |
 |---|---|
-| Talk | just say **"Mia, …"** — listening, end-of-speech and reply are automatic |
-| Stop the agent | red ■ STOP button or Esc (noise never interrupts mid-turn) |
-| Voice pitch | GLAS panel in the HUD — 70–240 Hz slider, applies from the next sentence |
-| Voice calibration | `python3 server/scripts/enroll_voice.py` (`--append` for another language) |
-| Music | "Mia, play me …" → YouTube app window · "close it / stop the music" |
-| Desktop windows | "open Google / \<page\>" and "close it" (mia-open/mia-close) |
-| Computer control | `mia-ctl …` — windows, apps, input, screenshots, clipboard, power |
-| Memory and knowledge | SPOMIN IN ZNANJE panel → ODPRI ZNANJE · `mia-learn …` |
-| Voice calibration | HUD NASTAVITVE → KALIBRIRAJ · `server/scripts/calibrate_voice.py` |
-| Capabilities | ZMOGLJIVOSTI panel → ODPRI SEZNAM · `mia-learn capabilities` |
-| Verify an action | HUD “JE BILO PRAVILNO?” ✓/✗ · `mia-learn verify` |
-| Google | “search and tell me” = spoken · “show me” = browser |
-| Typed chat | input bar at the bottom (same conversation as voice) |
-| Kanban / dashboards | VIEWS panel → kanban, dashboard, chat |
-| Push-to-talk | alternative: click the brain (or Space) · speak · click again |
-| Phone | open the HUD → Add to Home Screen |
+| Install, configure voices and fix startup | [Setup](docs/en/SETUP.md) |
+| Understand the voice loop, HUD and API | [Architecture](docs/en/ARCHITECTURE.md) |
+| Use memory, habits, recipes and the skill tree | [Learning](docs/en/LEARNING.md) |
+| Control windows, apps, files and power safely | [Control](docs/en/CONTROL.md) |
+| Use plans, jobs, rules and health | [Autonomy](docs/en/AUTONOMY.md) |
+| Calibrate the voice by distance | [Calibration](docs/en/CALIBRATION.md) |
+| See what Mia can do on this machine | [Capabilities](docs/en/CAPABILITIES.md) |
+| Fix a problem | [Troubleshooting](docs/en/TROUBLESHOOTING.md) |
+| Cut a release | [Releasing](docs/en/RELEASING.md) |
 
-## Repo layout
+## Community
 
-```
-VERSION          single source of truth for the release version
-pyproject.toml   ruff/coverage tooling configuration
-requirements.txt core runtime deps (manual/venv installs; installer is canonical)
-Makefile         test · lint · shellcheck · compile · package · version
-.github/workflows/ci.yml  tests, ruff, compile, shell and version checks
-CHANGELOG.md     release history (semantic versioning)
-SECURITY.md      threat model, token/control guarantees, hardening checklist
-CONTRIBUTING.md  how to add a control command, skill, route, HUD string or test
-CODE_OF_CONDUCT.md  Contributor Covenant 2.1 + private reporting channel
-SUPPORT.md       where to ask, what to include, response expectations
-GOVERNANCE.md    roles, lazy consensus, review and release decisions
-ROADMAP.md       direction and good first contributions
-ACCESSIBILITY.md supported environments, known barriers, reporting
-.github/         issue templates, PR template and CI workflow
-docs/images/     screenshots used by the README (English HUD)
-server/          FastAPI voice pipeline + HUD host (the core of this project)
-server/hud/      single-file HUD (vanilla JS, no build step)
-server/continuous.py  VAD segmentation + wake gate for always-on listening
-server/speaker_gate.py  speaker verification (ECAPA-TDNN voiceprints, SpeechBrain)
-server/tts.py    local TTS backends: piper, http (Gepard/Maya1), command, elevenlabs
-server/mia_core/ learning and knowledge (stdlib-only): SQLite, habits, recipes,
-                 anti-patterns, skill tree, capabilities, context brief, mia-learn CLI
-server/mia_core/i18n.py  bilingual deterministic replies (clock, weather,
-                 confirmations, autonomy answers) for the SLO/ENG switch
-server/mia_core/autonomy/  mini sub-OS: machine profile, plans, scheduler,
-                 rules, health, deterministic commands, mia-auto CLI
-server/speaker_gate.py  distance-aware voiceprints (near/mid/far)
-server/calibration.py   guided calibration over the HUD WebSocket
-server/hud/settings.html      SETTINGS (wake, threshold, learning, calibration)
-server/hud/capabilities.html  CAPABILITIES (confirmed/learned/empty)
-server/hud/autonomy.html      AUTONOMY (profile, plans, jobs, tasks, health)
-server/hud/background.html    V OZADJU (what runs, manual override, closing)
-server/hud/i18n.js            SLO/ENG switch and the translation dictionary
-server/scripts/  mia-start/stop/health + enroll_voice.py (voice calibration)
-                 + gepard_tts.py (TTS service with per-request pitch)
-client/          optional Windows/Linux push-to-talk Python client (wake word capable)
-worker/          optional GPU sidecars: big-model STT server + stats agent
-hermes-plugin/   Hermes plugins: hud_display (media panels), mia_learning
-                 (memory_brief/search/feedback/remember/fact/mistake/status/skill_tree)
-                 and mia_autonomy (system_status/profile/health/adapt/plans/run_plan/
-                 command/jobs/tasks/alerts)
-skills/          skill tree: mia-companion (root) + mia-desktop, mia-learning,
-                 mia-music, mia-browser, mia-productivity, mia-diagnostics,
-                 mia-autonomy
-skills/mia-companion/bin/  mia-open, mia-close, mia-volume, mia-artists,
-                 mia-learn, mia-skill, mia-ctl (audited computer control),
-                 mia-auto (profile, plans, jobs, health)
-tests/           unittest suite for mia_core, mia-ctl and the skill tree
-launchd/         macOS auto-start templates with hard-won TCC + FD-limit notes
-docs/            Slovenian docs; docs/en/ the English copies
-                 (SETUP, ARCHITECTURE, LEARNING, CONTROL, AUTONOMY, CALIBRATION, CAPABILITIES,
-                 RELEASING, COMMUNITY)
-install.sh       install (no venv, root or user) + manifest
-start-mia.sh     boots the whole stack (stack: llama → Hermes → dashboard → Mia + TTS), opens HUD
-stop-mia.sh      stops everything and frees RAM/VRAM; status, --restart, --free-ports
-update.sh        git pull --ff-only + service restart + Ctrl+Shift+R reminder
-uninstall.sh     exact removal of everything install.sh created
-build-package.sh offline tarball for a machine without internet
-```
-
-## Security model
-
-- The Hermes API key never reaches the browser: the HUD talks through a
-  strict allowlist proxy on the voice server.
-- All HUD endpoints + dashboard proxy + browser WebSockets are gated by a
-  token (cookie, entered once per device).
-- Hermes' API binds to loopback only; the dashboard binds to loopback only.
-- Secret-shaped strings are redacted before text leaves for cloud TTS.
-- `mia-ctl` checks a policy (`~/.config/mia/control.json`): allowed roots,
-  denied paths (`~/.ssh`, `~/.hermes` …) and confirmation for destructive
-  actions. Every control action is audited with secrets redacted.
-- Memory is stored locally; all text is redacted before storage.
-- LAN-only by design — do not port-forward this to the internet.
-
-## Community & contributing
-
-Mia is built in the open. Whether you speak Slovenian, English or Python, there
-is a useful place to help.
+Mia is built in the open. Whether you speak Slovenian, English or Python,
+there is a useful place to help.
 
 - **[Code of Conduct](CODE_OF_CONDUCT.md)** — the standard we hold each other to.
-- **[Contributing](CONTRIBUTING.md)** — setup, tests, how to add a command,
-  skill, brain route, HUD string, translation or plugin tool.
-- **[Support](SUPPORT.md)** — where to ask a question, report a bug or request a
-  feature, and what to include.
-- **[Governance](GOVERNANCE.md)** — roles, lazy consensus, review and release
-  decisions.
-- **[Roadmap](ROADMAP.md)** — what is next and which tasks are good first issues.
+- **[Contributing](CONTRIBUTING.md)** — setup, tests, new commands, skills,
+  HUD strings, translations and plugin tools.
+- **[Support](SUPPORT.md)** — where to ask, what to include, response expectations.
+- **[Governance](GOVERNANCE.md)** — roles, consensus, review and releases.
+- **[Roadmap](ROADMAP.md)** — what is next and which tasks suit a first PR.
 - **[Accessibility](ACCESSIBILITY.md)** — supported environments, known
   barriers and how to report one.
-- **[Security](SECURITY.md)** — private vulnerability reporting, token and
-  control guarantees.
 - **[Community playbook](docs/en/COMMUNITY.md)** — labels, GitHub settings and
   the launch checklist.
+- **[Security](SECURITY.md)** — private vulnerability reporting and guarantees.
 
 **Ways to help that matter right now**
 
-- Test `./install.sh` on your distro/desktop and report what worked.
+- Test the installer on your distribution or desktop and report what worked.
 - Translate one HUD string or one capability label (SLO ↔ ENG).
 - Add a test for a command you actually use.
-- Improve keyboard/screen-reader/contrast behaviour in the HUD.
-- Share a 30 s demo or a screenshot of your setup in Discussions.
-- Open a **good first issue**-sized PR; small and tested beats large and vague.
+- Improve keyboard, screen-reader or contrast behaviour in the HUD.
+- Share a 30-second demo or a screenshot of your setup in Discussions.
+- Pick a **good first issue**; small and tested beats large and vague.
 
-If Mia is useful to you, a star helps other people find it — but answering a
-question or reviewing a PR helps even more.
+If Mia is useful to you, a star helps other people find her — but answering a
+question or reviewing a pull request helps even more.
+
+## Version
+
+The current release is **1.1.0**. The version lives in [VERSION](VERSION), is
+shown in the HUD and at `/api/version`, and every script answers `--version`.
+History: [CHANGELOG.md](CHANGELOG.md). Release process:
+[docs/en/RELEASING.md](docs/en/RELEASING.md).
 
 ## Credits & license
 
-Built on [Hermes Agent](https://github.com/NousResearch/hermes-agent) by Nous
-Research. HUD aesthetics inspired by
-[jarvis-dashboard](https://github.com/AndrewKochulab/jarvis-dashboard).
-STT by [faster-whisper](https://github.com/SYSTRAN/faster-whisper) /
-[RealtimeSTT](https://github.com/KoljaB/RealtimeSTT). Voice by
-[ElevenLabs](https://elevenlabs.io).
-
-Originally derived from [eadmin2/jarvis_ai](https://github.com/eadmin2/jarvis_ai)
-(MIT, © Chris Lassiter); rebranded and extended for local Slovenian/Serbian voice.
-
-MIT — see [LICENSE](LICENSE). Use it, fork it, build your own Mia.
+Mia is released under the [MIT License](LICENSE). She is an independent project;
+third-party components and their licenses are listed in [CREDITS.md](CREDITS.md).
+No endorsement or sponsorship by any third party is implied.

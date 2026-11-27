@@ -38,6 +38,14 @@ pipeline, learning core, HUD, Hermes plugins and installers.
   worker stats, nested destructive plans, undo sanitization, anti-pattern
   hit counting, pitch forwarding.
 
+### Changed
+
+- `README.md` and `README.sl.md` are now presentation-first: what Mia is, why
+  she matters, what she can do, a day with her, a three-step start, docs and
+  community. Deep architecture/setup detail lives in `docs/` and `docs/en/`.
+- Removed third-party brand promotion and upstream comparison from the README;
+  factual attribution moved to `CREDITS.md`.
+
 ### Fixed
 
 - Empty `hermes-plugin/mia_learning/__init__.py` and
