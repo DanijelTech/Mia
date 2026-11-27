@@ -89,5 +89,34 @@ class ChatBrainGatingTests(unittest.TestCase):
         self.assertTrue(issubclass(EscalateToAgent, RuntimeError))
 
 
+class ChatBrainContextTests(unittest.TestCase):
+    def _brain(self):
+        return ChatBrain({"llm": {
+            "router": {"enabled": True},
+            "chat": {"enabled": True, "base_url": "http://127.0.0.1:1/v1",
+                     "history_turns": 2},
+        }})
+
+    def test_note_and_recent(self):
+        brain = self._brain()
+        brain.note("mia-main", "odpri brskalnik", "Odprla sem brskalnik.")
+        recent = brain.recent("mia-main")
+        self.assertIn("Uporabnik: odpri brskalnik", recent)
+        self.assertIn("Mia: Odprla sem brskalnik.", recent)
+
+    def test_note_ignores_empty(self):
+        brain = self._brain()
+        brain.note("mia-main", "", "x")
+        self.assertEqual(brain.recent("mia-main"), "")
+
+    def test_recent_keeps_the_last_turns(self):
+        brain = self._brain()
+        for i in range(10):
+            brain.note("mia-main", f"u{i}", f"a{i}")
+        recent = brain.recent("mia-main", 2)
+        self.assertIn("u9", recent)
+        self.assertNotIn("u0", recent)
+
+
 if __name__ == "__main__":
     unittest.main()

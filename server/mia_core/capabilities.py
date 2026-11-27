@@ -151,6 +151,7 @@ CATALOG: list[dict] = [
     _item("browser.open", "browser", "Odpri URL v brskalniku", "`mia-ctl open <url>` / `mia-open`", "odpri brskalnik url", "open"),
     _item("browser.google.answer", "browser", "Google: poišči in povej", "server Google intent + `web_search`", "google povej iskanje", "google"),
     _item("browser.google.show", "browser", "Google: prikaži v brskalniku", "`mia-ctl open` Google URL", "google prikaži pokaži", "google"),
+    _item("browser.weather", "browser", "Vreme", "server weather intent (Open-Meteo)", "vreme weather napoved", "weather"),
     _item("browser.hud_display", "browser", "Prikaz na HUD-u", "Hermes vtičnik `hud_display`", "hud panel prikaz", "hud"),
     _item("browser.hud_dismiss", "browser", "Počisti HUD", "Hermes vtičnik `hud_dismiss`", "hud počisti", "hud"),
 
@@ -299,6 +300,8 @@ def _detect(item: dict, extra: dict) -> tuple[str, str]:
         return ("detected", tool) if tool else ("unsupported", "install xdg-utils")
     if detect == "google":
         return "detected", "server intent + web_search"
+    if detect == "weather":
+        return "detected", "Open-Meteo (internet)"
     if detect == "archive":
         tool = _first_tool("tar", "zip", "unzip")
         return ("detected", tool) if tool else ("unsupported", "install tar/zip")

@@ -58,6 +58,10 @@ ostane, razdeli `mia_core/brain.py::classify_brain` na **pogovor** in
 **dejanje**. Pogovor gre v mali lokalni model (`llm.chat`, OpenAI-kompatibilni
 llama-server), dejanja, vprašanja o živih podatkih, URL-ji in poti pa v Hermesa.
 
+Chat model dobi kratek seznam zmogljivosti in strogo navodilo, naj ne našteva
+korakov; za dejanja vrne `[[AGENT]]`. Ob prehodu v Hermesa se doda zadnjih nekaj
+pogovornih krogov, izid agenta pa se zapiše nazaj v pogovorno zgodovino.
+
 Maya1 ostane skupni glas za oba. Če je chat model izklopljen, nedosegljiv ali
 vrne `[[AGENT]]`, krog pade nazaj na Hermesa; če Hermes ne dela, chat model
 odgovori, da dejanja ne more izvesti. Konfiguracija je v

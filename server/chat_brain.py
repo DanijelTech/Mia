@@ -20,12 +20,23 @@ from mia_core.brain import classify_brain
 
 SENTINEL = "[[AGENT]]"
 
+# One compact paragraph so the chat model knows what Mia can do without being
+# given tool schemas (it must not execute anything itself).
+CAPABILITIES = (
+    "poiskati po Googlu in odpreti rezultate, predvajati glasbo na YouTube, "
+    "povedati uro in datum, vreme, odpreti in zapreti aplikacije ter okna, "
+    "upravljati datoteke, posnetke zaslona, glasnost, svetlost, opomnike, "
+    "opravila in sistemske ukaze"
+)
+
 DEFAULT_SYSTEM = (
     "Govoriš kot Mia, slovenski glasovni pomočnik. Odgovarjaj v slovenščini, "
-    "mirno in naravno. Prva poved naj ima največ 8 besed; skupaj 1–3 kratke "
-    "povedi. Brez markdowna, seznamov in kodnih blokov. Če uporabnik zahteva "
-    "dejanje na računalniku (odpri, zaženi, zapri, poišči, preberi, shrani, "
-    "pošlji, nastavi, preveri ...), ne odgovarjaj sam: vrni točno [[AGENT]]."
+    "mirno in naravno, kot v pogovoru — ne naštevaj korakov in ne opisuj "
+    "orodij. Prva poved naj ima največ 8 besed; skupaj 1–3 kratke povedi. "
+    "Brez markdowna, seznamov in kodnih blokov. "
+    f"Znaš: {CAPABILITIES}. "
+    "Če uporabnik zahteva dejanje na računalniku, ne odgovarjaj sam: vrni "
+    "točno [[AGENT]]."
 )
 
 
@@ -54,6 +65,29 @@ class ChatBrain:
 
     def _history_for(self, conversation: str) -> list[dict]:
         return self._history.setdefault(conversation, [])
+
+    def recent(self, conversation: str = "mia-main", turns: int = 2) -> str:
+        """Compact last-N-turn transcript for hand-off to the agent."""
+        history = self._history_for(conversation)[-2 * max(1, turns):]
+        lines = []
+        for msg in history:
+            role = "Uporabnik" if msg.get("role") == "user" else "Mia"
+            text = str(msg.get("content") or "").strip().replace("\n", " ")
+            if text:
+                lines.append(f"{role}: {text[:200]}")
+        return "\n".join(lines)
+
+    def note(self, conversation: str, user: str, assistant: str) -> None:
+        """Record an agent turn so the next chat turn keeps the context."""
+        user = (user or "").strip()
+        assistant = (assistant or "").strip()
+        if not user or not assistant:
+            return
+        hist = self._history_for(conversation)
+        hist.append({"role": "user", "content": user[:1000]})
+        hist.append({"role": "assistant", "content": assistant[:2000]})
+        keep = max(2, int(self.cfg.get("history_turns", 8)) * 2)
+        del hist[:-keep]
 
     def _messages(self, transcript: str, conversation: str,
                   brief: str = "") -> list[dict]:

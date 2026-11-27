@@ -58,7 +58,8 @@ import avatar_visemes
 import avatar_config
 from mia_core.integration import (detect_feedback, detect_remember,
                                   google_request, google_url,
-                                  music_play_request, time_answer)
+                                  music_play_request, time_answer,
+                                  weather_request)
 from mia_core import capabilities as capability_core
 from mia_core.learning import get_core
 from mia_core.autonomy.service import AutonomyService
@@ -323,6 +324,114 @@ def _pick_favorite_artist() -> str:
     except OSError:
         artists = []
     return random.choice(artists) if artists else "slovenska glasba"
+_WEATHER_CACHE: dict[tuple[float, float], tuple[float, str]] = {}
+_WEATHER_LOCK = threading.Lock()
+_WEATHER_CITY_ALIASES = {
+    "ljubljana": "Ljubljana", "ljubljani": "Ljubljana", "ljubljano": "Ljubljana",
+    "maribor": "Maribor", "mariboru": "Maribor",
+    "celje": "Celje", "celju": "Celje",
+    "kranj": "Kranj", "kranju": "Kranj",
+    "koper": "Koper", "kopru": "Koper",
+    "novo mesto": "Novo mesto", "novem mestu": "Novo mesto",
+    "ptuj": "Ptuj", "ptuju": "Ptuj",
+    "murska sobota": "Murska Sobota", "murski soboti": "Murska Sobota",
+    "nova gorica": "Nova Gorica", "novi gorici": "Nova Gorica",
+    "velenje": "Velenje", "velenju": "Velenje",
+}
+_WEATHER_CODES = {
+    0: "jasno", 1: "pretežno jasno", 2: "delno oblačno", 3: "oblačno",
+    45: "megla", 48: "ivje in megla",
+    51: "rahlo rosno", 53: "rosno", 55: "močno rosno",
+    56: "ledeno rosno", 57: "močno ledeno rosno",
+    61: "rahel dež", 63: "dež", 65: "močan dež",
+    66: "leden dež", 67: "močan leden dež",
+    71: "rahel sneg", 73: "sneg", 75: "močan sneg", 77: "snežne zrna",
+    80: "rahle plohe", 81: "plohe", 82: "močne plohe",
+    85: "rahle snežne plohe", 86: "močne snežne plohe",
+    95: "nevihta", 96: "nevihta s točo", 99: "močna nevihta s točo",
+}
+def _geocode_city(city: str) -> tuple[float, float, str] | None:
+    try:
+        r = requests.get(
+            "https://geocoding-api.open-meteo.com/v1/search",
+            params={"name": city, "count": 1, "language": "sl", "format": "json"},
+            timeout=8)
+        r.raise_for_status()
+        results = r.json().get("results") or []
+        if not results:
+            return None
+        top = results[0]
+        return (float(top["latitude"]), float(top["longitude"]),
+                str(top.get("name") or city))
+    except Exception:
+        return None
+def _weather_answer(city: str) -> str:
+    cfg = CFG.get("weather") or {}
+    if not bool(cfg.get("enabled", True)):
+        return "Vremenska storitev je izklopljena, šefe."
+    raw = (city or "").strip().lower()
+    if raw:
+        name = _WEATHER_CITY_ALIASES.get(raw, raw.title())
+        lat = lon = None
+    else:
+        name = str(cfg.get("city") or "Ljubljana")
+        try:
+            lat = float(cfg["latitude"]) if cfg.get("latitude") not in (None, "") else None
+            lon = float(cfg["longitude"]) if cfg.get("longitude") not in (None, "") else None
+        except (TypeError, ValueError):
+            lat = lon = None
+    if lat is None or lon is None:
+        geo = _geocode_city(name)
+        if not geo:
+            return f"Za {name} ne najdem vremenske postaje, šefe."
+        lat, lon, name = geo
+    key = (round(float(lat), 3), round(float(lon), 3))
+    now = time.monotonic()
+    with _WEATHER_LOCK:
+        cached = _WEATHER_CACHE.get(key)
+        if cached and now - cached[0] < float(cfg.get("cache_seconds", 600)):
+            return cached[1]
+    try:
+        r = requests.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": lat, "longitude": lon,
+                "current": ("temperature_2m,apparent_temperature,weather_code,"
+                            "wind_speed_10m,relative_humidity_2m"),
+                "timezone": "auto",
+            },
+            timeout=float(cfg.get("timeout", 8)))
+        r.raise_for_status()
+        cur = r.json().get("current") or {}
+        temp = cur.get("temperature_2m")
+        if temp is None:
+            return "Vremenske postaje trenutno ne morem prebrati, šefe."
+        feel = cur.get("apparent_temperature")
+        code = int(cur.get("weather_code") or 0)
+        wind = cur.get("wind_speed_10m")
+        hum = cur.get("relative_humidity_2m")
+        parts = [f"V {name} je {round(float(temp))} °C"]
+        if feel is not None:
+            parts.append(f"občutek {round(float(feel))} °C")
+        parts.append(_WEATHER_CODES.get(code, "neznano vreme"))
+        if wind is not None:
+            parts.append(f"veter {round(float(wind))} km/h")
+        if hum is not None:
+            parts.append(f"vlaga {round(float(hum))} %")
+        answer = ", ".join(parts) + "."
+    except Exception as exc:
+        print(f"WEATHER fetch failed: {type(exc).__name__}: {exc}", flush=True)
+        return "Vremenske storitve ne morem doseči, šefe."
+    with _WEATHER_LOCK:
+        _WEATHER_CACHE[key] = (now, answer)
+    return answer
+
+
+
+
+
+
+
 
 
 async def _stop_all_media() -> None:
@@ -933,12 +1042,25 @@ class VoicePipelineServer:
         timing.llm_model = "hermes-agent"
         timeout = float(h.get("timeout", 240))
         directive = (h.get("language_directive") or "").strip()
+        system_extra = h.get("system_prompt_extra")
+        if system_extra is None:
+            system_extra = _DEFAULT_HERMES_EXTRA
+        system_extra = str(system_extra).strip()
         try:
             brief = LEARNING.brief(transcript)
         except Exception as exc:
             print(f"learning brief skipped: {exc}", flush=True)
             brief = ""
-        payload = "\n\n".join(part for part in (directive, brief, transcript) if part)
+        chat_context = ""
+        try:
+            recent = CHAT.recent(conversation, 2)
+            if recent:
+                chat_context = "[MIA POGOVOR]\n" + recent
+        except Exception:
+            chat_context = ""
+        payload = "\n\n".join(
+            part for part in (directive, system_extra, chat_context, brief, transcript)
+            if part)
         try:
             it = self.hermes.chat_stream_events(session_id, payload, timeout)
             for kind, value in it:
@@ -1049,6 +1171,10 @@ class VoicePipelineServer:
             if not forward_task.done():
                 forward_task.cancel()
         timing.response_text = "".join(full_response).strip()
+        if timing.response_text and timing.llm_provider in ("hermes", "anthropic"):
+            CHAT.note(conn.conversation, timing.transcript or transcript,
+                      timing.response_text)
+
 
     async def _async_llm_events(
         self, transcript: str, timing: TurnTiming, conversation: str,
@@ -1168,6 +1294,17 @@ CFG = load_config()
 HERMES = HermesAPI(CFG)   # lightweight API client - independent of the STT pipeline
 LEARNING = get_core(CFG)  # durable memory, habits, recipes, skill tree
 CHAT = ChatBrain(CFG)   # fast conversational brain; "agent" when disabled
+
+# Prepended to every agent turn when `hermes.system_prompt_extra` is absent.
+# It tells the agent which Mia tools/paths exist; Hermes' own prompt still owns
+# persona and its normal tool schemas.
+_DEFAULT_HERMES_EXTRA = (
+    "Orodja so na voljo prek vtičnikov mia_autonomy in mia_learning ter veščin "
+    "mia-*. Za dejanja na stroju uporabi mia-ctl prek system_command/planov, ne "
+    "izmišljuj surovih shell ukazov. Repo je v MIA_HOME (privzeto ~/Mia); "
+    "mia-ctl je v skills/mia-companion/bin/mia-ctl, mia-auto pa ob njem. "
+    "Vsako dejanje preveri in ne trdi, da je uspelo, če orodje ni vrnilo uspeha."
+)
 
 
 # Autonomy is created lazily: a broken profile or DB must never prevent the
@@ -1507,6 +1644,12 @@ async def hud_chat(request: Request) -> JSONResponse:
         print(f"TIME answered locally (chat): {local_time!r}", flush=True)
         return quick(local_time, [{"name": "local_time", "preview": ""}])
 
+    weather_city = weather_request(chat_text)
+    if weather_city is not None:
+        answer = await asyncio.to_thread(_weather_answer, weather_city)
+        print(f"WEATHER answered locally (chat): {answer!r}", flush=True)
+        return quick(answer, [])
+
     try:
         music = await _music_chat(text)
     except Exception as exc:
@@ -1544,8 +1687,8 @@ async def hud_chat(request: Request) -> JSONResponse:
 
     google_mode, google_query = google_request(chat_text)
     agent_text = text
-    if google_mode == "show" and google_query:
-        url = google_url(google_query)
+    if google_mode == "show":
+        url = google_url(google_query) if google_query else "https://www.google.com"
         opened = await asyncio.to_thread(_open_visible_url, url)
         return quick("Odprla sem v brskalniku, šefe." if opened
                      else "Brskalnika nisem mogla odpreti, šefe.",
@@ -3027,19 +3170,26 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             await _speak_and_finish(ws, pipeline, conn, timing, time_text)
             return
 
+        weather_city = weather_request(stripped)
+        if weather_city is not None:
+            answer = await asyncio.to_thread(_weather_answer, weather_city)
+            print(f"WEATHER answered locally: {answer!r}", flush=True)
+            await _speak_and_finish(ws, pipeline, conn, timing, answer)
+            return
+
         google_mode, google_query = google_request(stripped)
         agent_transcript = transcript
-        if google_mode and google_query:
-            if google_mode == "show":
-                url = google_url(google_query)
-                opened = await asyncio.to_thread(_open_visible_url, url)
-                timing.tools_used.append("mia-open")
-                print(f"GOOGLE show: {google_query!r} -> {url} opened={opened}", flush=True)
-                await _speak_and_finish(
-                    ws, pipeline, conn, timing,
-                    "Odprla sem v brskalniku, šefe." if opened
-                    else "Brskalnika nisem mogla odpreti, šefe.")
-                return
+        if google_mode == "show":
+            url = google_url(google_query) if google_query else "https://www.google.com"
+            opened = await asyncio.to_thread(_open_visible_url, url)
+            timing.tools_used.append("mia-open")
+            print(f"GOOGLE show: {google_query!r} -> {url} opened={opened}", flush=True)
+            await _speak_and_finish(
+                ws, pipeline, conn, timing,
+                "Odprla sem v brskalniku, šefe." if opened
+                else "Brskalnika nisem mogla odpreti, šefe.")
+            return
+        if google_mode == "answer" and google_query:
             agent_transcript = (
                 "[Navodilo: uporabi spletno iskanje in mi ustno odgovori na "
                 "vprašanje. Ne odpiraj brskalnika in ne prikazuj strani.] "

@@ -29,10 +29,13 @@ llm:
     api_key_env: ""           # optional, e.g. MIA_CHAT_KEY
     system_prompt: >
       Govoriš kot Mia, slovenski glasovni pomočnik. Odgovarjaj v slovenščini,
-      mirno in naravno. Prva poved naj ima največ 8 besed; skupaj 1–3 kratke
-      povedi. Brez markdowna, seznamov in kodnih blokov. Če uporabnik zahteva
-      dejanje na računalniku (odpri, zaženi, zapri, poišči, preberi, shrani,
-      pošlji, nastavi, preveri ...), ne odgovarjaj sam: vrni točno [[AGENT]].
+      mirno in naravno, kot v pogovoru — ne naštevaj korakov in ne opisuj
+      orodij. Prva poved naj ima največ 8 besed; skupaj 1–3 kratke povedi.
+      Brez markdowna, seznamov in kodnih blokov. Znaš: poiskati po Googlu in
+      odpreti rezultate, predvajati glasbo na YouTube, povedati uro in datum,
+      vreme, odpreti/zapreti aplikacije in okna, upravljati datoteke, posnetke
+      zaslona, glasnost, svetlost, opomnike in opravila. Če uporabnik zahteva
+      dejanje na računalniku, ne odgovarjaj sam: vrni točno [[AGENT]].
 
 
 
@@ -47,6 +50,15 @@ hermes:
   ack_after_seconds: 0               # >0 = speak a short ack while the agent works
   ack_texts: ["Takoj.", "Še delam.", "Skoraj."]
   fallback_provider: ""              # "" = offline: never fall back to a cloud LLM
+  # Extra system instruction prepended to every agent turn. This is where the
+  # model learns which tools/paths exist; Hermes' own prompt still owns persona.
+  system_prompt_extra: >
+    Orodja so na voljo prek vtičnikov mia_autonomy in mia_learning ter veščin
+    mia-*. Za dejanja na stroju uporabi mia-ctl prek system_command/planov, ne
+    izmišljuj surovih shell ukazov. Repo je v MIA_HOME (privzeto ~/Mia);
+    mia-ctl je v skills/mia-companion/bin/mia-ctl, mia-auto pa ob njem.
+    Vsako dejanje preveri in ne trdi, da je uspelo, če orodje ni vrnilo uspeha.
+
   language_directive: "Odgovarjaj izključno v slovenščini, v kratkih govorjenih povedih."
   unreachable_text: "Hermesov gateway ni dosegljiv. Zaženi hermes gateway in poskusi znova."
   # ^ Prepended to every turn sent to Hermes. Hermes' own system prompt is the
@@ -161,6 +173,18 @@ tts:
     model: eleven_v3_conversational
     voice_id: YOUR_ELEVENLABS_VOICE_ID
     output_format: pcm_16000
+
+# ---------------------------------------------------------------- weather
+# Vreme prek Open-Meteo (brezplačno, brez ključa). Nastavi svoje mesto ali
+# točne koordinate; če koordinat ne podaš, jih poišče prek geokodiranja.
+weather:
+  enabled: true
+  city: Ljubljana
+  latitude: 46.0569        # neobvezno; prazno = geokodiraj `city`
+  longitude: 14.5058
+  timezone: auto
+  timeout: 8
+  cache_seconds: 600
 
 machines: []                # optional extra machines for the HUD "Stroji" panel.
 

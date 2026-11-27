@@ -87,6 +87,11 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   llama-server on `llm.chat.base_url`). The deterministic
   `autonomy/intents.py` router still runs first. If the chat model is off,
   unreachable or answers `[[AGENT]]`, the turn falls back to Hermes.
+- The chat model gets a capability summary and a "no steps, return `[[AGENT]]`"
+  prompt. `_hermes_turn` prepends `hermes.system_prompt_extra` (default
+  tools/paths brief) and the last two chat turns; agent replies are written
+  back with `CHAT.note()` so the next chat turn has context.
+
 - `tts.provider: http` defaults to a Piper fallback (`tts.fallback`, or
   `tts.http.fallback_piper`). If Maya1/Gepard is down or still loading, the
   wrapper speaks with Piper instead of failing the turn; set `tts.fallback: ""`

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 import time
+import unicodedata
 from typing import Any
 
 from .recipes import normalize
@@ -15,6 +16,15 @@ from .recipes import normalize
 def _flat(text: str) -> str:
     text = (text or "").lower()
     text = re.sub(r"[^a-z0-9čćžšđ ]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _fold(text: str) -> str:
+    """Lowercase + strip diacritics, keeping prepositions (normalize drops them)."""
+    text = unicodedata.normalize("NFKD", (text or "").lower())
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.replace("đ", "d")
+    text = re.sub(r"[^a-z0-9 ]+", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -159,7 +169,9 @@ def google_request(text: str) -> tuple[str | None, str]:
         query = re.sub(rf"\b{re.escape(phrase)}\b", " ", query)
     query = re.sub(r"\s+", " ", query).strip()
     if not query:
-        query = flat.replace("google", " ").replace("googlu", " ").strip()
+        # "odpri google" / just "google": open the Google home page, not a
+        # search for the command word itself.
+        return "show", ""
     return mode, query
 
 
@@ -265,6 +277,43 @@ def time_answer(text: str, now=None) -> str | None:
     return (f"Danes je {_WEEKDAYS_SL[current.weekday()]}, "
             f"{current.day}. {_MONTHS_SL[current.month - 1]} {current.year}, "
             f"ura je {current.hour} in {current.minute}.")
+
+
+_WEATHER_PHRASES = (
+    "kaksno je vreme", "kakvo je vreme", "kako je vreme", "kaksno vreme",
+    "vreme v", "vreme za", "vreme na", "napoved", "temperatura",
+    "povej mi vreme", "povej vreme", "preveri vreme", "pokazi vreme",
+    "prikazi vreme", "bo vreme", "weather",
+)
+_WEATHER_TIME = {
+    "danes", "jutri", "vceraj", "zdaj", "sedaj", "zjutraj", "dopoldne",
+    "popoldne", "zvecer", "ponoci", "noc", "jutro", "vikend", "teden",
+    "naslednji", "ta", "to", "tem", "vremenu", "vreme", "napoved",
+    "temperatura",
+}
+
+
+def weather_request(text: str) -> str | None:
+    """Return the spoken city for a weather question ("" = default city).
+
+    Only strong question forms match, so »kaj misliš o vremenu« stays chat.
+    """
+    flat = _fold(text)
+    if not flat:
+        return None
+    if not any(phrase in flat for phrase in _WEATHER_PHRASES):
+        return None
+    for city in ("novo mesto", "novem mestu", "nova gorica", "novi gorici",
+                 "murska sobota", "murski soboti"):
+        if city in flat:
+            return city
+    match = re.search(
+        r"\b(?:v|za|na)\s+(?:kraju\s+)?([a-zčćžšđ][a-zčćžšđ-]{1,30})\b", flat)
+    if match:
+        city = match.group(1)
+        if city not in _WEATHER_TIME:
+            return city
+    return ""
 
 
 def outcome_from_turn(response: str, errors: list[str] | None = None,
