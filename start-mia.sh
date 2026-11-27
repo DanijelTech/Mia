@@ -264,7 +264,7 @@ check_model_file() { # check_model_file <label> <argv...> — 0 when the GGUF ex
       info "no .gguf files under $dir — check the path or download the model"
     fi
   else
-    info "directory $dir does not exist — is the disk mounted? (lsblk / mount | grep -i kameleon)"
+    info "directory $dir does not exist — is the disk mounted? (lsblk / mount)"
   fi
   return 1
 }

@@ -239,7 +239,7 @@ in HUD v panelu VEŠČINE pokaže `—`. Glas in klepet delujeta naprej.
 Začasni lokalni popravek (ena vrstica, z varnostno kopijo):
 
 ```bash
-cd /mnt/models/hermes-home/hermes-agent-src
+cd /path/to/hermes-agent-src
 cp tools/skills_tool.py tools/skills_tool.py.bak.$(date +%Y%m%d-%H%M%S)
 python3 - <<'PY'
 import pathlib
@@ -253,7 +253,7 @@ p.write_text(s.replace(old, new, 1)); print("popravljeno:", p)
 PY
 hermes gateway restart
 sleep 10
-curl -s -H "Authorization: Bearer $(grep '^API_SERVER_KEY=' /home/user/.hermes/.env | cut -d= -f2-)" "http://127.0.0.1:8642/v1/skills" | head -c 200
+curl -s -H "Authorization: Bearer $(grep '^API_SERVER_KEY=' $HOME/.hermes/.env | cut -d= -f2-)" "http://127.0.0.1:8642/v1/skills" | head -c 200
 ```
 
 Popravek bo ob naslednji posodobitvi Hermesa prepisan — takrat preveri, ali je
@@ -264,7 +264,7 @@ knjižnica `agent`/`skills` pa je iz nameščenega paketa druge različice. Reš
 da oba dela prideta iz istega drevesa:
 
 ```bash
-cd /mnt/models/hermes-home/hermes-agent-src   # tvoj checkout
+cd /path/to/hermes-agent-src   # tvoj checkout
 
 # 1) če si na odpeti glavi (tag), `git pull` ne deluje:
 git status -sb | head -2            # "not currently on a branch" = detached HEAD

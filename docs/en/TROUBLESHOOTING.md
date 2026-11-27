@@ -132,7 +132,7 @@ while `tools/skills_tool.py` only accepts `skip_disabled`. So `/v1/skills` retur
 Minimal local patch (one line, with a backup):
 
 ```bash
-cd /mnt/models/hermes-home/hermes-agent-src
+cd /path/to/hermes-agent-src
 cp tools/skills_tool.py tools/skills_tool.py.bak.$(date +%Y%m%d-%H%M%S)
 python3 - <<'PY'
 import pathlib
@@ -146,7 +146,7 @@ p.write_text(s.replace(old, new, 1)); print("patched:", p)
 PY
 hermes gateway restart
 sleep 10
-curl -s -H "Authorization: Bearer $(grep '^API_SERVER_KEY=' /home/user/.hermes/.env | cut -d= -f2-)" "http://127.0.0.1:8642/v1/skills" | head -c 200
+curl -s -H "Authorization: Bearer $(grep '^API_SERVER_KEY=' $HOME/.hermes/.env | cut -d= -f2-)" "http://127.0.0.1:8642/v1/skills" | head -c 200
 ```
 
 A Hermes update will overwrite the patch — re-check whether upstream fixed it and
@@ -157,7 +157,7 @@ just forwards the call. Hermes runs from a **source checkout**
 different installed version. Make both come from the same tree:
 
 ```bash
-cd /mnt/models/hermes-home/hermes-agent-src
+cd /path/to/hermes-agent-src
 
 # 1) on a detached tag `git pull` fails — pick a tag or a branch first:
 git status -sb | head -2            # "not currently on a branch" = detached HEAD

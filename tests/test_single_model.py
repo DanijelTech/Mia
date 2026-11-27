@@ -40,7 +40,7 @@ stack:
       - CUDA_VISIBLE_DEVICES=0
       - /home/user/llama.cpp/build/bin/llama-server
       - -m
-      - /mnt/models/models/HauhauCS/Gemma4-12B/Gemma4-12B-Q4_K_M.gguf
+      - /mnt/models/HauhauCS/Gemma4-12B/Gemma4-12B-Q4_K_M.gguf
       - --alias
       - HauhauCS/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced
       - --port
@@ -53,7 +53,7 @@ stack:
       - CUDA_VISIBLE_DEVICES=1
       - /home/user/llama.cpp/build/bin/llama-server
       - -m
-      - /mnt/models/models/Qwen2.5-7B-Instruct-Q5_K_M.gguf
+      - /mnt/models/Qwen2.5-7B-Instruct-Q5_K_M.gguf
       - --port
       - "18084"
   hermes:
@@ -81,7 +81,7 @@ class SingleModelRewriteTests(unittest.TestCase):
     def test_stack_chat_is_commented_out(self):
         self.assertIn(usm.MARKER, self.new)
         self.assertIn("    # health: http://127.0.0.1:18084/health", self.new)
-        self.assertIn("      # - /mnt/models/models/"
+        self.assertIn("      # - /mnt/models/"
                       "Qwen2.5-7B-Instruct-Q5_K_M.gguf", self.new)
         stack = self.lines.index("stack:")
         active = [line for line in self.lines[stack:]
@@ -102,7 +102,7 @@ class SingleModelRewriteTests(unittest.TestCase):
 
     def test_main_model_is_untouched(self):
         self.assertIn(
-            "      - /mnt/models/models/HauhauCS/Gemma4-12B/"
+            "      - /mnt/models/HauhauCS/Gemma4-12B/"
             "Gemma4-12B-Q4_K_M.gguf", self.new)
         self.assertIn("  llama:", self.new)
         self.assertIn("    health: http://127.0.0.1:18083/health", self.new)
