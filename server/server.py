@@ -530,11 +530,51 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def _media_browser_windows() -> list[dict]:
+    """Visible browser windows whose title looks like media, even untracked.
+
+    The registry only knows windows Mia opened; after a restart or an
+    xdg-open fallback the user can still have a YouTube window playing.
+    """
+    xdo = shutil.which("xdotool")
+    if not xdo:
+        return []
+    hints = ("youtube", "youtu.be", "spotify", "soundcloud", "vimeo",
+             "twitch", "radio", "music", "glasba", "predvajanje",
+             "now playing")
+    try:
+        found = subprocess.run([xdo, "search", "--onlyvisible", "--name", ".*"],
+                               capture_output=True, text=True, timeout=3)
+    except Exception:
+        return []
+    windows = []
+    for wid in (found.stdout or "").split()[:60]:
+        if not wid.isdigit():
+            continue
+        try:
+            cls = subprocess.run([xdo, "getwindowclassname", wid],
+                                 capture_output=True, text=True, timeout=2)
+            title = subprocess.run([xdo, "getwindowname", wid],
+                                   capture_output=True, text=True, timeout=2)
+        except Exception:
+            continue
+        klass = (cls.stdout or "").strip().lower()
+        name = (title.stdout or "").strip()
+        if not any(k in klass for k in ("chrom", "brave", "firefox", "edge",
+                                        "vivaldi", "opera")):
+            continue
+        if not any(hint in name.lower() for hint in hints):
+            continue
+        windows.append({"wid": wid, "title": name})
+    return windows
+
+
 def _window_items() -> list[dict]:
-    """Windows Mia opened, from the mia-open registry (dead ones dropped)."""
+    """Media windows: Mia's registry plus browser windows found by title."""
     entries = read_window_registry(_MEDIA_WINDOW_REGISTRY)
     xdo = shutil.which("xdotool")
     items: list[dict] = []
+    seen: set[str] = set()
     for entry in entries[:25]:
         title = ""
         if xdo:
@@ -546,9 +586,16 @@ def _window_items() -> list[dict]:
             if probe.returncode != 0:
                 continue
             title = (probe.stdout or "").strip()
+        seen.add(entry["wid"])
         items.append({"id": f"window:{entry['wid']}", "kind": "window",
                       "name": title or "okno", "detail": entry["url"],
-                      "state": "open" if title else "unverified"})
+                      "state": "open", "tracked": True})
+    for win in _media_browser_windows():
+        if win["wid"] in seen:
+            continue
+        items.append({"id": f"window:{win['wid']}", "kind": "window",
+                      "name": win["title"], "detail": "najdeno okno brskalnika",
+                      "state": "open", "tracked": False})
     return items
 
 
@@ -641,8 +688,9 @@ def _close_window(wid: str) -> tuple[bool, str]:
     if not str(wid).isdigit():
         return False, "neveljaven id okna"
     entries = read_window_registry(_MEDIA_WINDOW_REGISTRY)
-    if not any(entry["wid"] == wid for entry in entries):
-        return False, "okno ni v Miinem seznamu"
+    tracked = any(entry["wid"] == wid for entry in entries)
+    if not tracked and wid not in {w["wid"] for w in _media_browser_windows()}:
+        return False, "okno ni Miino in ni medijsko okno brskalnika"
     xdo = shutil.which("xdotool")
     if not xdo:
         return False, "xdotool ni nameščen"
@@ -653,12 +701,13 @@ def _close_window(wid: str) -> tuple[bool, str]:
         return False, f"{type(exc).__name__}: {exc}"
     if result.returncode != 0:
         return False, (result.stderr or "zaprtje ni uspelo").strip()[:200]
-    try:
-        _MEDIA_WINDOW_REGISTRY.write_text(
-            render_window_registry([e for e in entries if e["wid"] != wid]),
-            encoding="utf-8")
-    except OSError:
-        pass
+    if tracked:
+        try:
+            _MEDIA_WINDOW_REGISTRY.write_text(
+                render_window_registry([e for e in entries if e["wid"] != wid]),
+                encoding="utf-8")
+        except OSError:
+            pass
     return True, "zaprto"
 
 
@@ -2476,6 +2525,14 @@ async def background_close(request: Request) -> JSONResponse:
                 WS_CLIENTS.discard(client)
         ACTIVE_PANELS.discard(ref)
         ok, message = True, "plošča zaprta"
+    elif kind == "panels":
+        for client in list(WS_CLIENTS):
+            try:
+                await client.send_json({"type": "dismiss_panels"})
+            except Exception:
+                WS_CLIENTS.discard(client)
+        ACTIVE_PANELS.clear()
+        ok, message = True, "vse plošče zaprte"
     elif kind == "service":
         ok, message = await asyncio.to_thread(_stop_service, ref)
     elif kind == "job":
@@ -3862,6 +3919,13 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                                         "message": "utterance submitted" if started else "nothing to submit"})
                 elif etype == "panel_closed":
                     ACTIVE_PANELS.discard(str(event.get("src") or ""))
+                elif etype == "panels_report":
+                    # the HUD keeps its panels across a server restart; without
+                    # this the new process would list none and could not close
+                    for src in event.get("srcs") or []:
+                        src = str(src or "")
+                        if src:
+                            ACTIVE_PANELS.add(src)
                 elif etype == "calibration_start":
                     await _calibration_start(ws, pipeline, conn)
                 elif etype == "calibration_cancel":

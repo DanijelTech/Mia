@@ -716,7 +716,7 @@ async function refreshVerifyQueue(){
 function wsUrl(){return (location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws"}
 function connect(){
   ws=new WebSocket(wsUrl()); ws.binaryType="arraybuffer";
-  ws.onopen=()=>{wsReady=true;$("wsDot").className="dot on";$("wsState").textContent="povezan";$("connState").textContent="POVEZAVA VZPOSTAVLJENA";$("footMsg").textContent="GLASOVNI STREŽNIK POVEZAN";maybeAutoListen()};
+  ws.onopen=()=>{wsReady=true;$("wsDot").className="dot on";$("wsState").textContent="povezan";$("connState").textContent="POVEZAVA VZPOSTAVLJENA";$("footMsg").textContent="GLASOVNI STREŽNIK POVEZAN";reportPanels();maybeAutoListen()};
   ws.onclose=ev=>{wsReady=false;continuous=false;capturing=false;
     if($("contBtn")){$("contBtn").textContent="STALNO";}
     $("wsDot").className="dot off";$("wsState").textContent="brez povezave";$("connState").textContent="POVEZAVA PREKINJENA";setState("standby","PRIPRAVLJEN");
@@ -1338,6 +1338,12 @@ function dismissPanel(p){
   setTimeout(()=>p.remove(),700);  // safety net if animationend is missed
 }
 function dismissAllPanels(){document.querySelectorAll(".holo").forEach(dismissPanel)}
+function reportPanels(){
+  try{
+    const srcs=[...document.querySelectorAll(".holo")].map(p=>p.dataset.src||"").filter(Boolean);
+    if(srcs.length&&ws&&wsReady)ws.send(JSON.stringify({type:"panels_report",srcs}));
+  }catch(_){}
+}
 window.summonPanel=summonPanel; window.dismissAllPanels=dismissAllPanels;
 
 /* ============================== auth gate ========================== */

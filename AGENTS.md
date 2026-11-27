@@ -164,6 +164,16 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   All of them need `xdotool` on Linux; `/api/background` returns a `tools`
   block (xdotool/wmctrl/browser/mia-open/mia-close/DISPLAY/registry) and the
   HUD "V OZADJU" page shows it, so a missing tool is visible instead of silent.
+- The HUD keeps its media panels across a server restart, so the new process
+  would list none. On every WS open the HUD sends `panels_report` with the
+  `.holo` srcs and the server merges them into `ACTIVE_PANELS`;
+  `/api/background/close` with id `panels:all` broadcasts `dismiss_panels`
+  regardless of that set. Do not remove either path — without them the user
+  cannot close a panel that is playing behind the HUD viewer.
+- `/api/background` lists untracked media browser windows too (xdotool scan of
+  visible browser windows whose title matches media hints) and
+  `_close_window` accepts them; the registry stays the only source for
+  non-media windows.
 - `/api/background/close` closes a window only when its id is in Mia's
   `~/.cache/mia-windows` registry; never accept an arbitrary window id.
   Stack services are stopped through their configured pidfile (or systemd

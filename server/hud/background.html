@@ -96,6 +96,11 @@ tr:hover td{background:#081523}
 
 <div class="card">
   <h3><span>HOLOGRAMSKE PLOŠČE</span><span class="num">02</span></h3>
+  <div class="btns" style="margin-bottom:6px">
+    <button id="panelsAllBtn" class="danger">ZAPRI VSE PLOŠČE NA HUD-U</button>
+  </div>
+  <div class="hint">Če se glasba še vedno predvaja, pritisni zgornji gumb: zapre
+    tudi plošče, ki jih trenutni strežnik ne pozna (npr. po restartu).</div>
   <table><thead><tr><th>Vsebina</th><th>Vir</th><th></th></tr></thead>
     <tbody id="panelsRows"><tr><td colspan="3" class="dim">nalagam …</td></tr></tbody></table>
 </div>
@@ -133,7 +138,7 @@ async function closeItem(id){
 
 function renderWindows(items){
   $("windowsRows").innerHTML=items.length?items.map(i=>`<tr>
-    <td><b>${esc(i.name)}</b></td>
+    <td><b>${esc(i.name)}</b> ${i.tracked?"":'<span class="chip open">najdeno</span>'}</td>
     <td class="code">${esc(i.detail)}</td>
     <td><button class="danger" data-close="${esc(i.id)}">ZAPRI</button></td></tr>`).join("")
     :emptyRow(3,"ni odprtih medijskih oken");
@@ -233,6 +238,11 @@ $("stopAllBtn").onclick=async()=>{
 $("overrideSwitch").onclick=async()=>{
   const on=!$("overrideSwitch").classList.contains("on");
   try{await post("/api/background/override",{enabled:on})}catch(e){alert(e.message)}
+  await load();
+};
+$("panelsAllBtn").onclick=async()=>{
+  try{await post("/api/background/close",{id:"panels:all"})}
+  catch(e){alert("ni uspelo: "+e.message)}
   await load();
 };
 $("overrideSwitch").addEventListener("keydown",e=>{
