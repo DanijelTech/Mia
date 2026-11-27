@@ -533,7 +533,7 @@ else
     SCTL=(systemctl --user); WANTED="default.target"
   fi
   unit() { # $1 = name, $2 = script, $3 = extra exec args
-    local file="$SERVICE_DIR/mia-$1.service" caps="" deps=""
+    local file="$SERVICE_DIR/mia-$1.service" caps="" deps="" envline=""
     # AmbientCapabilities is invalid for user services (systemd exits with
     # 218/CAPABILITIES); root does not need it either.
     if [ "$MODE" = "system" ] && [ "$(id -u)" != "0" ]; then
@@ -543,6 +543,7 @@ else
     # user unit just produces warnings.
     [ "$MODE" = "system" ] && deps="After=network-online.target
 Wants=network-online.target"
+    [ -n "${UNIT_ENV:-}" ] && envline="Environment=$UNIT_ENV"
     cat > "$file" <<UNIT
 [Unit]
 Description=Mia $1 ($REPO_DIR)
@@ -556,6 +557,7 @@ Restart=always
 RestartSec=5
 LimitNOFILE=8192
 $caps
+$envline
 Environment=PYTHONUNBUFFERED=1
 
 [Install]
@@ -575,7 +577,21 @@ extra = ((cfg.get("tts") or {}).get("http") or {}).get("args") or []
 print(" ".join(str(a) for a in extra))
 PY
 )"
+      if [ "$TTS_ENGINE" = "maya1" ]; then
+        read -r MAYA_VOICE MAYA_GPU < <($PYTHON - "$CFG" <<'PY' 2>/dev/null
+import sys, yaml
+cfg = yaml.safe_load(open(sys.argv[1])) or {}
+maya = ((cfg.get("tts") or {}).get("maya1") or {})
+print(maya.get("voice") or "zenski-nezni", maya.get("gpu_id") or "1")
+PY
+)
+        TTS_EXTRA="$TTS_EXTRA --maya-voice ${MAYA_VOICE:-zenski-nezni}"
+        if [ -n "${MAYA_GPU:-}" ] && [ "$MAYA_GPU" != "auto" ]; then
+          UNIT_ENV="CUDA_VISIBLE_DEVICES=$MAYA_GPU"
+        fi
+      fi
       unit tts "scripts/gepard_tts.py" "--serve --port $PORT_TTS --engine $TTS_ENGINE --fallback-piper $TTS_EXTRA"
+      UNIT_ENV=""
     fi
     if [ ! -d /run/systemd/system ]; then
       warn "systemd is not running here — unit written to $SERVICE_DIR, not activated"

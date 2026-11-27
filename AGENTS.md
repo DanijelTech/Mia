@@ -92,6 +92,11 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   wrapper speaks with Piper instead of failing the turn; set `tts.fallback: ""`
   to disable. `start-mia.sh` passes `--fallback-piper` to the manual Maya1
   service too.
+- The `mia-tts` systemd unit is generated at install time. Maya1 voice comes
+  from `tts.maya1.voice` and `CUDA_VISIBLE_DEVICES` from `tts.maya1.gpu_id`;
+  re-run `./install.sh --tts-engine maya1` after changing them, or the unit
+  keeps the old (default male) voice. Check `/health` on :8770 for
+  `engine`/`voice`; `piper` there means the fallback is speaking.
 
 - Before a turn, `LEARNING.brief(transcript)` is prepended to the payload.
 - After a turn, `LEARNING.record_turn(...)` writes an episode; successful
