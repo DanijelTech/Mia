@@ -446,13 +446,12 @@ def _save_ui_state() -> None:
 async def _stop_all_media(auto: bool = True) -> bool:
     """Stop every playback path: HUD panels + desktop media windows.
 
-    `auto` marks the implicit stop before a new track; the manual override
-    skips only those, never an explicit »ustavi«. Returns True when something
+    `auto` marks the implicit stop before a new track. The manual override
+    keeps the desktop windows (the user wants them) but the HUD panel is still
+    replaced, otherwise two panels play at once. Returns True when something
     was actually up.
     """
-    if auto and _manual_override():
-        print("MEDIA stop skipped — manual override is on", flush=True)
-        return False
+    override = auto and _manual_override()
     stopped = bool(ACTIVE_PANELS)
     for client in list(WS_CLIENTS):
         try:
@@ -460,6 +459,9 @@ async def _stop_all_media(auto: bool = True) -> bool:
         except Exception:
             WS_CLIENTS.discard(client)
     ACTIVE_PANELS.clear()
+    if override:
+        print("MEDIA windows kept — manual override is on", flush=True)
+        return stopped
 
     tool = find_tool("mia-close")
     if tool is None:

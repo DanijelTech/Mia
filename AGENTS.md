@@ -153,10 +153,11 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   CPU/GPU load the user does not want. Do not reintroduce it; the HUD centre
   is the `#reactor` ring only. `strip_speech_tags()` still removes
   `[mood:…]`/`[gesture:…]` tags before TTS.
-- `manual_override` (`server/logs/ui-state.json`) suppresses only the
-  *implicit* stop before a new track (`_stop_all_media(auto=True)`). Explicit
-  stops, `/api/music/stop` and `/api/background/close*` must pass
-  `auto=False`, otherwise the user cannot stop playback while it is on.
+- `manual_override` (`server/logs/ui-state.json`) keeps desktop windows when a
+  new track starts (`_stop_all_media(auto=True)`); the HUD panel is still
+  replaced so two panels never play at once. Explicit stops,
+  `/api/music/stop` and `/api/background/close*` must pass `auto=False`,
+  otherwise the user cannot stop playback while the override is on.
 - `/api/background/close` closes a window only when its id is in Mia's
   `~/.cache/mia-windows` registry; never accept an arbitrary window id.
   Stack services are stopped through their configured pidfile (or systemd
