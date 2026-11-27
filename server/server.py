@@ -601,6 +601,26 @@ def _stack_services() -> list[dict]:
     return items
 
 
+_BROWSER_CANDIDATES = ("google-chrome", "google-chrome-stable", "chromium",
+                       "chromium-browser", "brave-browser", "microsoft-edge",
+                       "vivaldi-stable")
+
+
+def _background_tools() -> dict:
+    """Why closing a window may not work: the tools it needs."""
+    return {
+        "xdotool": bool(shutil.which("xdotool")),
+        "wmctrl": bool(shutil.which("wmctrl")),
+        "browser": next((b for b in _BROWSER_CANDIDATES
+                         if shutil.which(b)), ""),
+        "mia_open": bool(find_tool("mia-open")),
+        "mia_close": bool(find_tool("mia-close")),
+        "display": bool(os.environ.get("DISPLAY")
+                        or os.environ.get("WAYLAND_DISPLAY")),
+        "registry": len(read_window_registry(_MEDIA_WINDOW_REGISTRY)),
+    }
+
+
 def _probe(url: str) -> bool:
     try:
         return requests.get(url, timeout=1.5).status_code < 500
@@ -707,8 +727,14 @@ def _open_visible_url(url: str) -> bool:
     candidates += [["xdg-open", url], ["open", url]]
     for argv in candidates:
         try:
-            result = subprocess.run(argv, capture_output=True, timeout=30)
+            result = subprocess.run(argv, capture_output=True, text=True,
+                                    timeout=30)
             if result.returncode == 0:
+                err = (result.stderr or "").strip()
+                if err:
+                    # e.g. "xdotool missing" or "window id not detected":
+                    # without it the window opens but can never be closed
+                    print(f"OPEN {argv[0]}: {err[:200]}", flush=True)
                 return True
         except FileNotFoundError:
             continue
@@ -1523,6 +1549,7 @@ _DEFAULT_HERMES_EXTRA = (
     "mia-*. Za dejanja na stroju uporabi mia-ctl prek system_command/planov, ne "
     "izmišljuj surovih shell ukazov. Repo je v MIA_HOME (privzeto ~/Mia); "
     "mia-ctl je v skills/mia-companion/bin/mia-ctl, mia-auto pa ob njem. "
+    "Okna, ki jih Mia odpre, zapreš z `mia-ctl media close` (ali `mia-close`). "
     "Vsako dejanje preveri in ne trdi, da je uspelo, če orodje ni vrnilo uspeha."
 )
 
@@ -2421,6 +2448,7 @@ async def background_list() -> JSONResponse:
     items = windows + panels + services + jobs
     return JSONResponse({
         "override": _manual_override(),
+        "tools": await asyncio.to_thread(_background_tools),
         "items": items,
         "counts": {"windows": len(windows), "panels": len(panels),
                    "services": len(services), "jobs": len(jobs)},

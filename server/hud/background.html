@@ -82,6 +82,12 @@ tr:hover td{background:#081523}
 </div>
 
 <div class="card">
+  <h3><span>ORODJA ZA ZAPIRANJE OKEN</span><span class="num">00</span></h3>
+  <div id="toolsRow" class="btns"><span class="chip">preverjam …</span></div>
+  <div class="hint" id="toolsHint"></div>
+</div>
+
+<div class="card">
   <h3><span>MEDIJSKA OKNA</span><span class="num">01</span></h3>
   <div class="hint">Okna, ki jih je Mia odprla. Zapri jih tu, če v ozadju igra več stvari.</div>
   <table><thead><tr><th>Okno</th><th>Povezava</th><th></th></tr></thead>
@@ -160,6 +166,27 @@ function renderJobs(items){
     :emptyRow(4,"ni aktivnih opravil");
 }
 
+function renderTools(t){
+  t=t||{};
+  const chips=[["xdotool",t.xdotool],["wmctrl",t.wmctrl],
+               ["brskalnik",!!t.browser],["mia-open",t.mia_open],
+               ["mia-close",t.mia_close],["DISPLAY",t.display]];
+  $("toolsRow").innerHTML=chips.map(([n,ok])=>
+    `<span class="chip ${ok?"up":"down"}">${n}: ${ok?"OK":"MANJKA"}</span>`).join("")
+    +`<span class="chip open">registriranih oken: ${t.registry??0}</span>`;
+  const missing=[];
+  if(!t.xdotool)missing.push("xdotool");
+  if(!t.wmctrl)missing.push("wmctrl");
+  if(!t.mia_close)missing.push("mia-close");
+  if(!t.browser)missing.push("Chromium/Chrome");
+  $("toolsHint").textContent = missing.length
+    ? "Manjka: "+missing.join(", ")+" — brez tega Mia oken ne more zapreti. "
+      +"Namesti: sudo apt install xdotool wmctrl (Chromium/Chrome ločeno)."
+    : (t.registry===0
+        ? "Orodja so pripravljena; Mia še ni odprla okna (registracija se zgodi ob odpiranju)."
+        : "Orodja so pripravljena; vsa Miina okna so v registru in jih lahko zapreš spodaj.");
+}
+
 function renderOverride(on){
   const sw=$("overrideSwitch");
   sw.classList.toggle("on",!!on);
@@ -178,6 +205,7 @@ async function load(){
     renderPanels(by("panel"));
     renderServices(by("service"));
     renderJobs(by("job"));
+    renderTools(j.tools);
     renderOverride(j.override);
     const c=j.counts||{};
     $("sWindows").textContent=c.windows??by("window").length;

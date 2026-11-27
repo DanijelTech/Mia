@@ -143,11 +143,16 @@ the local learning database automatically. Your job is to add the meaning:
 
 ## Desktop windows and music (summary)
 
-- Open any window: `mia-open "<URL>"`; close: `mia-close "<URL or domain>"`;
-  close everything Mia opened: `mia-close all`. Never use plain
-  `google-chrome --new-window` or `pkill` patterns — they leak windows.
+- Open any window: `mia-open "<URL>"`; close: `mia-close "<URL or domain>"`
+  (several patterns allowed: `mia-close youtube spotify`); close everything
+  Mia opened: `mia-close all`. Never use plain `google-chrome --new-window`
+  or `pkill` patterns — they leak windows.
+- The same close is available through the audited CLI:
+  `mia-ctl media close [pattern…]` (no pattern = every window Mia opened) and
+  `mia-ctl windows close` (same). Use it when you are inside a plan or the
+  Hermes tool path; it reports `closed` and the reason on failure.
 - One song at a time: before a new track stop both paths —
-  `mia-close https://www.youtube.com` **and** `hud_dismiss`.
+  `mia-ctl media close youtube` **and** `hud_dismiss`.
 - Full music rules, history and favourite artists: **mia-music**.
 - Full desktop control vocabulary: **mia-desktop**.
 

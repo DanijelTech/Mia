@@ -57,6 +57,7 @@ hermes:
     mia-*. Za dejanja na stroju uporabi mia-ctl prek system_command/planov, ne
     izmišljuj surovih shell ukazov. Repo je v MIA_HOME (privzeto ~/Mia);
     mia-ctl je v skills/mia-companion/bin/mia-ctl, mia-auto pa ob njem.
+    Okna, ki jih Mia odpre, zapreš z `mia-ctl media close` (ali `mia-close`).
     Vsako dejanje preveri in ne trdi, da je uspelo, če orodje ni vrnilo uspeha.
 
   language_directive: "Odgovarjaj izključno v slovenščini, v kratkih govorjenih povedih."

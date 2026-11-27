@@ -534,6 +534,16 @@ def _find_window(ref: str) -> dict:
 def windows_action(action: str, args: argparse.Namespace) -> Any:
     kind = desktop()
     ref = getattr(args, "ref", "") or ""
+    if action == "close" and not ref:
+        tool = _mia_helper("mia-close")
+        if not tool:
+            raise Unsupported("mia-close is not installed")
+        rc, out, err = sh([tool, "all"], check=False)
+        if rc != 0:
+            raise CtlError((err or out).strip()[:300] or "mia-close failed")
+        closed = [line for line in out.splitlines() if line.startswith("closed:")]
+        return {"action": "close", "closed": len(closed), "rc": rc,
+                "output": out.strip()[:500]}
     win = _find_window(ref) if ref else {}
     wid = str(win.get("id", ""))
     if kind == "x11":
@@ -997,7 +1007,25 @@ def notify(title: str, body: str = "") -> dict:
 
 
 # ------------------------------------------------------------------- media
-def media_action(action: str) -> dict:
+def _mia_helper(name: str) -> str | None:
+    """mia-open/mia-close live next to this script; PATH may not have them."""
+    candidate = Path(__file__).resolve().parent / name
+    if candidate.is_file() and os.access(str(candidate), os.X_OK):
+        return str(candidate)
+    return which(name)
+
+
+def media_action(action: str, patterns: list[str] | None = None) -> dict:
+    if action == "close":
+        tool = _mia_helper("mia-close")
+        if not tool:
+            raise Unsupported("mia-close is not installed")
+        rc, out, err = sh([tool, *(patterns or ["all"])], check=False)
+        if rc != 0:
+            raise CtlError((err or out).strip()[:300] or "mia-close failed")
+        closed = [line for line in out.splitlines() if line.startswith("closed:")]
+        return {"action": "close", "closed": len(closed), "rc": rc,
+                "output": out.strip()[:500]}
     kind = desktop()
     if kind in ("x11", "sway", "hyprland", "wayland"):
         if which("playerctl"):
@@ -2372,8 +2400,12 @@ def capabilities() -> dict:
         "audit": str(AUDIT_PATH),
         "audit_exists": AUDIT_PATH.exists(),
         "tools": {name: bool(which(name)) for name in tools},
+        "helpers": {"mia-open": bool(_mia_helper("mia-open")),
+                    "mia-close": bool(_mia_helper("mia-close"))},
         "features": {
             "windows": desktop() in ("x11", "sway", "hyprland", "macos", "windows"),
+            "window_close": bool(_mia_helper("mia-close"))
+                            and (desktop() != "x11" or bool(which("xdotool"))),
             "typing": desktop() in ("x11", "macos", "windows") or bool(which("wtype") or which("ydotool")),
             "mouse": desktop() in ("x11", "macos", "windows") or bool(which("ydotool") or which("cliclick")),
             "screenshot": bool(which("grim") or which("gnome-screenshot") or which("spectacle")
@@ -2596,7 +2628,11 @@ def build_parser() -> argparse.ArgumentParser:
     wa.add_parser("list")
     for name in ("focus", "close", "minimize", "maximize", "restore"):
         wp = wa.add_parser(name)
-        wp.add_argument("ref", help="window id, title substring or app name")
+        if name == "close":
+            wp.add_argument("ref", nargs="?", default="",
+                            help="window id/title, or empty = windows Mia opened")
+        else:
+            wp.add_argument("ref", help="window id, title substring or app name")
     wm = wa.add_parser("move")
     wm.add_argument("ref")
     wm.add_argument("--x", type=int)
@@ -2647,9 +2683,11 @@ def build_parser() -> argparse.ArgumentParser:
     nt.add_argument("title")
     nt.add_argument("body", nargs="?", default="")
 
-    md = sub.add_parser("media", help="play/pause/next/previous/status")
+    md = sub.add_parser("media", help="play/pause/next/previous/status/close")
     md.add_argument("action", choices=["play-pause", "next", "previous", "play",
-                                       "pause", "stop", "status"])
+                                       "pause", "stop", "status", "close"])
+    md.add_argument("patterns", nargs="*",
+                    help="URL/domain patterns for close (default: all Mia windows)")
 
     vo = sub.add_parser("volume", help="control the default audio output")
     vo.add_argument("action", choices=["up", "down", "set", "mute", "status"])
@@ -2946,7 +2984,7 @@ def dispatch(args: argparse.Namespace) -> Any:
     if cmd == "notify":
         return notify(args.title, args.body)
     if cmd == "media":
-        return media_action(args.action)
+        return media_action(args.action, getattr(args, "patterns", []))
     if cmd == "volume":
         return volume_action(args.action, args.value)
     if cmd == "brightness":

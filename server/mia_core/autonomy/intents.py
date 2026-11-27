@@ -286,6 +286,17 @@ def _media_play(m, text, flat):
                    reply="Predvajam.")
 
 
+@_rule(r"^(?:ustavi|ustavite|zaustavi|prekini|prekinite|ugasni|ugasnite|"
+       r"zapri|zaprite|close|stop)\s+"
+       r"(?:vsa\s+|vse\s+|oba\s+|obe\s+)?(?:okna\s+|okno\s+)?(?:na\s+)?"
+       r"(?:the\s+|a\s+|an\s+)?"
+       r"(?:youtube|jutub|yt|glasb\w*|muzik\w*|glazb\w*|pesem|pesmi|"
+       r"predvajanje|video|film|music|song)\b")
+def _media_close(m, text, flat):
+    return _action("media.close", "media", args={"action": "close"},
+                   reply="Zapiram predvajanje.")
+
+
 @_rule(r"^(?:pavziraj|pavza|pause|ustavi predvajanje|ustavi glasbo)\b")
 def _media_pause(m, text, flat):
     return _action("media.pause", "media", args={"action": "pause"},

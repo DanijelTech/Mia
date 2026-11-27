@@ -72,8 +72,8 @@ hud_dismiss()
 ## Desktop windows
 
 - Open: `mia-open "<url>"`.
-- Close: `mia-close "<domain or url part>"`; close all Mia windows:
-  `mia-close all`.
+- Close: `mia-close "<domain or url part>"` (several allowed); close all Mia
+  windows: `mia-close all` or `mia-ctl media close`.
 - If a window »did not open«, retry `mia-open` once, then fall back to
   `xdg-open <url>` (not closable by `mia-close`).
 - Never use `google-chrome --new-window` or `pkill` patterns for windows Mia

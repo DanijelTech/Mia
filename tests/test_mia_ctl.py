@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -94,6 +95,54 @@ class CtlTests(unittest.TestCase):
         result = self.run_ctl("windows", "list")
         self.assertEqual(result.returncode, 3)
         self.assertIn("window manager", result.stderr.lower())
+
+    def _stub_xdotool(self) -> Path:
+        bindir = self.home / "bin"
+        bindir.mkdir(exist_ok=True)
+        stub = bindir / "xdotool"
+        stub.write_text("""#!/bin/sh
+case "$1" in
+  windowclose) exit 0;;
+  getwindowname) echo "Pesem - YouTube";;
+  getwindowclassname) echo "Google-chrome";;
+  search) printf "111\\n";;
+esac
+exit 0
+""", encoding="utf-8")
+        stub.chmod(0o755)
+        return bindir
+
+    def _registry(self) -> Path:
+        cache = self.home / ".cache"
+        cache.mkdir(exist_ok=True)
+        reg = cache / "mia-windows"
+        reg.write_text("111\thttps://www.youtube.com/watch?v=a\n", encoding="utf-8")
+        return reg
+
+    def test_media_close_closes_registered_windows(self):
+        bindir = self._stub_xdotool()
+        reg = self._registry()
+        env = dict(self.env, PATH=f"{bindir}:{os.environ.get('PATH', '')}")
+        result = subprocess.run(
+            [sys.executable, str(CTL), "media", "close", "youtube", "--json"],
+            capture_output=True, text=True, env=env, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["ok"], payload)
+        self.assertEqual(payload["data"]["closed"], 1)
+        self.assertEqual(reg.read_text(encoding="utf-8"), "")
+
+    def test_media_close_reports_a_missing_tool(self):
+        self._registry()
+        env = dict(self.env, PATH="/usr/local/bin:/usr/bin:/bin")
+        result = subprocess.run(
+            [sys.executable, str(CTL), "media", "close", "youtube", "--json"],
+            capture_output=True, text=True, env=env, timeout=60)
+        payload = json.loads(result.stdout)
+        if shutil.which("xdotool", path=env["PATH"]):
+            self.skipTest("xdotool is installed in this environment")
+        self.assertFalse(payload["ok"])
+        self.assertIn("xdotool", json.dumps(payload).lower())
 
     def test_protected_pid_cannot_be_killed(self):
         result = self.run_ctl("process", "kill", "1", "--yes", "--json")

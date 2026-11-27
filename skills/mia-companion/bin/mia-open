@@ -32,12 +32,16 @@ if ! open_chromium "$1"; then
   echo "mia-open: no Chromium-based browser found (google-chrome, chromium, brave, edge, vivaldi) — use xdg-open" >&2
   exit 1
 fi
-sleep 3
-after=$(xdotool search --onlyvisible --class 'chrom|Chrom|brave|Brave|vivaldi|Vivaldi|edge|Edge' 2>/dev/null)
-
-wid=""
-for w in $after; do
-    case " $before " in *" $w "*) ;; *) wid="$w" ;; esac
+# Chrome forwards --new-window to the running instance, so the new window
+# appears asynchronously: poll instead of trusting one snapshot.
+wid=""; i=0
+while [ "$i" -lt 24 ]; do
+    after=$(xdotool search --onlyvisible --class 'chrom|Chrom|brave|Brave|vivaldi|Vivaldi|edge|Edge' 2>/dev/null)
+    for w in $after; do
+        case " $before " in *" $w "*) ;; *) wid="$w" ;; esac
+    done
+    [ -n "$wid" ] && break
+    i=$((i + 1)); sleep 0.5
 done
 # deterministic open-history: the agent reads this for "what did I play before"
 printf '%s\t%s\n' "$(date '+%Y-%m-%d %H:%M')" "$1" >> "$HOME/.cache/mia-history.log"

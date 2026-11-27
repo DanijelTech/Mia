@@ -158,6 +158,12 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   replaced so two panels never play at once. Explicit stops,
   `/api/music/stop` and `/api/background/close*` must pass `auto=False`,
   otherwise the user cannot stop playback while the override is on.
+- Window closing has three entry points that must stay in sync: `mia-close`
+  (shell, registry + title fallback), `mia-ctl media close [pattern…]`
+  (audited, for the agent/plans) and `media.close` in `autonomy/intents.py`.
+  All of them need `xdotool` on Linux; `/api/background` returns a `tools`
+  block (xdotool/wmctrl/browser/mia-open/mia-close/DISPLAY/registry) and the
+  HUD "V OZADJU" page shows it, so a missing tool is visible instead of silent.
 - `/api/background/close` closes a window only when its id is in Mia's
   `~/.cache/mia-windows` registry; never accept an arbitrary window id.
   Stack services are stopped through their configured pidfile (or systemd

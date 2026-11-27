@@ -466,6 +466,11 @@ class AutonomyService:
         action = args.get("action") or "status"
         payload = self._ctl(["media", action])
         text = "Predvajanje." if payload.get("ok") else ""
+        if action == "close":
+            data = payload.get("data") or {}
+            closed = int(data.get("closed") or 0)
+            text = ("Zaprla sem predvajanje." if closed
+                    else "Ničesar nisem našla za zapreti.")
         if action == "status" and payload.get("ok"):
             data = payload.get("data") or {}
             text = (f"Predvaja se {data.get('title')}." if data.get("title")

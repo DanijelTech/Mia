@@ -636,6 +636,30 @@ for tool in mia-open mia-close mia-volume mia-artists mia-learn mia-skill mia-ct
 done
 info "tools installed into $BIN_DIR"
 
+# window control: mia-open/close register and close windows through xdotool
+if [ "$(uname -s)" != "Darwin" ]; then
+  if [ "$DO_SYSTEM_PKGS" = 1 ]; then
+    for pkg in xdotool wmctrl; do
+      command -v "$pkg" >/dev/null 2>&1 && continue
+      if [ "$(id -u)" = "0" ] || [ "$MODE" = "system" ]; then
+        if command -v apt-get >/dev/null 2>&1; then
+          run apt-get install -y "$pkg" || warn "could not install $pkg — Mia cannot close windows without it"
+        elif command -v dnf >/dev/null 2>&1; then
+          run dnf install -y "$pkg" || warn "could not install $pkg — Mia cannot close windows without it"
+        elif command -v pacman >/dev/null 2>&1; then
+          run pacman -S --noconfirm "$pkg" || warn "could not install $pkg — Mia cannot close windows without it"
+        else
+          warn "$pkg missing — install it (Mia cannot close windows without it)"
+        fi
+      else
+        warn "$pkg missing: run 'sudo apt install $pkg' (Mia cannot close windows without it)"
+      fi
+    done
+  else
+    info "skip system packages (--no-system-pkgs) — make sure xdotool and wmctrl are present"
+  fi
+fi
+
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) warn "$BIN_DIR is not on PATH — add it to your shell profile" ;;
@@ -751,6 +775,7 @@ $([ "$DRY_RUN" = 1 ] && printf '\033[1;33mDry run complete — nothing was chang
   service     ${SERVICE_KIND:-none}${SERVICE_DIR:+ ($SERVICE_DIR)}${SERVICE_OK:+ [running: $SERVICE_OK]}
   tts engine  $TTS_ENGINE
   tts deps    $TTS_DEPS
+  windows     xdotool $(command -v xdotool >/dev/null 2>&1 && echo OK || echo MISSING) · wmctrl $(command -v wmctrl >/dev/null 2>&1 && echo OK || echo MISSING)
   learning    ${BIN_DIR:-$HOME/.local/bin}/mia-learn  ·  $HOME/.local/state/mia/learning.db
   autonomy    ${BIN_DIR:-$HOME/.local/bin}/mia-auto  ·  jobs, rules, health, adaptation
   control     $HOME/.config/mia/control.json  ·  $HOME/.local/state/mia/control-audit.jsonl

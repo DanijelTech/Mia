@@ -289,6 +289,10 @@ class IntentTests(unittest.TestCase):
         ("počisti disk", "plan", "plan.cleanup"),
         ("posodobi sistem", "plan", "plan.system_update"),
         ("preveri posodobitve", "action", "pkg.list-upgradable"),
+        ("ustavi youtube", "action", "media.close"),
+        ("zapri vsa okna youtube", "action", "media.close"),
+        ("ugasni glasbo", "action", "media.close"),
+        ("pavziraj", "action", "media.pause"),
         ("opomni me čez 10 minut, da pijem vodo", "schedule", "schedule.reminder"),
         ("vsak dan ob 8:00 mi povej dobro jutro", "schedule", "schedule.daily"),
         ("vsakih 30 minut preveri pošto", "schedule", "schedule.every"),
@@ -316,6 +320,11 @@ class IntentTests(unittest.TestCase):
                      "kako se počutiš danes"):
             with self.subTest(text=text):
                 self.assertIsNone(intents.route(text))
+
+    def test_window_commands_are_not_hijacked_by_media_close(self):
+        self.assertEqual(intents.route("zapri brskalnik").name, "apps.quit")
+        self.assertEqual(intents.route("zapri vsa okna").name, "window.close_all")
+        self.assertEqual(intents.route("ustavi proces chrome").name, "process.kill")
 
     def test_confirmation_flags(self):
         self.assertTrue(intents.route("ugasni računalnik").confirmation)

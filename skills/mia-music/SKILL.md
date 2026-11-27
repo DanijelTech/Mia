@@ -30,6 +30,8 @@ Before starting a new track, stop the old one on **both** paths:
 
 ```bash
 mia-close youtube youtu.be soundcloud spotify
+# or, through the audited CLI (same effect, reports what it closed):
+mia-ctl media close youtube youtu.be soundcloud spotify
 ```
 
 and
