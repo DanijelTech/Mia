@@ -534,6 +534,8 @@ else
   fi
   unit() { # $1 = name, $2 = script, $3 = extra exec args
     local file="$SERVICE_DIR/mia-$1.service" caps="" deps="" envline=""
+    local bin_dir="$HOME/.local/bin"
+    [ "$MODE" = "system" ] && [ "$(id -u)" = "0" ] && bin_dir="/usr/local/bin"
     # AmbientCapabilities is invalid for user services (systemd exits with
     # 218/CAPABILITIES); root does not need it either.
     if [ "$MODE" = "system" ] && [ "$(id -u)" != "0" ]; then
@@ -559,6 +561,8 @@ LimitNOFILE=8192
 $caps
 $envline
 Environment=PYTHONUNBUFFERED=1
+# the login shell's PATH is not inherited: mia-open/mia-close/mia-volume live here
+Environment=PATH=$bin_dir:/usr/local/bin:/usr/bin:/bin
 
 [Install]
 WantedBy=$WANTED

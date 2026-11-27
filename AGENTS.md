@@ -158,6 +158,22 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
 
 - The repository was cloned shallow; use `git fetch --unshallow` before
   history-dependent operations.
+- Media control is deterministic and must stay so: `media_stop_request()`
+  (pure, in `integration.py`) runs before the music parser and before the
+  autonomy router in both `/api/chat` and the voice turn. Without it,
+  »ustavi youtube« and »zapri vsa okna youtube« contain a music word, the
+  play parser returned `''` ("play a favourite") and the user got yet another
+  song instead of silence; »ugasni glasbo« even reached the power-shutdown
+  rule. `music_play_request()` now returns `None` when no play verb matches —
+  do not loosen that back.
+- `mia-open`/`mia-close` must be resolved with `find_tool()`, not bare names:
+  systemd units do not inherit `~/.local/bin` from the login shell, so a bare
+  `mia-close` raised FileNotFoundError and was swallowed — windows opened but
+  never closed. `mia-close` takes several URL patterns and falls back to
+  browser window titles (for windows opened by `xdg-open`); without `xdotool`
+  it exits 3 with a message. A failed `windowclose` keeps its registry entry.
+- `server/hud/index.html::dismissPanel()` blanks the iframe/video source before
+  the 700 ms exit animation, otherwise two panels overlap audibly.
 - `start-mia.sh` health means `http_ready` (HTTP status < 500), not "the port
   answers". llama-server binds early and returns 503 `Loading model` until the
   GGUF is loaded; a bare socket check reported "up" while the 12B model was

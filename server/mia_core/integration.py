@@ -211,29 +211,77 @@ def music_play_request(text: str, fav_match=None) -> str | None:
         return None
 
     patterns = (
+        # »zamenjaj/spremeni/daj glasbo« = another track, not a new search
+        r"^(?:zamenjaj|spremeni|menjaj|daj|drugo|druga|novo|nova|naslednjo|naslednja)"
+        r"\s+(?:glasbo|muziko|glazbo|pesem|pesmi|predvajanje)\s*(.*)$",
         r"^(?:na\s+)?(?:youtube|jutub|yt)\s+(?:mi\s+)?(?:pusti|predvajaj|zaigraj|poisci|poišči|najdi)\s+(.*)$",
-        r"^(?:pusti|predvajaj|zaigraj)(?:\s+mi)?\s+(?:na\s+)?(?:youtube|jutub|yt)\s*(.*)$",
+        r"^(?:pusti|pustite|predvajaj|predvajajte|zaigraj|zaigrajte)(?:\s+mi)?\s+(?:na\s+)?(?:youtube|jutub|yt)\s*(.*)$",
         r"^(?:poisci|poišči|najdi|nadi|pronađi|pronadi)\s+(?:na\s+)?(?:youtube|jutub|yt)\s+(.*)$",
         r"^(?:poisci|poišči|najdi|nadi|pronađi|pronadi)\s+(.*)$",
-        r"^pusti(?:te)?(?:\s+mi)?\s+(.*)$",
-        r"^zaigraj(?:\s+mi)?\s+(.*)$",
+        r"^(?:pusti|pustite|predvajaj|predvajajte|zaigraj|zaigrajte)(?:\s+mi)?\s+(.*)$",
     )
     query = ""
+    matched = False
     for pattern in patterns:
         match = re.match(pattern, flat)
         if match:
             query = match.group(1)
+            matched = True
             break
-    else:
-        # »na youtube pusti muziko« has the verb after the platform
-        match = re.match(
-            r"^(?:na\s+)?(?:youtube|jutub|yt)\s+(.*)$", flat)
-        if match:
-            query = match.group(1)
+    if not matched:
+        # A music word alone is not a play command: »ustavi youtube« and
+        # »zapri vsa okna youtube« must fall through, not start a new song.
+        return None
+    query = re.sub(r"^(?:pusti(?:te)?|predvajaj(?:te)?|zaigraj(?:te)?|play)\s+",
+                   "", query.strip())
     for junk in _MUSIC_JUNK:
         query = query.replace(junk, " ")
     query = re.sub(r"^od\s+", "", query.strip())
     return re.sub(r"\s+", " ", query).strip()
+
+
+_STOP_VERBS = frozenset({
+    "ustavi", "ustavite", "zaustavi", "zaustavite", "prekini", "prekinite",
+    "nehaj", "nehajte", "neham", "nehamo", "koncaj", "koncajte", "ugasni",
+    "ugasnite", "utisaj", "utisajte", "stop", "dovolj", "zapri", "zaprite",
+    "close",
+})
+_SHORT_STOP = frozenset({
+    "ustavi", "ustavite", "zaustavi", "zaustavite", "prekini", "prekinite",
+    "nehaj", "nehajte", "neham", "koncaj", "koncajte", "ugasni", "ugasnite",
+    "utisaj", "utisajte", "stop", "dovolj",
+})
+_STOP_MEDIA = ("glasb", "muzik", "glazb", "pesem", "pesmi", "pesmo",
+               "predvaja", "youtube", "jutub", "radio", "video", "film",
+               "panel", "music", "song", "playback", " yt ")
+_STOP_PHRASES = ("pocisti zaslon", "umakni z zaslona", "ugasni panel",
+                 "clear screen")
+
+
+def media_stop_request(text: str) -> bool:
+    """True for »ustavi youtube«, »zapri vsa okna youtube«, »dovolj glasbe«.
+
+    Checked before the music parser and before the command router: those
+    phrases contain a music word but are the opposite of a play request, and
+    »ugasni glasbo« must never reach the power-shutdown rule.
+    """
+    flat = _fold(text)
+    if not flat:
+        return False
+    if any(phrase in flat for phrase in _STOP_PHRASES):
+        return True
+    words = flat.split()
+    if len(words) == 1 and words[0] in _SHORT_STOP:
+        return True
+    if not any(word in _STOP_VERBS for word in words[:3]):
+        return False
+    padded = f" {flat} "
+    if any(target in padded for target in _STOP_MEDIA):
+        return True
+    # »zapri vsa okna« is media control only with a media word in the sentence
+    if "okn" in flat and any(w in words for w in ("vsa", "vse", "oba", "obe")):
+        return any(w in flat for w in ("youtube", "jutub", "glasb", "muzik"))
+    return False
 
 
 _WEEKDAYS_SL = ("ponedeljek", "torek", "sreda", "četrtek", "petek",

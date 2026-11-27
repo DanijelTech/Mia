@@ -58,9 +58,11 @@ import avatar_visemes
 import avatar_config
 from mia_core.integration import (detect_feedback, detect_remember,
                                   google_request, google_url,
-                                  hermes_error_text, music_play_request,
-                                  time_answer, weather_request)
+                                  hermes_error_text, media_stop_request,
+                                  music_play_request, time_answer,
+                                  weather_request)
 from mia_core import capabilities as capability_core
+from mia_core.config import find_tool
 from mia_core.learning import get_core
 from mia_core.autonomy.service import AutonomyService
 
@@ -217,14 +219,6 @@ ENROLL_PHRASES = (
     "shrani moj glas", "vpiši moj glas", "vpisi moj glas",
 )
 
-MEDIA_STOP_PHRASES = (
-    "ustavi glasbo", "zaustavi glasbo", "ugasni glasbo", "dovolj glasbe",
-    "ustavi muziko", "zaustavi muziko", "ugasni muziko",
-    "ustavi pesem", "ustavi predvajanje", "zaustavi predvajanje",
-    "ustavi video", "ustavi film", "počisti zaslon", "pocisti zaslon",
-    "umakni z zaslona", "ugasni panel",
-)
-
 
 def _flat(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^a-zčšžćđ ]+", " ", (text or "").lower())).strip()
@@ -245,9 +239,8 @@ def _is_enroll_command(text: str) -> bool:
 
 
 def _is_media_stop(text: str) -> bool:
-    """'Mia, ustavi predvajanje (v ozadju)!' — deterministic media stop."""
-    flat = _flat(text)
-    return any(p in flat for p in MEDIA_STOP_PHRASES)
+    """'Mia, ustavi youtube!' / 'zapri vsa okna youtube' — deterministic stop."""
+    return media_stop_request(text)
 
 
 def _is_media_open_browser(text: str) -> bool:
@@ -434,20 +427,44 @@ def _weather_answer(city: str) -> str:
 
 
 
-async def _stop_all_media() -> None:
+_MEDIA_WINDOW_PATTERNS = ("youtube", "youtu.be", "soundcloud", "spotify",
+                          "vimeo", "twitch", "radio")
+
+
+async def _stop_all_media() -> bool:
     """Stop every playback path: HUD panels + desktop media windows.
-    Called before starting a new track — never two songs at once."""
+
+    Called before starting a new track (never two songs at once) and by the
+    deterministic stop command. Returns True when something was actually up.
+    """
+    stopped = bool(ACTIVE_PANELS)
     for client in list(WS_CLIENTS):
         try:
             await client.send_json({"type": "dismiss_panels"})
         except Exception:
             WS_CLIENTS.discard(client)
     ACTIVE_PANELS.clear()
+
+    tool = find_tool("mia-close")
+    if tool is None:
+        print("MEDIA stop: mia-close not found (PATH and repo bin) — "
+              "desktop windows stay open", flush=True)
+        return stopped
     try:
-        await asyncio.to_thread(subprocess.run, ["mia-close", "youtube"],
-                                capture_output=True, timeout=15)
-    except Exception:
-        pass
+        result = await asyncio.to_thread(
+            subprocess.run, [tool, *_MEDIA_WINDOW_PATTERNS],
+            capture_output=True, text=True, timeout=20)
+        out = (result.stdout or "").strip()
+        if out:
+            print(f"MEDIA stop: {out.replace(chr(10), ' | ')[:300]}", flush=True)
+        if "closed:" in out:
+            stopped = True
+        elif result.returncode not in (0, None):
+            print(f"MEDIA stop: mia-close exit {result.returncode}: "
+                  f"{(result.stderr or '').strip()[:200]}", flush=True)
+    except Exception as exc:
+        print(f"MEDIA stop failed: {type(exc).__name__}: {exc}", flush=True)
+    return stopped
 
 
 async def _summon_media(src: str, title: str, media: str = "video",
@@ -467,10 +484,29 @@ async def _summon_media(src: str, title: str, media: str = "video",
     return sent
 
 
+def _run_mia_tool(name: str, args: list[str],
+                  timeout: float = 10) -> subprocess.CompletedProcess | None:
+    """Run a Mia helper by absolute path; None when it is not installed."""
+    tool = find_tool(name)
+    if tool is None:
+        print(f"{name}: not found (PATH and repo bin)", flush=True)
+        return None
+    try:
+        return subprocess.run([tool, *args], capture_output=True, text=True,
+                              timeout=timeout)
+    except Exception as exc:
+        print(f"{name} failed: {type(exc).__name__}: {exc}", flush=True)
+        return None
+
+
 def _open_visible_url(url: str) -> bool:
     """Open a URL in the user's real browser (never the invisible one)."""
     import os as _os
-    candidates = [["mia-open", url], ["xdg-open", url], ["open", url]]
+    candidates = []
+    opener = find_tool("mia-open")
+    if opener:
+        candidates.append([opener, url])
+    candidates += [["xdg-open", url], ["open", url]]
     for argv in candidates:
         try:
             result = subprocess.run(argv, capture_output=True, timeout=30)
@@ -1651,6 +1687,12 @@ async def hud_chat(request: Request) -> JSONResponse:
         print(f"WEATHER answered locally (chat): {answer!r}", flush=True)
         return quick(answer, [])
 
+    if media_stop_request(chat_text):
+        stopped = await _stop_all_media()
+        print(f"MEDIA stop via chat: {chat_text!r} -> stopped={stopped}", flush=True)
+        return quick("Ustavila sem glasbo, šefe." if stopped
+                     else "Nič ne igra, šefe.", [])
+
     try:
         music = await _music_chat(text)
     except Exception as exc:
@@ -1662,8 +1704,9 @@ async def hud_chat(request: Request) -> JSONResponse:
 
     volume = _volume_request(chat_text)
     if volume is not None:
-        result = await asyncio.to_thread(subprocess.run, ["mia-volume", *volume],
-                                         capture_output=True, text=True, timeout=10)
+        result = await asyncio.to_thread(_run_mia_tool, "mia-volume", volume)
+        if result is None:
+            return quick("Glasnosti ne morem spremeniti — mia-volume ni na voljo, šefe.", [])
         lines = (result.stdout or "").strip().splitlines()
         last = lines[-1] if lines else ""
         confirm = (f"Glasnost {last.split(':', 1)[1].strip()}, šefe."
@@ -3116,17 +3159,20 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
         # deterministic media control — works in any session, and (because it
         # only needs the wake word) even while loud playback drowns the voiceprint
         if said_wake and _is_media_stop(transcript):
-            await _stop_all_media()
-            print(f"MEDIA stopped via voice: {transcript[:60]!r}", flush=True)
-            await _speak_and_finish(ws, pipeline, conn, timing, "Ustavljeno, šefe.")
+            stopped = await _stop_all_media()
+            print(f"MEDIA stopped via voice: {transcript[:60]!r} -> {stopped}",
+                  flush=True)
+            await _speak_and_finish(ws, pipeline, conn, timing,
+                                    "Ustavila sem glasbo, šefe." if stopped
+                                    else "Nič ne igra, šefe.")
             return
         if said_wake and _is_media_open_browser(transcript):
             src = LAST_SUMMON.get("src") or ""
             await _stop_all_media()
             if src:
-                await asyncio.to_thread(subprocess.run, ["mia-open", src],
-                                        capture_output=True, timeout=20)
-                confirm = "Odprla sem ga v brskalniku, šefe."
+                opened = await asyncio.to_thread(_open_visible_url, src)
+                confirm = ("Odprla sem ga v brskalniku, šefe." if opened
+                           else "Brskalnika nisem mogla odpreti, šefe.")
             else:
                 confirm = "Ni aktivnega predvajanja, šefe."
             print(f"MEDIA open-in-browser via voice: {src or 'nič'}", flush=True)
@@ -3200,8 +3246,11 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
 
         vol_args = _volume_request(stripped) if said_wake else None
         if vol_args is not None:
-            r = await asyncio.to_thread(subprocess.run, ["mia-volume", *vol_args],
-                                        capture_output=True, text=True, timeout=10)
+            r = await asyncio.to_thread(_run_mia_tool, "mia-volume", vol_args)
+            if r is None:
+                await _speak_and_finish(ws, pipeline, conn, timing,
+                                        "Glasnosti ne morem spremeniti, šefe.")
+                return
             lines = (r.stdout or "").strip().splitlines()
             last = lines[-1] if lines else ""
             if "glasnost:" in last:

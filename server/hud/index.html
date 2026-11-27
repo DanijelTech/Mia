@@ -1338,6 +1338,13 @@ function summonPanel(opts){
 function dismissPanel(p){
   if(!p||p.classList.contains("dismiss"))return;
   try{if(ws&&wsReady)ws.send(JSON.stringify({type:"panel_closed",src:p.dataset.src||""}))}catch{}
+  // silence the media at once; the exit animation must not keep playing
+  p.querySelectorAll("iframe,video,audio").forEach(el=>{
+    try{
+      if(el.tagName==="IFRAME") el.src="about:blank";
+      else{ if(el.pause) el.pause(); el.removeAttribute("src"); if(el.load) el.load(); }
+    }catch(_){}
+  });
   p.classList.remove("idle");
   holoWhoosh(false);
   p.classList.add("dismiss");

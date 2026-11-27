@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import copy
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -218,6 +219,22 @@ def repo_root() -> Path:
         if candidate.is_dir():
             return candidate
     return here.parent.parent.parent
+
+
+def find_tool(name: str) -> str | None:
+    """Resolve a Mia CLI helper (mia-open, mia-close, …) on PATH or in the repo.
+
+    systemd units do not inherit the login shell's PATH, so ~/.local/bin — where
+    install.sh puts these helpers for a normal user — is usually missing there.
+    The repo copy always exists next to this package.
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    candidate = repo_root() / "skills" / "mia-companion" / "bin" / name
+    if candidate.is_file() and os.access(str(candidate), os.X_OK):
+        return str(candidate)
+    return None
 
 
 def db_path(cfg: dict) -> Path:

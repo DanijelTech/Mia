@@ -15,8 +15,10 @@ capabilities: [play_music, stop_music, search_youtube, read_history, manage_favo
 Simple phrases are handled deterministically **before** you see them:
 
 - play: »pusti mi glazbo (v ozadju)«, »poišči X in ga predvajaj«,
-  »zaigraj …«
-- stop: »ustavi glasbo / predvajanje / pesem / film«
+  »zaigraj …«, »zamenjaj/spremeni glasbo« (another track)
+- stop: »ustavi glasbo / predvajanje / pesem / film«, »ustavi youtube«,
+  »zapri vsa okna youtube«, »dovolj glasbe« — stops the HUD panel **and**
+  closes the desktop windows
 - move to browser: »predvajanje iz ozadja odpri v brskalniku«
 
 You only receive the fancier requests: playlists, albums, moods, history
@@ -27,7 +29,7 @@ reasoning, multi-step choices.
 Before starting a new track, stop the old one on **both** paths:
 
 ```bash
-mia-close https://www.youtube.com
+mia-close youtube youtu.be soundcloud spotify
 ```
 
 and
@@ -35,6 +37,11 @@ and
 ```
 hud_dismiss
 ```
+
+`mia-close` accepts several URL patterns at once and also closes browser
+windows whose title matches (for windows opened by `xdg-open` or before the
+window registry existed). If `xdotool` is missing it says so and exits 3 —
+without it Mia can open windows but never close them.
 
 Never two songs at once. If the user complains about hidden music, call
 `hud_dismiss` first — a HUD iframe keeps playing even when nobody looks at it.
