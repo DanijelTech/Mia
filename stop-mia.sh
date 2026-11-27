@@ -56,10 +56,27 @@ else:
 PY
 }
 
+cfg_all() {  # cfg_all <dotted.key> [default] — every item of a YAML list
+  [ -f "$CFG" ] || { printf '%s\n' "${2:-}"; return; }
+  $PY - "$CFG" "$1" "${2:-}" <<'PY' 2>/dev/null || printf '%s\n' "${2:-}"
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1])) or {}
+cur = d
+for part in sys.argv[2].split("."):
+    cur = cur.get(part) if isinstance(cur, dict) else None
+if isinstance(cur, list) and cur:
+    print(" ".join(str(x) for x in cur))
+elif cur is None:
+    print(sys.argv[3])
+else:
+    print(cur)
+PY
+}
+
 WS_PORT="$(cfg server.port 8765)"; WS_PORT="${WS_PORT:-8765}"
-TLS_PORT="$(cfg server.tls_ports 443)"; TLS_PORT="${TLS_PORT:-443}"
-DASH_PORT="$(cfg server.dashboard_proxy.port 9443)"; DASH_PORT="${DASH_PORT:-9443}"
-PORTS="$WS_PORT $TLS_PORT $DASH_PORT"
+TLS_PORTS="$(cfg_all server.tls_ports 443)"; TLS_PORTS="${TLS_PORTS:-443}"
+PROXY_PORT="$(cfg server.dashboard_proxy.port 9443)"; PROXY_PORT="${PROXY_PORT:-9443}"
+PORTS="$WS_PORT $TLS_PORTS $PROXY_PORT"
 [ "$(cfg tts.provider piper)" = "http" ] && PORTS="$PORTS 8770"
 
 # brain stack (optional `stack:` section — same keys start-mia.sh reads)
@@ -72,12 +89,12 @@ LLAMA_PIDFILE="$REPO/server/$(cfg stack.llama.pidfile logs/llama-server.pid)"
 HERMES_PIDFILE="$REPO/server/$(cfg stack.hermes.pidfile logs/hermes-gateway.pid)"
 CHAT_PORT="$(url_port "$(cfg stack.chat.health '')")"
 CHAT_PIDFILE="$REPO/server/$(cfg stack.chat.pidfile logs/chat-model.pid)"
-DASH_PORT="$(url_port "$(cfg stack.dashboard.health '')")"
+DASH_TARGET_PORT="$(url_port "$(cfg stack.dashboard.health '')")"
 DASH_PIDFILE="$REPO/server/$(cfg stack.dashboard.pidfile logs/hermes-dashboard.pid)"
 [ -n "$LLAMA_PORT" ] && PORTS="$PORTS $LLAMA_PORT"
 [ -n "$HERMES_PORT" ] && PORTS="$PORTS $HERMES_PORT"
 [ -n "$CHAT_PORT" ] && PORTS="$PORTS $CHAT_PORT"
-[ -n "$DASH_PORT" ] && PORTS="$PORTS $DASH_PORT"
+[ -n "$DASH_TARGET_PORT" ] && PORTS="$PORTS $DASH_TARGET_PORT"
 
 # --------------------------------------------------------------- environment
 IS_MAC=0; [ "$(uname -s)" = "Darwin" ] && IS_MAC=1

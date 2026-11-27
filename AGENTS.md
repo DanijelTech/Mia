@@ -255,6 +255,12 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   launching llama-server or the chat model. A wrong path used to burn the whole
   timeout; now it fails in a second and lists the `.gguf` files that do exist
   in that directory. Keep `model_path_of()` in sync with both launch blocks.
+- `start-mia.sh` picks the first **reachable** TLS port from
+  `server.tls_ports` (binding :443 as non-root fails, :8766 still works) and
+  expands `~`/`$HOME` in GGUF paths. `stop-mia.sh` must list **all** TLS ports
+  and use `server.dashboard_proxy.port` separately from
+  `stack.dashboard.health`; overwriting one with the other left :9443/8766
+  unlisted in `--status`/`--free-ports`.
 - `start-mia.sh` health means `http_ready` (HTTP status < 500), not "the port
   answers". llama-server binds early and returns 503 `Loading model` until the
   GGUF is loaded; a bare socket check reported "up" while the 12B model was

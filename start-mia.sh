@@ -93,6 +93,23 @@ print(cur[0] if isinstance(cur, list) and cur else sys.argv[3])' "$CFG" "$1" "${
     || printf '%s\n' "${2:-}"
 }
 
+cfg_all() {  # cfg_all <dotted.key> [default] — every item of a YAML list
+  [ "$CFG_OK" = 1 ] || { printf '%s\n' "${2:-}"; return; }
+  $PY - "$CFG" "$1" "${2:-}" <<'PY' 2>/dev/null || printf '%s\n' "${2:-}"
+import sys, yaml
+cfg = yaml.safe_load(open(sys.argv[1])) or {}
+cur = cfg
+for part in sys.argv[2].split("."):
+    cur = cur.get(part) if isinstance(cur, dict) else None
+if isinstance(cur, list) and cur:
+    print(" ".join(str(x) for x in cur))
+elif cur is None:
+    print(sys.argv[3])
+else:
+    print(cur)
+PY
+}
+
 cfgargv() {  # cfgargv <dotted.key> — a YAML list as NUL-separated argv (safe for regex/space args)
   [ "$CFG_OK" = 1 ] || return 1
   $PY - "$CFG" "$1" <<'PY' 2>/dev/null
@@ -115,6 +132,7 @@ read_argv() {  # read_argv <dotted.key> <array-name>
 }
 
 HUD_PORT="$(cfg server.port 8765)"
+TLS_PORTS_ALL="$(cfg_all server.tls_ports 443)"
 TLS_PORT="$(cfglist server.tls_ports 443)"
 TTS_PROVIDER="$(cfg tts.provider piper)"
 TTS_URL="$(cfg tts.http.url '')"
@@ -228,6 +246,8 @@ check_model_file() { # check_model_file <label> <argv...> — 0 when the GGUF ex
   local label="$1"; shift
   local path dir found
   path="$(model_path_of "$@")" || return 0
+  path="${path/#\~/$HOME}"
+  path="${path/#\$HOME/$HOME}"
   [ -e "$path" ] && return 0
   warn "$label: model file not found — $path"
   dir="$(dirname "$path")"
@@ -251,8 +271,8 @@ report_failed() { # report_failed <label> <logfile> <rc> <timeout> [pidfile]
     2) warn "$1 exited during startup — see $2" ;;
     *)
       warn "$1 did not become ready within ${4}s — see $2"
-      if [ -n "${5:-}" ] && [ -f "$5" ] \
-         && kill -0 "$(cat "$5" 2>/dev/null)" 2>/dev/null; then
+      pid="$(cat "${5:-/dev/null}" 2>/dev/null || true)"
+      if [ -n "${5:-}" ] && [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
         warn "hint: the process is still running — the model may still be loading; raise its stack.*.start_timeout"
       fi
       ;;
@@ -498,9 +518,26 @@ if [ -z "$HOST" ]; then
   [ -z "$HOST" ] && HOST="127.0.0.1"
 fi
 SCHEME="https"; [ -f "$REPO/server/certs/cert.pem" ] || SCHEME="http"
-# the HUD is served on the TLS port when certificates exist
+# The HUD is served on a TLS port when certificates exist. Pick the first
+# configured TLS port that actually answers: binding :443 as a non-root user
+# fails, and the server then only listens on e.g. :8766.
+if [ "$SCHEME" = "https" ]; then
+  REACHABLE_TLS=""
+  for p in $TLS_PORTS_ALL; do
+    if curl -sk -m 2 -o /dev/null "https://127.0.0.1:$p/hud/"; then
+      REACHABLE_TLS="$p"; break
+    fi
+  done
+  if [ -n "$REACHABLE_TLS" ]; then
+    TLS_PORT="$REACHABLE_TLS"
+  elif curl -s -m 2 -o /dev/null "http://127.0.0.1:$HUD_PORT/hud/"; then
+    warn "no TLS port answered — the HUD is reachable on plain http :$HUD_PORT (microphone needs HTTPS)"
+    SCHEME="http"; TLS_PORT=""
+  fi
+fi
 URL="$SCHEME://$HOST"
 [ -n "$TLS_PORT" ] && [ "$TLS_PORT" != "443" ] && [ "$SCHEME" = "https" ] && URL="$URL:$TLS_PORT"
+[ "$SCHEME" = "http" ] && [ "$HUD_PORT" != "80" ] && URL="$URL:$HUD_PORT"
 URL="$URL/hud/"
 
 TOKEN="${MIA_HUD_TOKEN:-${JARVIS_HUD_TOKEN:-}}"
