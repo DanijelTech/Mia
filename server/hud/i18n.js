@@ -610,8 +610,9 @@
     if (document.getElementById("miaLang")) return;
     const style = document.createElement("style");
     style.textContent =
-      "#miaLang{position:fixed;right:10px;bottom:10px;z-index:99999;display:flex;gap:4px;" +
-      "font-family:'Orbitron',sans-serif;opacity:.9}" +
+      "#miaLang{display:flex;gap:4px;z-index:99999;font-family:'Orbitron',sans-serif;" +
+      "opacity:.9;align-items:center}" +
+      "#miaLang.fixed{position:fixed;right:10px;bottom:10px}" +
       "#miaLang button{background:#0a2435;color:#4d7d92;border:1px solid #0e2c40;" +
       "padding:4px 9px;font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:1.5px;" +
       "cursor:pointer}" +
@@ -623,7 +624,15 @@
     bar.setAttribute("aria-label", "Language / Jezik");
     bar.innerHTML = '<button type="button" data-l="sl">SLO</button>' +
                     '<button type="button" data-l="en">ENG</button>';
-    document.body.appendChild(bar);
+    // the main HUD has an empty first footer slot: sit there, do not cover
+    // the status text; other pages get a small fixed pill
+    const slot = document.querySelector("footer > span:first-child");
+    if (slot && !slot.textContent.trim()) {
+      slot.appendChild(bar);
+    } else {
+      bar.className = "fixed";
+      document.body.appendChild(bar);
+    }
     bar.querySelectorAll("button").forEach(function (btn) {
       btn.addEventListener("click", function () { setLang(btn.dataset.l); });
     });
