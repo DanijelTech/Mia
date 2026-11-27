@@ -610,10 +610,12 @@ class Store:
     # -------------------------------------------------------- anti-patterns
     def upsert_anti_pattern(self, key: str, symptom: str, cause: str = "",
                             fix: str = "", tags: Any = None,
-                            severity: str = "medium", hits: int = 1) -> int:
+                            severity: str = "medium", hits: int = 1,
+                            bump_hits: bool = True) -> int:
         now = time.time()
         existing = self._one("SELECT * FROM anti_patterns WHERE key=?", (key,))
         if existing:
+            increment = max(1, hits) if bump_hits else 0
             self._execute(
                 """UPDATE anti_patterns SET symptom=?, cause=?, fix=?, tags=?,
                    severity=?, hits=hits+?, last_seen=?, updated=? WHERE key=?""",
@@ -621,7 +623,7 @@ class Store:
                  self._safe(cause, 500) or existing["cause"],
                  self._safe(fix, 500) or existing["fix"],
                  _dumps(tags or _loads(existing["tags"], [])),
-                 severity or existing["severity"], max(1, hits), now, now, key),
+                 severity or existing["severity"], increment, now, now, key),
             )
             ap_id = int(existing["id"])
         else:

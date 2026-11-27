@@ -185,6 +185,14 @@ class RecipeTests(TempStoreMixin, unittest.TestCase):
         self.assertTrue(result["learned"])
         self.assertEqual(result["kind"], "mistake")
 
+    def test_anti_pattern_success_does_not_bump_hits(self):
+        self.store.upsert_anti_pattern("ap:x", symptom="x", cause="y", hits=2)
+        before = self.store.get_anti_pattern_by_key("ap:x")["hits"]
+        self.store.upsert_anti_pattern("ap:x", symptom="x", cause="y",
+                                       fix="z", hits=0, bump_hits=False)
+        after = self.store.get_anti_pattern_by_key("ap:x")["hits"]
+        self.assertEqual(before, after)
+
     def test_anti_pattern_match(self):
         self.store.upsert_anti_pattern(
             "ap:zapri", symptom="okno se ne zapre s pkill",

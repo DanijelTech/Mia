@@ -116,6 +116,9 @@ _EXACT: dict[str, str] = {
     "Narejeno.": "Done.",
     "Tega ne razumem, šefe.": "I don't understand that, boss.",
     "Tega dejanja še ne znam.": "I don't know that action yet.",
+    "Tega ne znam odgovoriti.": "I don't know how to answer that.",
+    "1 posodobitev je na voljo.": "1 update available.",
+    "Zaprla sem 1 oken.": "I closed 1 window.",
     "Tega ne znam več ponoviti, šefe.": "I can't repeat that any more, boss.",
     "Nič ne čaka na potrditev, šefe.": "Nothing is waiting for confirmation, boss.",
     "V redu, preklicano.": "Okay, cancelled.",
@@ -359,6 +362,9 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^(\d+) h (\d+) min$"), r"\1 h \2 min"),
     (re.compile(r"^(\d+) min$"), r"\1 min"),
     (re.compile(r"^opravilo (\d+)$"), r"job \1"),
+    (re.compile(r"^ne najdem okna '(.+)'$"), r"I can't find window '\1'"),
+    (re.compile(r"^proces (.+) ne teče$"), r"process \1 is not running"),
+    (re.compile(r"^neznana datotečna akcija (.+)$"), r"unknown file action \1"),
 ]
 
 # Health titles and short messages (exact).
@@ -392,8 +398,15 @@ _EXACT.update({
     "najdeno okno brskalnika": "browser window (found)",
     "TTS storitev": "TTS service",
     "okno": "window",
+    "Požarni zid vklopljen.": "Firewall enabled.",
+    "Požarni zid izklopljen.": "Firewall disabled.",
+    "baterija ": "battery ",
+    " stopinj": " degrees",
     "neznan tip": "unknown type",
     "manjka id": "missing id",
+    "manjka ime aplikacije": "application name is missing",
+    "manjka ime storitve": "service name is missing",
+    "manjka ime paketa": "package name is missing",
 })
 
 _HELP_EN = (

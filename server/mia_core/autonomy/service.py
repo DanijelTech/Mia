@@ -693,7 +693,8 @@ class AutonomyService:
         if args.get("action") in ("enable", "disable"):
             action = str(args["action"])
             payload = self._ctl(["net", "firewall", action], yes=True)
-            return {**payload, "text": f"Požarni zid {action}.",
+            verb = "vklopljen" if action == "enable" else "izklopljen"
+            return {**payload, "text": f"Požarni zid {verb}.",
                     "tools": [self._tool("mia-ctl", ["net", "firewall", action])]}
         if args.get("ssid"):
             argv = ["net", "wifi", "connect", str(args["ssid"])]

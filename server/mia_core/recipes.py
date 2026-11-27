@@ -171,7 +171,8 @@ def learn_from_episode(store: Store, episode: dict, cfg: dict | None = None) -> 
             store.upsert_anti_pattern(
                 key=ap_key, symptom=request, cause=episode.get("error") or "",
                 fix=_steps_text(steps) or meta.get("recipe_note") or "",
-                tags=episode.get("tags") or [], severity="medium", hits=0)
+                tags=episode.get("tags") or [], severity="medium", hits=0,
+                bump_hits=False)
     elif outcome == "failure":
         error = episode.get("error") or meta.get("error") or "neznana napaka"
         key = _anti_key(request, error)

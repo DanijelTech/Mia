@@ -81,7 +81,7 @@ class TimeAnswerTests(unittest.TestCase):
 
     def test_english(self):
         self.assertEqual(time_answer("what time is it", self.NOW, lang="en"),
-                         "It is 7:05 in the evening.")
+                         "It is seven oh five in the evening.")
         self.assertEqual(
             time_answer("what day is it", self.NOW, lang="en"),
             "Today is Friday, November 27, 2026.")
@@ -89,7 +89,7 @@ class TimeAnswerTests(unittest.TestCase):
     def test_english_both(self):
         answer = time_answer("what is the date and time", self.NOW, lang="en")
         self.assertIn("Friday", answer)
-        self.assertIn("7:05 in the evening", answer)
+        self.assertIn("seven oh five in the evening", answer)
 
 
 class EnglishIntentTests(unittest.TestCase):

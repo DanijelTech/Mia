@@ -319,6 +319,21 @@ _MONTHS_EN = ("January", "February", "March", "April", "May", "June", "July",
               "August", "September", "October", "November", "December")
 
 
+_ONES = ("zero", "one", "two", "three", "four", "five", "six", "seven",
+         "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen",
+         "fifteen", "sixteen", "seventeen", "eighteen", "nineteen")
+_TENS = ("", "", "twenty", "thirty", "forty", "fifty")
+
+
+def _num_words(value: int) -> str:
+    if 0 <= value < 20:
+        return _ONES[value]
+    if 20 <= value < 60:
+        tens, ones = divmod(value, 10)
+        return _TENS[tens] + (f" {_ONES[ones]}" if ones else "")
+    return str(value)
+
+
 def _english_time_phrase(hour: int, minute: int) -> str:
     if hour < 5:
         period = "at night"
@@ -328,10 +343,12 @@ def _english_time_phrase(hour: int, minute: int) -> str:
         period = "in the afternoon"
     else:
         period = "in the evening"
-    h12 = hour % 12 or 12
+    h12 = _num_words(hour % 12 or 12)
     if minute == 0:
         return f"{h12} {period}"
-    return f"{h12}:{minute:02d} {period}"
+    if minute < 10:
+        return f"{h12} oh {_num_words(minute)} {period}"
+    return f"{h12} {_num_words(minute)} {period}"
 
 
 def _english_clock(hour: int, minute: int) -> str:
