@@ -18,10 +18,15 @@ jobs:
           python-version: "3.12"
       - name: Build offline package
         run: ./build-package.sh
-      - name: Create GitHub release
+      - name: Create or update GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz \
-            --title "Mia $GITHUB_REF_NAME" \
-            --generate-notes
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz --clobber
+            gh release edit "$GITHUB_REF_NAME" --title "Mia $GITHUB_REF_NAME"
+          else
+            gh release create "$GITHUB_REF_NAME" dist/*.tar.gz \
+              --title "Mia $GITHUB_REF_NAME" \
+              --generate-notes
+          fi
