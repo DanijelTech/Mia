@@ -48,7 +48,7 @@ fi
 
 # ----------------------------------------------------------------- fetch/new
 CURRENT="$(git rev-parse --short HEAD 2>/dev/null || echo "(brez commitov)")"
-say "Mia update ($(git rev-parse --abbrev-ref HEAD) @ $CURRENT)"
+say "Mia $VERSION update ($(git rev-parse --abbrev-ref HEAD) @ $CURRENT)"
 git fetch --quiet origin "$BRANCH" || { echo "git fetch failed" >&2; exit 2; }
 
 NEW="$(git rev-parse --short "origin/$BRANCH")"
