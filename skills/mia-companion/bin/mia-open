@@ -3,7 +3,13 @@
 # so `mia-close` can close exactly this window later (works even though Chrome
 # forwards --app windows into the running instance without keeping the argv).
 REG="$HOME/.cache/mia-windows"
-[ -n "$1" ] || { echo "usage: mia-open <url>" >&2; exit 2; }
+case "${1:-}" in
+  -h|--help|"")
+    echo "usage: mia-open <url>" >&2
+    [ -n "${1:-}" ] && exit 0
+    exit 2
+    ;;
+esac
 
 # best-effort audit so the learning loop sees agent-driven opens too
 audit_open() {

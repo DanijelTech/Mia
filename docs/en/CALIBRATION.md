@@ -1,5 +1,7 @@
 # Distance voice calibration
 
+> Slovenian version: [../CALIBRATION.md](../CALIBRATION.md)
+
 Mia recognises only the enrolled speaker, anywhere in the house. The profile
 stores a separate ECAPA voiceprint for **near**, **mid-room** and **far**
 captures, plus the measured level (dBFS) and a calibrated threshold per stage.

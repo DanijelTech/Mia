@@ -1,5 +1,7 @@
 # Learning, memory and the skill tree
 
+> Slovenian version: [../LEARNING.md](../LEARNING.md)
+
 Mia has a durable, queryable and explainable memory. Every accepted voice or
 typed turn, every `mia-ctl` action and every user correction is stored locally.
 From that data Mia derives **habits**, **recipes** and **anti-patterns** (things
@@ -46,6 +48,16 @@ observe → record → mine → recall → act → evaluate → update
 The HUD **ZMOGLJIVOSTI** page and `mia-learn capabilities` list ~80 concrete
 abilities with `confirmed` / `learned` / `detected` / `empty` / `failed` /
 `unsupported` statuses. Details: [CAPABILITIES.md](CAPABILITIES.md).
+
+## Search
+
+`mia-learn search` uses SQLite **FTS5** over episodes, recipes, anti-patterns,
+facts and habits. Multi-word queries try `AND` first for precise hits and fall
+back to `OR` only when nothing matches, so one stray word cannot flood the
+result list. `mia-learn mine` and `import` reindex everything; if an older
+database was created before facts/habits were indexed, run
+`mia-learn mine` once. Without FTS5 the store falls back to `LIKE` and still
+works.
 
 ## Commands
 

@@ -1194,19 +1194,20 @@ class Store:
             except sqlite3.Error:
                 pass
 
-    @staticmethod
-    def _fts_query(query: str) -> str:
-        tokens = [t for t in query.replace('"', " ").split() if len(t) > 1]
-        return " OR ".join(f'"{t}"' for t in tokens[:12])
-
     def search(self, query: str, limit: int = 30) -> list[dict]:
         query = (query or "").strip()
         if not query:
             return []
         results: list[dict] = []
         if self._fts:
-            fts_q = self._fts_query(query)
-            if fts_q:
+            tokens = [t for t in query.replace('"', " ").split() if len(t) > 1][:12]
+            # AND first: it gives precise hits for multi-word queries. Only
+            # fall back to OR when AND finds nothing, so a single stray word
+            # cannot flood the result list.
+            for joiner in (" AND ", " OR "):
+                fts_q = joiner.join(f'"{t}"' for t in tokens)
+                if not fts_q:
+                    break
                 try:
                     rows = self._query(
                         """SELECT kind, ref, text, bm25(memory_fts) AS score
@@ -1214,13 +1215,14 @@ class Store:
                            ORDER BY score LIMIT ?""",
                         (fts_q, max(1, int(limit))),
                     )
-                    for r in rows:
-                        results.append({"kind": r["kind"], "ref": r["ref"],
-                                        "text": r["text"], "score": abs(float(r["score"]))})
-                    if results:
-                        return results
                 except sqlite3.Error:
-                    pass
+                    continue
+                for r in rows:
+                    results.append({"kind": r["kind"], "ref": r["ref"],
+                                    "text": r["text"],
+                                    "score": abs(float(r["score"]))})
+                if results:
+                    return results
         like = f"%{query}%"
         for table, kind, cols in (
             ("episodes", "episode", "request"),
@@ -1264,6 +1266,20 @@ class Store:
                     self._conn.execute(
                         "INSERT INTO memory_fts(kind, ref, text) VALUES(?,?,?)",
                         ("mistake", str(row["id"]), text[:8000]))
+                    count += 1
+            for row in self._conn.execute("SELECT id, key, value FROM facts"):
+                text = " ".join(filter(None, [row["key"], row["value"]]))
+                if text.strip():
+                    self._conn.execute(
+                        "INSERT INTO memory_fts(kind, ref, text) VALUES(?,?,?)",
+                        ("fact", str(row["id"]), text[:8000]))
+                    count += 1
+            for row in self._conn.execute("SELECT id, kind, subject, detail FROM habits"):
+                text = " ".join(filter(None, [row["kind"], row["subject"], row["detail"]]))
+                if text.strip():
+                    self._conn.execute(
+                        "INSERT INTO memory_fts(kind, ref, text) VALUES(?,?,?)",
+                        ("habit", str(row["id"]), text[:8000]))
                     count += 1
             self._conn.commit()
             return count
@@ -1329,6 +1345,31 @@ class Store:
             "DELETE FROM habits WHERE pinned=0 AND confidence < ? AND last_seen < ?",
             (min_confidence, now - 120 * 86400))
         removed["habits_stale"] = cur.rowcount
+        # Orphans left behind by the deletes above (feedback of removed
+        # episodes, FTS rows of removed recipes/mistakes).
+        cur = self._execute(
+            "DELETE FROM feedback WHERE episode_id IS NOT NULL AND episode_id NOT IN "
+            "(SELECT id FROM episodes)")
+        removed["feedback_orphans"] = cur.rowcount
+        if self._fts:
+            try:
+                with self._lock:
+                    self._conn.execute(
+                        "DELETE FROM memory_fts WHERE "
+                        "(kind='episode' AND ref NOT IN (SELECT CAST(id AS TEXT) FROM episodes)) OR "
+                        "(kind='recipe' AND ref NOT IN (SELECT CAST(id AS TEXT) FROM recipes)) OR "
+                        "(kind='mistake' AND ref NOT IN (SELECT CAST(id AS TEXT) FROM anti_patterns)) OR "
+                        "(kind='fact' AND ref NOT IN (SELECT CAST(id AS TEXT) FROM facts)) OR "
+                        "(kind='habit' AND ref NOT IN (SELECT CAST(id AS TEXT) FROM habits))")
+                    self._conn.commit()
+            except sqlite3.Error:
+                pass
+        try:
+            with self._lock:
+                self._conn.execute("PRAGMA optimize")
+                self._conn.commit()
+        except sqlite3.Error:
+            pass
         return removed
 
     # -------------------------------------------------------------- export

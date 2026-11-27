@@ -105,7 +105,8 @@ async def stt(request: Request):
     try:
         segments, _info = model.transcribe(
             audio, language=language, beam_size=1, vad_filter=False,
-            initial_prompt=prompt,
+            initial_prompt=prompt, condition_on_previous_text=False,
+            without_timestamps=True,
         )
         text = " ".join(s.text.strip() for s in segments).strip()
     except Exception as exc:  # silence/garbage audio -> empty transcript, not a 500

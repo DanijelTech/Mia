@@ -31,6 +31,14 @@ class ChatBrainLanguageTests(unittest.TestCase):
         brain = self._brain()
         self.assertEqual(len(brain._messages("hello", "c", "")), 2)
 
+    def test_english_uses_an_english_base_prompt(self):
+        brain = self._brain()
+        self.assertIn("Govoriš kot Mia",
+                      brain._messages("hello", "c", "")[0]["content"])
+        brain.force_lang = "English"
+        self.assertIn("You are Mia",
+                      brain._messages("hello", "c", "")[0]["content"])
+
 
 class BrainRouterTests(unittest.TestCase):
     def test_casual_chat_stays_on_chat(self):

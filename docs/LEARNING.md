@@ -1,5 +1,7 @@
 # Učenje, spomin in drevo znanja
 
+> Angleška različica: [docs/en/LEARNING.md](en/LEARNING.md)
+
 Mia ima trajen, poizvedljiv in razložljiv spomin. Ni to le pogovorna seja v
 Hermesu: vsak sprejet krog, vsako dejanje prek `mia-ctl` in vsako uporabnikovo
 popravljanje se zapišejo v lokalno bazo, iz katere nastanejo **navade**,
@@ -133,6 +135,15 @@ mia-learn capabilities --fail desktop.input.type --notes "Wayland brez wtype"
 
 V HUD-u: panel **ZMOGLJIVOSTI** → **ODPRI SEZNAM**. Podrobnosti:
 [CAPABILITIES.md](CAPABILITIES.md).
+
+## Iskanje
+
+`mia-learn search` uporablja SQLite **FTS5** po epizodah, receptih,
+anti-vzorcih, dejstvih in navadah. Večbesedne poizvedbe najprej poskusijo `AND`
+za natančne zadetke in šele nato `OR`, zato ena odvečna beseda ne poplavi
+seznama. `mia-learn mine` in `import` znova indeksirata vse; če je bila baza
+ustvarjena pred indeksiranjem dejstev/navad, enkrat zaženi `mia-learn mine`.
+Brez FTS5 shramba pade na `LIKE` in še vedno deluje.
 
 ## Ukazi
 

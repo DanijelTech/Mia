@@ -12,9 +12,9 @@ import argparse
 import asyncio
 import json
 import math
+import os
 import queue
 import signal
-import struct
 import sys
 import threading
 import time
@@ -34,7 +34,9 @@ CHANNELS = 1
 DTYPE = "int16"
 CHUNK_MS = 80
 CHUNK_FRAMES = int(SAMPLE_RATE * CHUNK_MS / 1000)
-DEFAULT_SERVER = "ws://YOUR_SERVER_IP:8765/ws"
+DEFAULT_SERVER = (os.environ.get("MIA_SERVER_URL")
+                  or os.environ.get("JARVIS_SERVER_URL")
+                  or "ws://127.0.0.1:8765/ws")
 # openWakeWord ships no "hey mia" model — "hey_jarvis" is the closest stock one.
 # Set MIA_WAKE_WORD (or --wake-word) to any model your install has, or train a
 # custom .onnx. Push-to-talk (--push-to-talk) needs no wake word at all.
@@ -76,25 +78,119 @@ def audio_callback_factory(audio_q: queue.Queue[bytes]):
     return callback
 
 
-async def playback_worker(ws, output_device: int | None, stop_event: asyncio.Event, turn_complete: asyncio.Event | None = None) -> None:
-    """Receive audio messages from the server and play them.
+class StreamingPlayer:
+    """Play 16 kHz int16 PCM as it arrives through a small device buffer.
 
-    Audio for a turn is accumulated and played in a single sd.play() call when
-    the turn completes, which avoids dropped/gapped audio from playing many
-    small WebSocket frames one at a time.
+    The old client accumulated a whole reply and played it only on `done`,
+    which added the full generation + synthesis time to the first word. A
+    RawOutputStream drained by a writer thread keeps the server stream and the
+    speaker in step, with backpressure in the device itself.
     """
-    pcm_buffer = bytearray()
 
-    def _play_buffer(data: bytes) -> None:
-        usable = len(data) - (len(data) % 2)
+    def __init__(self, output_device: int | None):
+        self.q: queue.Queue = queue.Queue()
+        self.closed = False
+        self._lock = threading.Lock()
+        self._fed = 0
+        self._played = 0
+        self.stream = sd.RawOutputStream(
+            samplerate=SAMPLE_RATE, channels=CHANNELS, dtype=DTYPE,
+            device=output_device)
+        self.stream.start()
+        self.thread = threading.Thread(target=self._run, name="audio-writer",
+                                       daemon=True)
+        self.thread.start()
+
+    def _run(self) -> None:
+        while True:
+            data = self.q.get()
+            if data is None:
+                break
+            try:
+                self.stream.write(data)
+            except Exception as exc:
+                print(f"[audio] output error: {exc}", file=sys.stderr)
+                break
+            with self._lock:
+                self._played += len(data)
+        for closer in (self.stream.stop, self.stream.close):
+            try:
+                closer()
+            except Exception:
+                pass
+
+    def feed(self, data: bytes) -> None:
+        if not self.closed and data:
+            with self._lock:
+                self._fed += len(data)
+            self.q.put(data)
+
+    def wait_drained(self, timeout: float = 30.0) -> bool:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            with self._lock:
+                if self._played >= self._fed:
+                    return True
+            time.sleep(0.05)
+        return False
+
+    def close(self, flush: bool = True) -> None:
+        """Stop the writer. `flush=True` plays what is already queued."""
+        if self.closed:
+            return
+        self.closed = True
+        if not flush:
+            while not self.q.empty():
+                try:
+                    self.q.get_nowait()
+                except queue.Empty:
+                    break
+        self.q.put(None)
+        self.thread.join(timeout=30 if flush else 3)
+
+    def stop(self) -> None:
+        self.close(flush=False)
+
+
+_CURRENT_PLAYER: "StreamingPlayer | None" = None
+
+
+def stop_playback() -> None:
+    """Stop whatever the streaming player is playing (push-to-talk interrupt)."""
+    global _CURRENT_PLAYER
+    player, _CURRENT_PLAYER = _CURRENT_PLAYER, None
+    if player is not None:
+        player.stop()
+
+
+async def playback_worker(ws, output_device: int | None, stop_event: asyncio.Event, turn_complete: asyncio.Event | None = None) -> None:
+    """Receive audio messages from the server and play them as they arrive."""
+    global _CURRENT_PLAYER
+    player: StreamingPlayer | None = None
+    buffered = bytearray()   # fallback when RawOutputStream is unavailable
+    streaming_failed = False
+
+    def _close_player(stop: bool = False) -> None:
+        global _CURRENT_PLAYER
+        nonlocal player
+        if player is not None:
+            if stop:
+                player.stop()
+            else:
+                player.close()
+            if _CURRENT_PLAYER is player:
+                _CURRENT_PLAYER = None
+            player = None
+
+    def _play_buffered() -> None:
+        usable = len(buffered) - (len(buffered) % 2)
         if not usable:
             return
-        audio = np.frombuffer(data[:usable], dtype=np.int16)
-        if not audio.size:
-            return
-        peak = int(np.max(np.abs(audio)))
-        print(f"[audio] playing {audio.size} samples (~{audio.size / SAMPLE_RATE:.2f}s) peak={peak} on output device {output_device}")
-        sd.play(audio, samplerate=SAMPLE_RATE, device=output_device, blocking=True)
+        audio = np.frombuffer(bytes(buffered[:usable]), dtype=np.int16)
+        if audio.size:
+            sd.play(audio, samplerate=SAMPLE_RATE, device=output_device,
+                    blocking=True)
+        buffered.clear()
 
     try:
         async for message in ws:
@@ -111,26 +207,49 @@ async def playback_worker(ws, output_device: int | None, stop_event: asyncio.Eve
                     print(f"Server: {event.get('message', '')}")
                 elif event_type == "transcript":
                     print(f"Transcript: {event.get('text', '')}")
+                elif event_type == "agent_status" and event.get("state") == "stopped":
+                    await asyncio.to_thread(_close_player, True)
+                    buffered.clear()
                 elif event_type == "done":
-                    if pcm_buffer:
-                        await asyncio.to_thread(_play_buffer, bytes(pcm_buffer))
-                        pcm_buffer.clear()
+                    if player is not None:
+                        async def _finish(p=player, ev=turn_complete):
+                            try:
+                                await asyncio.to_thread(p.wait_drained, 30)
+                            finally:
+                                if ev is not None:
+                                    ev.set()
+                        asyncio.create_task(_finish())
+                    elif buffered:
+                        await asyncio.to_thread(_play_buffered)
+                        if turn_complete is not None:
+                            turn_complete.set()
                     else:
                         print("[audio] no response audio received for this turn")
+                        if turn_complete is not None:
+                            turn_complete.set()
                     print("Turn complete.")
-                    if turn_complete is not None:
-                        turn_complete.set()
                 continue
 
-            # Server streams raw int16 PCM split across arbitrary WebSocket frames;
-            # accumulate the whole turn and play it once on the 'done' event.
-            pcm_buffer.extend(message)
+            if player is None and not buffered and not streaming_failed:
+                try:
+                    player = StreamingPlayer(output_device)
+                    _CURRENT_PLAYER = player
+                except Exception as exc:
+                    streaming_failed = True
+                    print(f"[audio] streaming unavailable ({exc}); buffering the turn",
+                          file=sys.stderr)
+            if player is not None:
+                player.feed(bytes(message))
+            else:
+                buffered.extend(message)
     except websockets.ConnectionClosed:
         if not stop_event.is_set():
             print("Server connection closed.")
     finally:
-        if pcm_buffer:
-            await asyncio.to_thread(_play_buffer, bytes(pcm_buffer))
+        if player is not None:
+            await asyncio.to_thread(_close_player)
+        elif buffered:
+            await asyncio.to_thread(_play_buffered)
         stop_event.set()
 
 
@@ -185,6 +304,7 @@ async def push_to_talk_loop(
                 break
 
         print("Streaming. Press Enter to stop.")
+        await asyncio.to_thread(stop_playback)
         play_beep(output_device)
         await ws.send(json.dumps({"type": "start", "sample_rate": SAMPLE_RATE, "format": "pcm_s16le", "channels": CHANNELS}))
 
@@ -214,7 +334,7 @@ async def push_to_talk_loop(
         )
 
         if interrupt_task in done:
-            sd.stop()
+            await asyncio.to_thread(stop_playback)
             complete_task.cancel()
             command = interrupt_task.result()
             if command is None or command.strip().lower() in ("q", "quit", "exit"):
@@ -263,6 +383,7 @@ async def wake_word_loop(
             continue
 
         print(f"Wake word detected ({wake_word}, score {score:.2f}). Streaming for up to {max_record_seconds:.1f}s, press Ctrl+C to exit.")
+        await asyncio.to_thread(stop_playback)
         play_beep(output_device)
         await ws.send(json.dumps({"type": "start", "sample_rate": SAMPLE_RATE, "format": "pcm_s16le", "channels": CHANNELS}))
         start = time.perf_counter()

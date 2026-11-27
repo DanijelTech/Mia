@@ -467,7 +467,7 @@ let ws=null, wsReady=false, capturing=false, continuous=false, state="standby";
 let autoListen=true;  // continuous listening re-arms itself on every (re)connect until the user turns it off
 let lastFrameAt=0, micWarned=false;
 let audioCtx=null, workletNode=null, mediaStream=null, srcNode=null;
-let playhead=0, activeSources=[], leftoverByte=null, audioArrived=false;
+let playhead=0, activeSources=[], leftoverByte=null;
 let level=0, turns=0, speakLevel=0, speakAt=0;
 
 const $=id=>document.getElementById(id);
@@ -1019,7 +1019,12 @@ function connect(){
       // Scheduled reminders are spoken without opening a Hermes turn. Use the
       // browser voice as a fallback when no server TTS audio is attached.
       addMsg("mia",e.text||"");
-      try{const u=new SpeechSynthesisUtterance(String(e.text||""));u.lang="sl-SI";u.rate=1;speechSynthesis.speak(u)}catch{}
+      try{
+        const u=new SpeechSynthesisUtterance(String(e.text||""));
+        u.lang=(e.lang||document.documentElement.lang)==="en"?"en-US":"sl-SI";
+        u.rate=1;
+        speechSynthesis.speak(u);
+      }catch{}
     }
     else if(e.type==="partial_transcript"){ showLive(e.text); }
     else if(e.type==="transcript"){ clearLive(); if(e.text)addMsg("you",e.text); }
@@ -1115,10 +1120,14 @@ function playChunk(buf){
   for(let i=0;i<i16.length;i++)f32[i]=i16[i]/32768;
   const ab=audioCtx.createBuffer(1,f32.length,16000); ab.copyToChannel(f32,0);
   const src=audioCtx.createBufferSource(); src.buffer=ab; src.connect(audioCtx.destination);
-  const t=Math.max(audioCtx.currentTime+0.06,playhead);
+  const now=audioCtx.currentTime;
+  // Small jitter buffer at the start of a reply: TTS chunks arrive a few tens
+  // of ms apart, and starting the very first one immediately causes audible
+  // underruns. 150 ms of lead is enough for local engines and still snappy.
+  const lead = playhead <= now + 0.01 ? 0.15 : 0.04;
+  const t=Math.max(now+lead,playhead);
   src.start(t); playhead=t+ab.duration;
   activeSources.push(src); src.onended=()=>{activeSources=activeSources.filter(x=>x!==src)};
-  audioArrived=true;
 }
 function stopPlayback(){ activeSources.forEach(s=>{try{s.stop()}catch{}}); activeSources=[]; playhead=0; }
 window.MiaAudio={delay:()=>Math.max(0,(playhead-(audioCtx?audioCtx.currentTime:0)))};
@@ -1271,7 +1280,6 @@ async function toggleTalk(){
   }
   try{await initMic()}catch(err){addMsg("sys","mikrofon blokiran: "+err.message);return}
   stopPlayback();                       // barge-in
-  audioArrived=false;
   ws.send(JSON.stringify({type:"start",sample_rate:16000,format:"pcm_s16le",channels:1,conversation:CONV}));
   capturing=true;
   $("talkBtn").textContent="■ USTAVI IN POŠLJI"; $("micState").textContent="V ŽIVO";

@@ -1,415 +1,449 @@
-# MIA — glas in HUD za Hermes Agent
+# MIA — Voice + HUD for Hermes Agent
 
-Samostojni glasovni asistent in nadzorni center v stilu Iron Mana, zgrajen na
-[Hermes Agent](https://github.com/NousResearch/hermes-agent) (odprtokodni
-avtonomni agent podjetja NousResearch). Z *resničnim* agentom se pogovarjaš —
-tistim s trajnim spominom, dostopom do terminala, iskanjem po spletu, orodji za
-datoteke in 80+ veščinami — prek žarečega HUD-a v katerem koli brskalniku v
-tvojem LAN-u ali prek odjemalca za pogovor s pritiskom na tipko.
+> Slovenian documentation: [README.sl.md](README.sl.md) · [docs/](docs/) · [docs/en/](docs/en/)
 
-**Vse teče na tvoji strojni opremi.** Privzeto nič ne zapusti naprave: Whisper
-za pretvorbo govora v besedilo, lokalni Piper glas za govor, lokalni model
-(llama-server) za Hermesom in lokalni govorniški odtis za prepoznavo tvojega
-glasa. Oblačni LLM-ji in ElevenLabs ostajajo opcijski — za nastavitev brez
-oblaka ne potrebuješ nobenega ključa.
+A self-hosted, Iron-Man-style voice assistant and command center built on top of
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) (NousResearch's
+open-source autonomous agent). Talk to a *real* agent — one with persistent
+memory, terminal access, web search, file tools, and 80+ skills — through a
+glowing arc-reactor HUD in any browser on your LAN, or a push-to-talk client.
 
-> English documentation: [README.en.md](README.en.md) · [docs/en/](docs/en/)
+**Everything runs on your own hardware.** By default nothing leaves the
+machine: Whisper for speech-to-text, a local Piper voice for speech, a local
+model (llama-server) behind Hermes, and a local voiceprint for recognizing
+your voice. Cloud LLMs and ElevenLabs remain optional — the offline setup
+needs no API keys at all.
 
-## Predstavitev
+## Demo
 
-Izvirni projekt ([eadmin2/jarvis_ai](https://github.com/eadmin2/jarvis_ai)) ima
-predstavitveni video; ta različica teče z lokalnim glasovnim pogonom in
-slovenskim vmesnikom, zato sta videz in zvok drugačna.
+The original upstream project ([eadmin2/jarvis_ai](https://github.com/eadmin2/jarvis_ai))
+has a demo video; this fork runs with a local voice engine and a Slovenian UI,
+so its look and sound differ.
 
-## Kaj dela
+## What it does
 
-**Sam reci »Mia, …«** — ničesar ni treba klikati. HUD se ob odprtju sam vklopi
-v neprestano poslušanje; VAD (Silero) razreže govor na izjave, budnica »Mia«
-odpre pogovor, konec povedi se zazna sam in odgovor se vrne kot govor, poved
-za povedjo, medtem ko se preostanek še generira. Običajen krog s hitrim
-lokalnim TTS: 5–10 sekund.
+**Just say "Mia, …"** — nothing to click. The HUD starts continuous listening
+on load; a VAD (Silero) segments speech, the wake word opens the conversation,
+end-of-speech is detected automatically, and the reply streams back as speech,
+sentence by sentence, while the rest is still being generated. Typical round
+trip with a fast local TTS: 5–10 seconds.
 
-- **Prepoznava govornika (glasovna kalibracija)** — Mia uboga samo tvoj glas:
-  ECAPA-TDNN odtis se preveri *pred* transkripcijo (~0,1 s), tuji glasovi in
-  televizija se tiho ignorirajo. Vpis z enim ukazom, podprt je večjezični vpis
-  (npr. slovenščina + srbščina): `python3 server/scripts/enroll_voice.py`
-- **Stroga budnica** — reagira samo na »Mia …« (tolerira tipične Whisperjeve
-  variante: Mijo, Mija, Mio, Meja …); hišni hrup se zavrže brez obdelave,
-  znane Whisper halucinacije (»Hvala što pratite« …) se filtrirajo
-- **Pol-duplex stabilnost** — med obdelavo in govorenjem se ne prekinja (šum
-  ne more ubiti turna); ročna prekinitev ostane (gumb STOP / Esc)
-- **Drsnik višine glasu** — panel GLAS v HUD-u nastavlja ton od 70 do 240 Hz
-  v živo; velja od naslednjega stavka naprej in se trajno shrani
-- **Govori slovensko in srbsko** — odgovori v jeziku, v katerem govoriš
-- **Odpira in ZAPIRA namizna okna** — »odpri mi Google«, »pusti mi glasbo« …
-  in »zapri ga«: pomožni ukazi `mia-open`/`mia-close` (skills/mia-companion/bin)
-  si zapisujejo ID oken, zato jih agent zanesljivo zapre; glasba se predvaja v
-  namenski Chrome app-oknu (YouTube najde prek `yt-dlp`)
-- **Naloge v ozadju** — programiranje v poljubni mapi, datoteke, terminal,
-  iskanje po spletu, časovne naloge, kanban; nevarnejša dejanja čakajo na tvoj
-  DOVOLI/ZAVRNI v HUD-u
-- **Samodejnost (mini pod-OS)** — `mia-auto` zazna stroj in manjkajoča orodja,
-  izvaja večkoračne načrte s preverjanjem in rollbackom, vztrajna opravila in
-  pravila (»ko bo disk poln …«), zdravstveni nadzor s sanacijo ter deterministične
-  sistemske ukaze v slovenščini (datoteke, paketi, omrežje, opomniki)
-- **Popoln nadzor nad računalnikom** — `mia-ctl` je revidiran, politiko
-  preverjen besednjak za okna, aplikacije, tipkanje/klikanje, posnetke zaslona,
-  odložišče, medije, glasnost, svetlost, napajanje, procese, storitve in
-  datoteke (X11, Wayland, macOS, Windows). Vsako dejanje gre v revizijo.
-- **Kalibracija po oddaljenosti** — Mia ob zagonu zahteva, da ji rečeš nekaj
-  od blizu, s sredine sobe in od daleč; shrani ločen glasovni odtis za vsako
-  razdaljo in te prepozna kjerkoli v hiši.
-- **Stroga budnica** — vsaka izjava se mora začeti z »Mia«; govor, TV, gostje
-  in šum se zavržejo že pred prepisom, ko je profil kalibriran.
-- **Samo preverjeni uspehi** — recept nastane le iz preverjenega post-conditiona
-  (`mia-ctl` `verification.status=verified`) ali iz tvojega ✓ v HUD kartici
-  »JE BILO PRAVILNO?«. Nepreverjen uspeh ostane kandidat.
-- **Trajen spomin in drevo znanja** — vsak krog se zabeleži v lokalno SQLite
-  bazo; iz tega nastanejo navade, recepti in napake, ki se ne smejo ponoviti.
-  Pred vsakim krogom se v model vbrizga omejen `[MIA SPOMIN …]` brief.
-- **Uči se tvojih postopkov** — ko se izkaže, da je nek postopek pravi, ga Mia
-  shrani kot recept in ga ob ponovitvi uporabi; ko rečeš »ni prav«, nastane
-  anti-vzorec z vzrokom in rešitvijo.
-- **Granularno drevo veščin** — `mia-companion` (persona) + `mia-desktop`,
+- **Speaker verification (voice calibration)** — Mia obeys only your voice:
+  an ECAPA-TDNN voiceprint is checked *before* transcription (~0.1 s), so
+  other people and the TV are silently ignored. One-command enrollment,
+  multi-language profiles supported (e.g. Slovenian + Serbian):
+  `python3 server/scripts/enroll_voice.py`
+- **Strict wake word** — reacts only to "Mia …" (tolerates typical Whisper
+  mishearings); household noise is dropped without processing, and known
+  Whisper hallucinations ("Hvala što pratite" …) are filtered out. English
+  greetings work too: "Hey Mia, …", "OK Mia, …"
+- **Adaptive endpointing** — a short command closes the turn in ~350–500 ms,
+  a longer sentence keeps the full 700 ms pause, so she neither cuts you off
+  nor waits a second after "stop"
+- **Natural interruption (barge-in)** — with a calibrated voiceprint you can
+  cut her off without repeating "Mia"; a cough or the TV no longer kills a
+  reply (the interruption is evaluated on the completed utterance, not on the
+  first noisy frame). Without a profile, strict wake stays mandatory
+- **Streaming speech** — TTS audio is sent chunk by chunk as the engine
+  produces it (not after the whole sentence), and a long clause without
+  punctuation is cut at the last natural break; the first word arrives sooner
+- **Optional spoken acknowledgement** — `hermes.ack_after_seconds: 3` makes
+  her say a short "Right away." when a local model is still thinking, instead
+  of leaving 10–30 s of silence
+- **Half-duplex stability** — no interruptions while processing/speaking
+  unless barge-in is enabled (noise cannot kill a turn); manual stop remains
+  (STOP button / Esc)
+- **Voice pitch slider** — the GLAS panel in the HUD tunes the voice from
+  70 to 240 Hz live; applies from the next sentence and persists
+- **Speaks Slovenian and Serbian** — replies in the language you speak
+- **Opens AND CLOSES desktop windows** — "open Google", "play me some music"
+  … and "close it": the `mia-open`/`mia-close` helpers (skills/mia-companion/bin)
+  record window ids, so the agent can reliably close what it opened; music
+  plays in a dedicated Chrome app window (found via `yt-dlp`)
+- **Background tasks** — programming in any folder, files, terminal, web
+  search, scheduled jobs, kanban; dangerous actions wait for your ALLOW/DENY
+- **Full local computer control** — `mia-ctl` is an audited, policy-checked
+  vocabulary for windows, apps, typing/clicking, screenshots, clipboard, media,
+  volume, brightness, power, processes, services and files (X11, Wayland,
+  macOS, Windows). Every action is audited.
+- **Distance voice calibration** — on first start Mia asks you to speak near,
+  mid-room and far from the microphone; she stores a separate voiceprint per
+  distance and recognises you anywhere in the house.
+- **Strict wake** — every turn must start with “Mia”; speech, TV, guests and
+  noise are rejected before transcription once the profile is calibrated.
+- **Verified success only** — a recipe is created only from a verified
+  post-condition (`mia-ctl verification.status=verified`) or your ✓ in the HUD
+  “was this right?” card. Unverified success stays a candidate.
+- **Durable memory and a knowledge tree** — every turn is stored in a local
+  SQLite database; habits, recipes and anti-patterns are derived from it. A
+  bounded `[MIA SPOMIN …]` brief is injected before every turn.
+- **Learns your workflows** — a proven procedure becomes a recipe and is
+  reused next time; "not right" creates an anti-pattern with a cause and fix.
+- **Granular skill tree** — `mia-companion` (persona) plus `mia-desktop`,
   `mia-learning`, `mia-music`, `mia-browser`, `mia-productivity`,
-  `mia-diagnostics`; validator preveri imena, starše in reference.
-- **Seznam zmogljivosti** — ~80 konkretnih sposobnosti (okna, aplikacije, vnos,
-  posnetki, odložišče, zvok, zasloni, viri, procesi, storitve, datoteke,
-  Google, učenje) s statusi potrjeno/naučeno/zaznano/prazno/nepodprto.
-- **Google: poišči-in-povej vs prikaži** — »na Googlu poišči in povej mi«
-  odgovori ustno v ozadju; »prikaži mi v Googlu« odpre tvoj brskalnik.
-- **HUD NASTAVITVE** — stroga budnica, prag govorca, follow-up, zahtevaj
-  profil, preverjanje, učenje, dolžina briefa, kalibracija in sistemski pregled.
-- **Aktivnost agenta v živo** — vidiš klice orodij s predogledi ukazov
-- **Kartice za odobritev** — nevarne ukaze agent ustavi in počaka na DOVOLI/ZAVRNI
-- **Vgrajene nadzorne plošče** — Hermesov kanban, nadzorna plošča in klepet se
-  odpreta v animiranih pogledih (POGLEDI) in so polno interaktivni
-- **Holografski medijski paneli** — reci *»pokaži … na zaslonu«* in panel
-  prileti iz globine; agent to sproži prek priloženega Hermes vtičnika
-  (`hud_display`); »počisti zaslon« jih pomete stran
-- **Sledenje porabi** — žetoni/dan, izmenjave, vrstica kvote ElevenLabs (če je
-  TTS v oblaku)
-- **Panel Stroji** — statistika CPU/GPU za gostitelja in oddaljene delavce
-- **Filter zasebnosti** — nizi, ki izgledajo kot skrivnosti, se prekrijejo, preden
-  besedilo doseže oblačni TTS
-- **Opcijska GPU ušesa** — usmeri jo na kateri koli NVIDIA stroj v LAN-u s
-  priloženim sidecarjem in prepis skoči na `large-v3-turbo` pri ~0,2 s, z
-  samodejnim preklopom na lokalni Whisper, ko je ta stroj ugasnjen
-- **Za mobilne naprave** — odzivna postavitev + »Dodaj na začetni zaslon« = Mia
-  kot aplikacija čez cel zaslon
+  `mia-diagnostics`; a validator checks names, parents and references.
+- **Capability checklist** — ~80 concrete abilities (windows, apps, input,
+  screenshots, clipboard, audio, displays, resources, processes, services,
+  files, Google, learning) with confirmed/learned/detected/empty/unsupported
+  statuses.
+- **Google answer vs show** — “search on Google and tell me” answers aloud in
+  the background; “show me on Google” opens your browser.
+- **HUD settings** — strict wake, speaker threshold, follow-up, require
+  profile, verification cards, learning, brief length, calibration and system
+  overview.
+- **Live agent activity** — watch tool calls happen with command previews
+- **Approval cards** — dangerous commands pause for your ALLOW/DENY
+- **Embedded dashboards** — kanban, the Hermes dashboard and chat pop up in
+  animated viewers (VIEWS), fully interactive
+- **Holographic media panels** — say *"show me … on screen"* and a panel
+  swoops in from Z-depth; the agent drives it through a bundled Hermes plugin
+  (`hud_display`); "clear the screen" sweeps them away
+- **Usage tracking** — tokens/day, turns, ElevenLabs quota bar
+- **Machines panel** — live CPU/GPU stats for the host and remote workers
+- **Privacy filter** — secret-shaped strings are redacted before any text
+  reaches cloud TTS
+- **Optional GPU ears** — point it at any NVIDIA machine on your LAN running
+  the included sidecar and transcription jumps to `large-v3-turbo` at ~0.2 s,
+  with automatic fallback to local Whisper when that machine is off
+- **Mobile-ready** — responsive layout + Add to Home Screen = full-screen
+  Mia app on your phone
 
-## Nadzor računalnika in učenje (na kratko)
+## Computer control and learning (short version)
 
 ```bash
-mia-ctl doctor                     # kaj je na tem stroju podprto
-mia-ctl windows list               # okna, z ID-ji
-mia-ctl apps launch firefox        # zaženi aplikacijo
-mia-ctl type "hello" --delay 15    # tipkaj v aktivno okno
-mia-ctl screenshot                 # shrani posnetek zaslona
-mia-ctl volume set 40              # glasnost
-mia-ctl files search "pogodba" --root ~/Documents
-mia-ctl power lock                 # zakleni zaslon
+mia-ctl doctor                     # what this machine supports
+mia-ctl windows list               # windows with ids
+mia-ctl apps launch firefox
+mia-ctl type "hello" --delay 15
+mia-ctl screenshot
+mia-ctl volume set 40
+mia-ctl files search "invoice" --root ~/Documents
+mia-ctl power lock
 ```
 
 ```bash
-mia-learn status                   # koliko spomina, kdaj nazadnje izkopano
-mia-learn brief "odpri mi google"  # kaj bi Mia zdaj vedela
-mia-learn habits                   # izkopljene navade
-mia-learn recipes                  # preverjeni postopki
-mia-learn mistakes                 # česa ne ponavljati
-mia-learn remember --note "…"      # shrani zadnji postopek
-mia-learn feedback --verdict negative --note "raje Chromu"
+mia-learn status                   # memory size, last mining
+mia-learn brief "open google"      # what Mia would know right now
+mia-learn habits
+mia-learn recipes
+mia-learn mistakes
+mia-learn remember --note "…"
+mia-learn feedback --verdict negative --note "prefer Chrome"
 ```
 
-V HUD-u je panel **SPOMIN IN ZNANJE**; gumb **ODPRI ZNANJE** pokaže drevo
-veščin, navade, recepte, napake, dnevnik in iskanje. Podrobnosti:
-[docs/LEARNING.md](docs/LEARNING.md) in [docs/CONTROL.md](docs/CONTROL.md).
+The HUD has a **SPOMIN IN ZNANJE** panel; **ODPRI ZNANJE** opens the skill
+tree, habits, recipes, mistakes, episode log and search. Details:
+[docs/en/LEARNING.md](docs/en/LEARNING.md) and
+[docs/en/CONTROL.md](docs/en/CONTROL.md).
 
-## Samodejnost — mini pod-OS
-
-Mia se zna prilagoditi stroju, načrtovati več korakov, izvajati opravila po
-urniku ali ob pogoju ter opaziti in odpraviti težave. Vse gre skozi revidiran
-`mia-ctl`, s politiko in potrditvami.
+## Autonomy — a mini sub-OS
 
 ```bash
-mia-auto profile                  # kaj je ta stroj, kaj mu manjka
-mia-auto adapt                    # predlog namestitve manjkajočih orodij
-mia-auto health                   # ocena zdravja + varna sanacija
-mia-auto status                   # stroj, zdravje, opravila, naloge
-mia-auto do "opomni me čez 10 minut, da pijem vodo"
-mia-auto jobs add "jutranji pregled" --daily 08:00 --template health_report
-mia-auto tasks list                # dnevnik nalog z nadaljevanjem
-mia-auto daemon --interval 30      # urnik brez glasovnega strežnika
+mia-auto profile                   # what this machine is, what it lacks
+mia-auto adapt                     # install plan for missing tools
+mia-auto health                    # scored health + safe remediation
+mia-auto status                    # machine, health, jobs, tasks
+mia-auto do "remind me in 10 minutes to drink water"
+mia-auto jobs add "morning" --daily 08:00 --template health_report
+mia-auto tasks list                # resumable task journal
+mia-auto daemon --interval 30      # scheduler without the voice server
 ```
 
-V HUD-u sta panel **SAMODEJNOST** in stran `/hud/autonomy.html` (pregled,
-prilagoditev, opravila in pravila, naloge, ukaz, opozorila). Podrobnosti:
-[docs/AUTONOMY.md](docs/AUTONOMY.md).
+It detects OS/distro/init/package manager/desktop/backends, executes multi-step
+plans with verification, retries and rollback, keeps persistent jobs and
+reactive rules (“when the disk is full …”), watches health, and understands
+deterministic system commands before the LLM. HUD: `/hud/autonomy.html`.
+Details: [docs/en/AUTONOMY.md](docs/en/AUTONOMY.md).
 
-## V ozadju (pregled in ročni nadzor)
+## Background (overview and manual override)
 
-HUD stran **V OZADJU** (`/hud/background.html`) pokaže, kaj Mia trenutno
-izvaja v ozadju: medijska okna, ki jih je odprla, holografske plošče, storitve
-sklada (llama-server, chat model, Hermes, TTS) in aktivna opravila samodejnosti.
-Vsako postavko lahko zapreš oziroma ustaviš ročno, s stikalom **ROČNI NADZOR**
-pa izklopiš Mia-ino samodejno zapiranje oken (npr. ko želiš imeti odprti dve
-stvari hkrati). API: `/api/background`, `/api/background/close`,
-`/api/background/stop`, `/api/background/override`.
+The HUD page **V OZADJU** (`/hud/background.html`) lists what Mia is running in
+the background: media windows she opened, holographic panels, stack services
+(llama-server, chat model, Hermes, TTS) and active autonomy jobs. Each item can
+be closed or stopped by hand, and the **ROČNI NADZOR** switch turns off Mia's
+automatic window closing (for example when you want two things open at once).
+API: `/api/background`, `/api/background/close`,
+`/api/background/close-all`, `/api/background/override`.
 
-## Jezik HUD-a (SLO / ENG)
+## HUD language (SLO / ENG)
 
-Spodaj desno v vsaki HUD strani sta gumba **SLO** in **ENG**. Izbira se shrani
-v brskalnik in v `server/logs/ui-state.json`; ko izbereš ENG, se prevede cel
-uporabniški vmesnik (plošče, gumbi, tabele, opozorila, strani NASTAVITVE,
-SAMODEJNOST, ZMOGLJIVOSTI, ZNANJE in V OZADJU) in Mia odgovarja v angleščini.
-Slovenski izvirnik ostane v kodi; `tests/test_hud_i18n.py` preveri, da noben
-nov niz ni brez prevoda.
+Every HUD page has **SLO** and **ENG** buttons in the bottom-right corner. The
+choice is stored in the browser and in `server/logs/ui-state.json`; choosing ENG
+translates the whole interface (panels, buttons, tables, alerts, the SETTINGS,
+AUTONOMY, CAPABILITIES, KNOWLEDGE and BACKGROUND pages) and makes Mia answer in
+English. The language is not only cosmetic: deterministic replies are localized
+too — clock and date, weather, volume confirmations, media and Google
+confirmations, autonomy answers, calibration prompts and the "was this right?"
+flow all follow the switch (`server/mia_core/i18n.py`). The Slovenian original
+stays in the source; `tests/test_hud_i18n.py` fails if a new static string has
+no translation, and `tests/test_i18n.py` covers the server-side replies.
 
-## En model (Gemma) — brez drugega GGUF-a
+## One model (Gemma) — no second GGUF
 
-Privzeto hitri pogovor uporablja **isti llama-server kot agent** (Gemma), zato
-drugega modela ni treba nalagati. Če imaš v `server/config/server.yaml` še
-`stack.chat` s Qwen/chat GGUF (napačna pot ali nepotreben drug model), ga
-počisti s pripravljeno migracijo:
+By default the fast chat path asks the **same llama-server as the agent**
+(Gemma), so a second model is not needed. If `server/config/server.yaml` still
+has a `stack.chat` block with a Qwen/chat GGUF (wrong path or an unwanted second
+model), run the migration:
 
 ```bash
-python3 server/scripts/use_single_model.py --dry-run   # samo pokaže spremembo
-python3 server/scripts/use_single_model.py             # zapiše + naredi .bak
+python3 server/scripts/use_single_model.py --dry-run   # show the change
+python3 server/scripts/use_single_model.py             # write it + keep a .bak
 ./stop-mia.sh && ./start-mia.sh
 ```
 
-Skript nastavi `llm.chat.base_url` na glavni llama-server (vratca iz
-`stack.llama.health`), `llm.chat.model` pa na `--alias` glavnega modela
-(npr. `HauhauCS/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced`), in zakomentira
-cel `stack.chat`, tako da se drugi model ne zaganja več. Kommentarji v `server.yaml` ostanejo, prejšnja različica pa se
-shrani kot `server.yaml.bak-<datum>`.
+It points `llm.chat.base_url` at the main llama-server (port from
+`stack.llama.health`), sets `llm.chat.model` to the main model's `--alias`
+(e.g. `HauhauCS/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced`) and comments out
+the whole `stack.chat` block, so the second model is never started. Comments in `server.yaml` are preserved and the
+previous file is saved as `server.yaml.bak-<date>`.
 
-## Arhitektura
+## Architecture
 
 ```
- HUD v brskalniku (katera koli naprava v LAN-u)   Gostitelj (testirano: Linux + systemd; macOS s prilagoditvami)
+ Browser HUD (any LAN device)          Host machine (tested: Linux + systemd; macOS with tweaks)
  ── https/wss :8766 ─────────┐   ┌──────────────────────────────────────┐
-   mikrofon · zvočnik · panel├──►│ strežnik glasovnega cevovoda (ta repo)│
-                             │   │  VAD + budnica + govorniški odtis    │   ┌──────────────────┐
- Odjemalec za pritisk na tipko│  │  STT: faster-whisper (lokalno)       │   │ llama-server     │
- ── ws :8765 ────────────────┘   │  TTS: lokalni Piper (ali Gepard/Maya1)├──►│ (lokalni LLM)    │
-                                 │  HUD + avtentikacija + TLS proxy     │   ├──────────────────┤
+   mic · speaker · panels    ├──►│ voice pipeline server (this repo)    │
+                             │   │  VAD + wake word + speaker voiceprint│   ┌──────────────────┐
+ Push-to-talk client         │   │  STT: faster-whisper (local)         │   │ llama-server     │
+ ── ws :8765 ────────────────┘   │  TTS: local Piper (or Gepard/Maya1)  ├──►│ (local LLM)      │
+                                 │  HUD + auth + TLS proxy              │   ├──────────────────┤
                                  └──────────────────────────────────────┘──►│ Hermes Agent     │
                                              │                              │  API :8642 (lo)  │
-                                             └── :9443 proxy ──────────────►│  spomin · orodja │
-                                                (kanban/plošča/klepet :9119) │  veščine · cron  │
+                                             └── :9443 proxy ──────────────►│  memory · tools  │
+                                                (kanban/dash/chat :9119)    │  skills · cron   │
                                                                              └──────────────────┘
 ```
 
-Eni možgani, več obrazov: glas in tipkani klepet si delita eno trajno Hermes
-sejo, zato vsak ve, kaj si rekel drugemu — in spomin preživi vsak ponovni zagon.
+One brain, many faces: voice and typed chat share a single persistent Hermes
+session, so each knows what you said to the other — and memory survives every
+restart.
 
-**Učenje in nadzor**: vsak sprejet krog se zabeleži v
-`~/.local/state/mia/learning.db`; pred naslednjim krogom strežnik vbrizga
-omejen brief z navadami, recepti in napakami. `mia-ctl` dejanja gredo skozi
-politiko in revizijo (`control-audit.jsonl`), ki se prav tako uči. Drevo veščin
-je v `skills/`, pregled v HUD-u pa v panelu **SPOMIN IN ZNANJE**.
+**Voice pipeline latency budget**: Silero VAD frames (32 ms) → adaptive
+endpointing (350–700 ms of silence, shorter for short commands) → faster-whisper
+(`condition_on_previous_text: false`, no timestamps, `int8` on CPU) → Hermes
+SSE stream → sentence splitter that also cuts a long clause at a natural break
+→ TTS chunks forwarded to the browser the moment they exist. The HUD schedules
+them back-to-back on WebAudio, so the first word is heard before the full reply
+is generated. `hermes.ack_after_seconds` covers a slow model with a short
+spoken acknowledgement.
 
-**Upravljanje celotnega sklada**: če v `server.yaml` izpolniš sekcijo `stack:`,
-`start-mia.sh` po vrsti zbudi llama-server (lokalni model) → Hermes gateway →
-Hermes dashboard → TTS storitev → glasovni strežnik (vsak korak se preskoči, če
-že teče), `stop-mia.sh` pa vse ustavi v obratnem vrstnem redu in sprosti
-RAM/VRAM. Glej `server/config/server.example.yaml`.
+**Learning and control**: every accepted turn is stored in
+`~/.local/state/mia/learning.db`; before the next turn the server injects a
+bounded brief with habits, recipes and anti-patterns. `mia-ctl` actions go
+through policy and audit (`control-audit.jsonl`) and are learned too. The skill
+tree lives in `skills/`; the HUD panel **SPOMIN IN ZNANJE** shows it all.
 
-## Hiter začetek (en ukaz)
+**Whole-stack management**: with a `stack:` section in `server.yaml`,
+`start-mia.sh` boots llama-server (local model) → Hermes gateway → Hermes
+dashboard → TTS service → voice server in order (each step skipped when
+already up), and `stop-mia.sh` stops everything in reverse, freeing RAM/VRAM.
+See `server/config/server.example.yaml`.
 
-```bash
-git clone https://github.com/DanijelTech/Mia.git && cd Mia && ./install.sh --yes --open
-```
-
-Ta vrstica klonira repo, namesti pakete v sistemski Python (brez venv), prenese
-slovenski glas, ustvari TLS certifikat, doda `MIA_HUD_TOKEN` v `~/.hermes/.env`,
-napiše in zažene systemd enoto ter odpre HUD v brskalniku **že prijavljen**
-(`?token=` se pretvori v piškotek in odstrani iz naslova).
-
-Če nisi root, dodaj `sudo` — namestitev gre v `pip --user` in `systemctl --user`.
-Različice:
+## Quick start (one command)
 
 ```bash
-./install.sh --yes --open --with-maya1   # najboljša slovenska izgovorjava
-./install.sh --yes --open --with-gepard  # lažji glasovni model za GPU
-./install.sh --dry-run                   # najprej poglej, kaj bi naredil
+git clone https://github.com/DanijelTech/Mia.git && cd Mia && sudo ./install.sh --yes --open
 ```
 
-Pozneje kadar koli zaženi/odpri znova:
+That single line clones the repo, installs the Python packages into the system
+interpreter (no virtualenv), downloads the Slovenian voice, generates the TLS
+certificate, adds `MIA_HUD_TOKEN` to `~/.hermes/.env`, writes and starts the
+systemd unit, then opens the HUD in your browser **already logged in**
+(`?token=` is converted to a cookie and stripped from the URL).
+
+Without root, drop `sudo` — it installs into `pip --user` and `systemctl --user`.
+Variants:
 
 ```bash
-./start-mia.sh                # zaženi (če je treba), počakaj, odpri HUD
-./start-mia.sh --no-open      # samo zaženi in izpiši URL + žeton
-./stop-mia.sh                 # ustavi glasovni strežnik (in TTS storitev)
-./stop-mia.sh --status        # kaj teče, katera vrata so zasedena
-./stop-mia.sh --restart       # ustavi in znova zaženi + odpri
-./stop-mia.sh --free-ports    # če vrata ostanejo zasedena, ubij lastnika
-./update.sh               # potegni novo izdajo z GitHuba in osveži storitev
-./update.sh --check       # samo pokaži, kaj je novega
+sudo ./install.sh --yes --open --with-maya1   # best Slovenian pronunciation
+sudo ./install.sh --yes --open --with-gepard  # lighter GPU voice
+./install.sh --dry-run                        # see everything first
 ```
 
-Certifikat je self-signed, zato brskalnik enkrat vpraša — sprejmi.
+Afterwards, start/open again at any time with:
 
-## Zahteve
+```bash
+./start-mia.sh                # start (if needed), wait, open the HUD
+./start-mia.sh --no-open      # just start and print URL + token
+./stop-mia.sh                 # stop the voice server (and the TTS service)
+./stop-mia.sh --status        # what is running, which ports are held
+./stop-mia.sh --restart       # stop, start again and open
+./stop-mia.sh --free-ports    # if a port stays held, kill its owner
+./update.sh               # pull the latest release from GitHub and restart
+./update.sh --check       # only show what is new
+```
 
-- Stroj za strežnik (testirano: Linux + systemd, 2× GPU za lokalni 35B model;
-  macOS deluje s prilagoditvami, launchd namesto systemd)
-- [Hermes Agent](https://hermes-agent.nousresearch.com/docs/) nameščen in
-  nastavljen z ponudnikom LLM (privzeto lokalni model za llama-server)
+The certificate is self-signed, so the browser asks once — accept it.
+
+## Requirements
+
+- A machine for the server (tested: Linux + systemd, 2× GPU for a local 35B
+  model; macOS works with tweaks, launchd instead of systemd)
+- [Hermes Agent](https://hermes-agent.nousresearch.com/docs/) installed and
+  configured with an LLM provider (by default a local model via llama-server)
 - Python 3.11+
-- TTS: lokalni **Piper** (privzeto, hiter, brez ključa, popolnoma offline),
-  naravnejši **Gepard**, **Maya1** (najboljša slovenska izgovorjava, na CPU
-  počasna) ali [ElevenLabs](https://elevenlabs.io) ključ za oblačne glasove —
-  lokalna servisa se ob zasedenem GPU samodejno preklopita na CPU/RAM
-- Kateri koli sodoben brskalnik v LAN-u
-- Opcijsko: `speechbrain` (glasovna kalibracija), `yt-dlp` (YouTube glasba),
-  `xdotool` (zanesljivo zapiranje oken), `ffmpeg` (premik višine tona)
+- TTS: local **Piper** (default, fast, no key, fully offline), the more natural
+  **Gepard** service, the **Maya1** service (best Slovenian pronunciation, slow
+  on CPU), or an [ElevenLabs](https://elevenlabs.io) API key for cloud voices —
+  the two local services fall back to CPU/RAM when the GPU is busy
+- Any modern browser on the LAN
+- Optional: `speechbrain` (voice calibration), `yt-dlp` (YouTube music),
+  `xdotool` (reliable window closing), `ffmpeg` (pitch shifting)
 
-## Namestitev
+## Install
 
-En ukaz, brez venv (namesti se v sistemski Python, tako kot teče Hermes kot root):
+One command, no virtualenv (installs into the system Python, which is how a
+root Hermes install runs anyway):
 
 ```bash
-./install.sh                       # sistemsko (root): odvisnosti, glas, cert, žeton, systemd
-./install.sh --dry-run             # najprej pokaži vse korake
-./install.sh --with-gepard         # + opcijska Gepard TTS storitev
-./install.sh --with-maya1          #   ali Maya1 (najboljša izgovorjava)
+sudo ./install.sh                  # system-wide (root): deps, voice, cert, token, systemd
+./install.sh --dry-run             # show every action first
+sudo ./install.sh --with-gepard    # + optional Gepard TTS service
+sudo ./install.sh --with-maya1     #   or Maya1 (best SL pronunciation)
 ```
 
-Vse, kar ustvari, zapiše v manifest, zato je odstranitev natančna:
+It records everything it creates in a manifest, so removal is exact:
 
 ```bash
-./uninstall.sh --dry-run      # predogled
-./uninstall.sh                # ustavi storitve, odstrani enote, certifikate, glasove, vrstico z žetonom
-./uninstall.sh --purge-deps   # ...in pip-odstrani nameščene pakete
+sudo ./uninstall.sh --dry-run      # preview
+sudo ./uninstall.sh                # stop services, remove units, certs, voices, token line
+sudo ./uninstall.sh --purge-deps   # ...and pip-uninstall the packages it added
 ```
 
-Za stroj brez interneta: `./build-package.sh` naredi arhiv (z namestitvenimi
-skripti, brez glasov), ki ga preneseš in zaženeš z `./install.sh`.
+Offline machine? `./build-package.sh` produces a tarball (installer included,
+no voices) that you can copy over and run with `./install.sh`.
 
-Ročni postopek (in kaj namestitvenik avtomatizira) je v
-[docs/SETUP.md](docs/SETUP.md). Kratka različica brez namestitvenika:
+Manual walkthrough (and what the installer automates) is in
+[docs/en/SETUP.md](docs/en/SETUP.md). Short version without the installer:
 
 ```bash
-# 1. Vključi API strežnik Hermesa
+# 1. Enable the Hermes Agent API server
 cat >> ~/.hermes/.env <<EOF
 API_SERVER_ENABLED=true
 API_SERVER_KEY=$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')
 MIA_HUD_TOKEN=$(python3 -c 'import secrets;print("mia-"+secrets.token_hex(3))')
+ELEVENLABS_API_KEY=your-key-here
 EOF
-hermes gateway   # ali nastavi njegov LaunchAgent / storitev
+hermes gateway   # or set up its LaunchAgent / service
 
-# 2. Ta repo
+# 2. This repo
 git clone https://github.com/DanijelTech/Mia.git
 cd Mia/server
-pip install fastapi uvicorn requests pyyaml numpy \
+python3 -m venv .venv
+.venv/bin/pip install fastapi uvicorn requests pyyaml numpy anthropic \
     RealtimeSTT faster-whisper silero-vad websockets psutil
-cp config/server.example.yaml config/server.yaml
-scripts/make-certs.sh          # self-signed TLS (brskalnik za mikrofon potrebuje HTTPS)
-scripts/get-voice.sh sl        # slovenski glas (63 MB)
+cp config/server.example.yaml config/server.yaml   # edit: your ElevenLabs voice_id etc.
+scripts/make-certs.sh                              # self-signed TLS (browser mic needs it)
+scripts/make-boot-audio.sh YourName                # one-time boot greeting synthesis
 
-# 3. Zaženi
-python3 server.py
-# odpri https://TVOJ_HOST/hud/ → sprejmi certifikat → vnesi MIA_HUD_TOKEN
+# 3. Local voice (offline, Slovenian/Serbian) — skip if using ElevenLabs
+.venv/bin/pip install piper-tts
+scripts/get-voice.sh sl
+
+# 4. Run
+.venv/bin/python server.py
+# open https://YOUR_HOST/hud/ → accept cert → enter your MIA_HUD_TOKEN → talk
 ```
 
-Za samodejni zagon ob bootu glej [launchd/](launchd/) (macOS) oz. systemd enote,
-ki jih ustvari `install.sh` — komentarji v plistih opisujejo dve neočitni pasti
-macOS-a (TCC pri zunanjih diskih in poti do logov).
+Offline voice stack (Piper + local Whisper + local LLM, no cloud calls) is
+documented in [docs/SETUP.md](docs/SETUP.md#2-the-voice-local-piper-offline-or-elevenlabs-cloud).
 
-## Uporaba
+For auto-start on boot, see [launchd/](launchd/) (macOS) — the plists document
+two non-obvious macOS traps (external-drive TCC and log paths) that cost us an
+evening.
 
-| Dejanje | Kako |
+## Usage
+
+| Action | How |
 |---|---|
-| Pogovor | samo reci **»Mia, …«** — poslušanje, zaznava konca in odgovor so samodejni |
-| Prekinitev | rdeč gumb ■ USTAVI ali Esc (med obdelavo/govorjenjem šum ne prekinja) |
-| Višina glasu | panel GLAS v HUD-u — drsnik 70–240 Hz, velja od naslednjega stavka |
-| Glasovna kalibracija | `python3 server/scripts/enroll_voice.py` (`--append` za dodaten jezik) |
-| Glasba | »Mia, pusti mi …« → YouTube app-okno · »zapri ga / ustavi glasbo« |
-| Okna na namizju | »odpri mi Google / \<stran\>« in »zapri ga« (mia-open/mia-close) |
-| Nadzor računalnika | `mia-ctl …` — okna, aplikacije, vnos, posnetki, odložišče, napajanje |
-| Spomin in znanje | panel SPOMIN IN ZNANJE → ODPRI ZNANJE · `mia-learn …` |
-| Kalibracija glasu | HUD NASTAVITVE → KALIBRIRAJ · `server/scripts/calibrate_voice.py` |
-| Zmogljivosti | panel ZMOGLJIVOSTI → ODPRI SEZNAM · `mia-learn capabilities` |
-| Potrditev opravila | HUD kartica »JE BILO PRAVILNO?« ✓/✗ · `mia-learn verify` |
-| Google | »poišči in povej« = ustno · »prikaži« = brskalnik |
-| Tipkani klepet | vnosno polje na dnu (ista seja kot glas) |
-| Kanban / plošče | panel POGLEDI → kanban, nadzorna plošča, klepet |
-| Pritisni-in-govori | alternativa: klikni možgane (ali preslednica) · govori · klikni znova |
-| Telefon | odpri HUD → Dodaj na začetni zaslon |
+| Talk | just say **"Mia, …"** — listening, end-of-speech and reply are automatic |
+| Stop the agent | red ■ STOP button or Esc (noise never interrupts mid-turn) |
+| Voice pitch | GLAS panel in the HUD — 70–240 Hz slider, applies from the next sentence |
+| Voice calibration | `python3 server/scripts/enroll_voice.py` (`--append` for another language) |
+| Music | "Mia, play me …" → YouTube app window · "close it / stop the music" |
+| Desktop windows | "open Google / \<page\>" and "close it" (mia-open/mia-close) |
+| Computer control | `mia-ctl …` — windows, apps, input, screenshots, clipboard, power |
+| Memory and knowledge | SPOMIN IN ZNANJE panel → ODPRI ZNANJE · `mia-learn …` |
+| Voice calibration | HUD NASTAVITVE → KALIBRIRAJ · `server/scripts/calibrate_voice.py` |
+| Capabilities | ZMOGLJIVOSTI panel → ODPRI SEZNAM · `mia-learn capabilities` |
+| Verify an action | HUD “JE BILO PRAVILNO?” ✓/✗ · `mia-learn verify` |
+| Google | “search and tell me” = spoken · “show me” = browser |
+| Typed chat | input bar at the bottom (same conversation as voice) |
+| Kanban / dashboards | VIEWS panel → kanban, dashboard, chat |
+| Push-to-talk | alternative: click the brain (or Space) · speak · click again |
+| Phone | open the HUD → Add to Home Screen |
 
-## Struktura repozitorija
+## Repo layout
 
 ```
-server/          FastAPI glasovni cevovod + gostitelj HUD-a (jedro projekta)
-server/hud/      HUD v eni datoteki (vanilla JS, brez gradnje)
-server/continuous.py  VAD segmentacija, budnica (wake gate) za neprestano poslušanje
-server/speaker_gate.py  prepoznava govornika (ECAPA-TDNN odtisi, SpeechBrain)
-server/tts.py    lokalni TTS pogoni: piper, http (Gepard/Maya1), command, elevenlabs
-server/mia_core/ učenje in znanje (stdlib-only): SQLite, navade, recepti, napake,
-                 drevo veščin, zmogljivosti, kontekstni brief, CLI (mia-learn)
-server/mia_core/autonomy/  mini pod-OS: profil stroja, načrti, urnik, pravila,
-                 zdravje, deterministični ukazi, CLI (mia-auto)
-server/speaker_gate.py  oddaljenostni glasovni odtisi (bližina/sredina/daleč)
-server/calibration.py   vodena kalibracija prek HUD WebSocketa
-server/hud/settings.html      NASTAVITVE (budnica, prag, učenje, kalibracija)
-server/hud/capabilities.html  ZMOGLJIVOSTI (potrjeno/naučeno/prazno)
-server/hud/autonomy.html      SAMODEJNOST (profil, načrti, opravila, naloge, zdravje)
-server/hud/background.html    V OZADJU (kaj teče, ročni nadzor, zapiranje)
-server/hud/i18n.js            SLO/ENG preklop in prevodni slovar za cel HUD
-server/scripts/  mia-start/stop/health + enroll_voice.py (glasovna kalibracija)
-                 + gepard_tts.py (TTS storitev s per-request višino tona)
-client/          opcijski Windows/Linux odjemalec za pritisk na tipko (z zaznavo budnice)
-worker/          opcijska GPU sidecarja: STT strežnik z velikim modelom + statistika
-hermes-plugin/   Hermes vtičniki: hud_display (medijski paneli), mia_learning
+server/          FastAPI voice pipeline + HUD host (the core of this project)
+server/hud/      single-file HUD (vanilla JS, no build step)
+server/continuous.py  VAD segmentation + wake gate for always-on listening
+server/speaker_gate.py  speaker verification (ECAPA-TDNN voiceprints, SpeechBrain)
+server/tts.py    local TTS backends: piper, http (Gepard/Maya1), command, elevenlabs
+server/mia_core/ learning and knowledge (stdlib-only): SQLite, habits, recipes,
+                 anti-patterns, skill tree, capabilities, context brief, mia-learn CLI
+server/mia_core/i18n.py  bilingual deterministic replies (clock, weather,
+                 confirmations, autonomy answers) for the SLO/ENG switch
+server/mia_core/autonomy/  mini sub-OS: machine profile, plans, scheduler,
+                 rules, health, deterministic commands, mia-auto CLI
+server/speaker_gate.py  distance-aware voiceprints (near/mid/far)
+server/calibration.py   guided calibration over the HUD WebSocket
+server/hud/settings.html      SETTINGS (wake, threshold, learning, calibration)
+server/hud/capabilities.html  CAPABILITIES (confirmed/learned/empty)
+server/hud/autonomy.html      AUTONOMY (profile, plans, jobs, tasks, health)
+server/hud/background.html    V OZADJU (what runs, manual override, closing)
+server/hud/i18n.js            SLO/ENG switch and the translation dictionary
+server/scripts/  mia-start/stop/health + enroll_voice.py (voice calibration)
+                 + gepard_tts.py (TTS service with per-request pitch)
+client/          optional Windows/Linux push-to-talk Python client (wake word capable)
+worker/          optional GPU sidecars: big-model STT server + stats agent
+hermes-plugin/   Hermes plugins: hud_display (media panels), mia_learning
                  (memory_brief/search/feedback/remember/fact/mistake/status/skill_tree)
-                 in mia_autonomy (system_status/profile/health/adapt/plans/run_plan/
+                 and mia_autonomy (system_status/profile/health/adapt/plans/run_plan/
                  command/jobs/tasks/alerts)
-skills/          drevo veščin: mia-companion (koren) + mia-desktop, mia-learning,
+skills/          skill tree: mia-companion (root) + mia-desktop, mia-learning,
                  mia-music, mia-browser, mia-productivity, mia-diagnostics,
                  mia-autonomy
 skills/mia-companion/bin/  mia-open, mia-close, mia-volume, mia-artists,
-                 mia-learn, mia-skill, mia-ctl (revidiran nadzor računalnika),
-                 mia-auto (samodejnost: profil, načrti, urnik, zdravje)
-tests/           unittest suite za mia_core, mia-ctl in drevo veščin
-launchd/         predloge za samodejni zagon na macOS (pripombe o TCC in FD limitih)
-docs/            slovenska dokumentacija: SETUP, ARCHITECTURE, LEARNING, CONTROL,
-                 AUTONOMY, CALIBRATION, CAPABILITIES, TROUBLESHOOTING
-docs/en/         ista dokumentacija v angleščini
-install.sh       namestitev (brez venv, root ali uporabnik) + manifest
-start-mia.sh     zbudi cel sklad (stack: llama → Hermes → dashboard → Mia + TTS), odpre HUD
-stop-mia.sh      ustavi vse in sprosti RAM/VRAM; status, --restart, --free-ports
-update.sh        git pull --ff-only + restart storitve + opozorilo za Ctrl+Shift+R
-uninstall.sh     natančna odstranitev vsega, kar je namestil install.sh
-build-package.sh arhiv za namestitev na stroju brez interneta
+                 mia-learn, mia-skill, mia-ctl (audited computer control),
+                 mia-auto (profile, plans, jobs, health)
+tests/           unittest suite for mia_core, mia-ctl and the skill tree
+launchd/         macOS auto-start templates with hard-won TCC + FD-limit notes
+docs/            Slovenian docs; docs/en/ the English copies
+                 (SETUP, ARCHITECTURE, LEARNING, CONTROL, AUTONOMY, CALIBRATION, CAPABILITIES)
+install.sh       install (no venv, root or user) + manifest
+start-mia.sh     boots the whole stack (stack: llama → Hermes → dashboard → Mia + TTS), opens HUD
+stop-mia.sh      stops everything and frees RAM/VRAM; status, --restart, --free-ports
+update.sh        git pull --ff-only + service restart + Ctrl+Shift+R reminder
+uninstall.sh     exact removal of everything install.sh created
+build-package.sh offline tarball for a machine without internet
 ```
 
-## Varnostni model
+## Security model
 
-- Hermesov API ključ nikoli ne doseže brskalnika: HUD komunicira prek strogo
-  omejenega proxyja na glasovnem strežniku.
-- Vse HUD končne točke + proxy do plošče + brskalniški WebSocketi so zaščiteni z
-  žetonom (piškotek, vnesen enkrat na napravo; `start-mia.sh` ga lahko vnese
-  samodejno prek `?token=`).
-- Hermesov API in plošča poslušata samo na loopbacku.
-- Nizi, ki izgledajo kot skrivnosti, se prekrijejo, preden gredo v oblačni TTS.
-- `mia-ctl` preveri politiko (`~/.config/mia/control.json`): dovoljene korenine,
-  prepovedane poti (`~/.ssh`, `~/.hermes` …), potrditev za uničujoča dejanja.
-- Vsako nadzorno dejanje gre v revizijo; skrivnosti v argumentih se prekrijejo.
-- Spomin se shranjuje lokalno; vsa besedila se pred shranjevanjem prekrijejo.
-- Zasnovano za LAN — tega ne odpiraj na internet.
+- The Hermes API key never reaches the browser: the HUD talks through a
+  strict allowlist proxy on the voice server.
+- All HUD endpoints + dashboard proxy + browser WebSockets are gated by a
+  token (cookie, entered once per device).
+- Hermes' API binds to loopback only; the dashboard binds to loopback only.
+- Secret-shaped strings are redacted before text leaves for cloud TTS.
+- `mia-ctl` checks a policy (`~/.config/mia/control.json`): allowed roots,
+  denied paths (`~/.ssh`, `~/.hermes` …) and confirmation for destructive
+  actions. Every control action is audited with secrets redacted.
+- Memory is stored locally; all text is redacted before storage.
+- LAN-only by design — do not port-forward this to the internet.
 
-## Zasluge in licenca
+## Credits & license
 
-Zgrajeno na [Hermes Agent](https://github.com/NousResearch/hermes-agent) (Nous
-Research). Estetika HUD-a navdihnjena po
+Built on [Hermes Agent](https://github.com/NousResearch/hermes-agent) by Nous
+Research. HUD aesthetics inspired by
 [jarvis-dashboard](https://github.com/AndrewKochulab/jarvis-dashboard).
-STT: [faster-whisper](https://github.com/SYSTRAN/faster-whisper) /
-[RealtimeSTT](https://github.com/KoljaB/RealtimeSTT). Glas: Piper, opcijsko
-Gepard / Maya1 (MediaAtlas), opcijsko [ElevenLabs](https://elevenlabs.io).
+STT by [faster-whisper](https://github.com/SYSTRAN/faster-whisper) /
+[RealtimeSTT](https://github.com/KoljaB/RealtimeSTT). Voice by
+[ElevenLabs](https://elevenlabs.io).
 
-Izvirno izpeljano iz [eadmin2/jarvis_ai](https://github.com/eadmin2/jarvis_ai)
-(MIT, © Chris Lassiter); preimenovano in razširjeno za lokalni slovenski/srbski glas.
+Originally derived from [eadmin2/jarvis_ai](https://github.com/eadmin2/jarvis_ai)
+(MIT, © Chris Lassiter); rebranded and extended for local Slovenian/Serbian voice.
 
-MIT — glej [LICENSE](LICENSE). Uporabi, razveji, zgradi svojo Mio.
+MIT — see [LICENSE](LICENSE). Use it, fork it, build your own Mia.

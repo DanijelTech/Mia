@@ -192,7 +192,12 @@ POVEZAVA:
 3. po odgovoru lahko nadaljuješ **brez budnice** samo, če nastaviš
    `followup_seconds` > 0 (privzeto **0** = vsaka izjava mora začeti z »Mia«);
    sicer po vsakem odgovoru znova reci »Mia«,
-4. govori lahko tudi med njenim odgovorom — to jo **prekine** (`barge_in`),
+4. z `barge_in: true` lahko govoriš med njenim odgovorom — zaključena izjava,
+   daljša od `barge_min_ms`, jo **prekine**. Privzeto (`barge_in: false`) je
+   pol-duplex: izjava, ki pride med turnom, se postavi v čakalno vrsto
+   (najnovejša zmaga) in se izvede po koncu turna, zato šum ne more ubiti
+   odgovora. Kašelj v nobenem primeru ne prekine ničesar; prekinitev se oceni
+   na zaključeni izjavi, ne na prvem govornem okvirju.
 5. **preslednica** (ali klik na možgane) med poslušanjem **takoj pošlje** trenutno
    izjavo — uporabi, če Mia ne zazna konca govora sama,
 6. klik na `■ STALNO` poslušanje izklopi (nedokončana izjava se še obdela).
@@ -200,23 +205,35 @@ POVEZAVA:
 Kako deluje: brskalnik pretaka zvok neprekinjeno, strežnik pa s **VAD** (Silero,
 če je na voljo; sicer energijski prag) sam reže izjave, jih prepisuje in sproža
 kroge. V `status` sporočilu piše, kateri VAD je aktiven (`silero`/`rms`).
+Zaključek izjave je **prilagodljiv**: kratek ukaz se zaključi pri
+`min_silence_ms` (350 ms), dolga poved pri `silence_ms` (700 ms).
 
 Nastavitve v `server.yaml`:
 
 ```yaml
 stt:
+  condition_on_previous_text: false   # prepreči ponavljanje Whisperja na šumu
+  without_timestamps: true
+  no_speech_threshold: 0.6
   continuous:
-    wake_words: ["mia", "hej mia", "ej mia"]
+    wake_words: ["mia", "mijo", "mija", "mio"]
     followup_seconds: 0       # 0 = vsaka izjava mora začeti z »Mia«
-    silence_ms: 700          # daljša tišina = počasnejši odziv, manj rezov
+    silence_ms: 700          # zgornja meja prilagodljivega zaključka
+    adaptive_endpoint: true
+    min_silence_ms: 350      # kratki ukazi se zaključijo hitreje
+    max_silence_ms: 1100
     min_speech_ms: 450       # krajše od tega se ignorira
     threshold: 0.5           # prag za začetek izjave
     end_threshold: 0.25      # prag za konec (histereza: nižji = manj prerezov)
     max_utterance_ms: 20000  # izjava se nikoli ne izgubi (po 20 s se zaključi)
     energy_override: true    # glasen zvok šteje kot govor, tudi če VAD reče ne
     min_rms: 700             # energijski fallback (320 je lovil TV/ventilator)
-    barge_in: true           # false = Mia ne sliši sebe (pol-duplex)
+    barge_in: false          # true = zaključena izjava jo prekine
+    barge_min_ms: 450        # krajše »prekinitve« so kašelj
 ```
+
+Angleški pozdravi so del nagovora, ne zahteve: `Hey Mia, …`, `OK Mia, …`,
+`Hello Mia, …` delujejo brez dodatnih budnic.
 
 **Šum, TV in tuji glasovi.** Če se v logu (`server/logs/latency.jsonl`,
 polje `errors`) ali na konzoli pojavlja `SPEAKER rejected`, Mia sliši okolico,
@@ -365,7 +382,7 @@ Opomba: LoRA je Apache-2.0; preveri licenco osnovnega modela
 | STT (Whisper) | CPU (`stt.device: cpu`) | da GPU ostane prost za model |
 | TTS (Piper / Gepard / Maya1) | CPU oz. GPU po izbiri | Piper teče na CPU; Gepard/Maya1 uporabita GPU, če je prost |
 
-Panel `STROJI` prikazuje **lokalni stroj** (`MAC MINI · HERMES`) s CPU/pomnilnikom in —
+Panel `STROJI` prikazuje **lokalni stroj** (`<ime računalnika> · HERMES`) s CPU/pomnilnikom in —
 če je na voljo `nvidia-smi` — tudi **GPU obremenitev, VRAM in temperaturo**
 (`GPU 37% · VRAM 11.1/24G · 61°`). Pri več karticah se VRAM **sešteje**, obremenitev in
 temperatura pa sta najvišji (`GPU×2 55% · VRAM 20.4/31.8G · 61°`). Če vrstice GPU ni,

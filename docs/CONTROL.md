@@ -1,5 +1,7 @@
 # Popoln nadzor nad lokalnim računalnikom (`mia-ctl`)
 
+> Angleška različica: [docs/en/CONTROL.md](en/CONTROL.md)
+
 `mia-ctl` je majhen, ekspliciten in revidiran besednjak za upravljanje
 računalnika. Agent ga uporablja namesto surovih `xdotool`/`wmctrl`/`pkill`
 ukazov, ker prinaša tri garancije:

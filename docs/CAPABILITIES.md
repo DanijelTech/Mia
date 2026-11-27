@@ -1,5 +1,7 @@
 # Seznam zmogljivosti (okljukano / potrjeno / prazno)
 
+> Angleška različica: [docs/en/CAPABILITIES.md](en/CAPABILITIES.md)
+
 Mia ima bogat, strojno preverljiv seznam tega, kar zna na **tem** računalniku.
 Ni to seznam želja: vsaka postavka ima ukaz, način preverjanja in status.
 

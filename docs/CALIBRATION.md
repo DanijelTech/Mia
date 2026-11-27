@@ -1,5 +1,7 @@
 # Kalibracija glasu po oddaljenosti
 
+> Angleška različica: [docs/en/CALIBRATION.md](en/CALIBRATION.md)
+
 Cilj: Mia prepozna **samo tvoj glas** in to **kjerkoli v hiši** — ob mikrofonu,
 na sredini sobe in od daleč. Profil ni več en sam vektor, ampak več
 oddaljenostnih odtisov z izmerjeno ravnjo zvoka in lastnim pragom.

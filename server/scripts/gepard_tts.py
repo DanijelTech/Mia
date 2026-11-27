@@ -681,7 +681,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="serve Piper if the Gepard stack cannot be loaded")
     ap.add_argument("--piper-model",
                     default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                         "voices", "sl_PLACEHOLDER.onnx"),
+                                         "voices", "sl_SI-artur-medium.onnx"),
                     help="Piper voice path used by --engine piper / --fallback-piper")
     ap.add_argument("--piper-bin", default="piper")
     ap.add_argument("--token-env", default="MIA_HUD_TOKEN")
@@ -714,11 +714,6 @@ def main(argv: list[str] | None = None) -> int:
     if (args.device or "").lower() == "cpu":
         # before torch is imported anywhere: keep the GPU untouched
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
-
-    if args.piper_model.endswith("sl_PLACEHOLDER.onnx"):  # keep the default path usable
-        args.piper_model = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "voices", "sl_SI-artur-medium.onnx")
 
     engine = build_engine(args)
     token = os.environ.get(args.token_env) or os.environ.get("JARVIS_HUD_TOKEN") or ""

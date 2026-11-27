@@ -180,7 +180,12 @@ VOICE LINK panel:
 3. after the reply you can keep talking **without the wake word** only if
    `followup_seconds` > 0 (default **0** = every utterance must start with "Mia");
    otherwise say "Mia" again for each request,
-4. you may speak while she is answering — that **interrupts** her (`barge_in`),
+4. with `barge_in: true` you may speak while she is answering — a completed
+   utterance longer than `barge_min_ms` **interrupts** her. The default
+   (`barge_in: false`) is half-duplex: an utterance that arrives mid-turn is
+   queued (newest wins) and runs when the turn finishes, so noise cannot kill
+   a reply. A cough never cancels anything either way; interruption is judged
+   on the completed utterance, not on the first speech frame.
 5. **Space** (or clicking the brain) while listening **submits** the current
    utterance immediately — use it when the end of speech is not detected,
 6. clicking `■ STALNO` turns listening off (a pending utterance is still processed).
@@ -188,22 +193,33 @@ VOICE LINK panel:
 How it works: the browser streams audio continuously and the server segments
 utterances with a **VAD** (Silero when available, otherwise an energy gate),
 transcribes them and runs the turns. The `status` message reports which VAD is
-active (`silero`/`rms`).
+active (`silero`/`rms`). The endpoint is **adaptive**: a short command closes
+after `min_silence_ms` (350 ms), a long sentence after `silence_ms` (700 ms).
 
 ```yaml
 stt:
+  condition_on_previous_text: false   # stops Whisper repeating itself on noise
+  without_timestamps: true
+  no_speech_threshold: 0.6
   continuous:
-    wake_words: ["mia", "hej mia", "ej mia"]
+    wake_words: ["mia", "mijo", "mija", "mio"]
     followup_seconds: 0       # 0 = every utterance must start with "Mia"
-    silence_ms: 700
+    silence_ms: 700           # ceiling for the adaptive endpoint
+    adaptive_endpoint: true
+    min_silence_ms: 350       # short commands close faster
+    max_silence_ms: 1100
     min_speech_ms: 450
     threshold: 0.5           # start of an utterance
     end_threshold: 0.25      # end (hysteresis: lower = fewer cuts)
     max_utterance_ms: 20000  # speech is never swallowed (force-close)
     energy_override: true    # loud audio counts as speech even if the VAD says no
     min_rms: 700             # energy fallback (320 picked up TV/fans)
-    barge_in: true           # false = half duplex (Mia cannot hear herself)
+    barge_in: false          # true = a completed utterance interrupts her
+    barge_min_ms: 450        # shorter "interruptions" are coughs
 ```
+
+English greetings are part of the address, not the request: `Hey Mia, …`,
+`OK Mia, …`, `Hello Mia, …` work without extra wake words.
 
 **Noise, TV and other voices.** If `SPEAKER rejected` shows up on the console or
 in `server/logs/latency.jsonl` (the `errors` field), Mia is hearing the room
@@ -323,7 +339,7 @@ Note: the LoRA card is Apache-2.0; check the base model
 | STT (Whisper) | CPU (`stt.device: cpu`) | keeps the GPU free for the model |
 | TTS (Piper / Gepard / Maya1) | CPU or GPU by choice | Piper runs on CPU; Gepard/Maya1 take the GPU when free |
 
-The `STROJI` panel shows the **local host** (`MAC MINI · HERMES`) with CPU/memory and —
+The `STROJI` panel shows the **local host** (`<hostname> · HERMES`) with CPU/memory and —
 when `nvidia-smi` is available — **GPU utilisation, VRAM and temperature**
 (`GPU 37% · VRAM 11.1/24G · 61°`). With multiple cards VRAM is **summed** and
 utilisation/temperature are the max (`GPU×2 55% · VRAM 20.4/31.8G · 61°`). No GPU row

@@ -61,6 +61,8 @@ from mia_core.integration import (detect_feedback, detect_remember,
                                   music_play_request, strip_speech_tags,
                                   time_answer, weather_request)
 from mia_core import capabilities as capability_core
+from mia_core import i18n as i18n_core
+from mia_core.i18n import localize, t as tr
 from mia_core.background import (load_ui_state, read_window_registry,
                                  render_window_registry, save_ui_state)
 from mia_core.config import find_tool
@@ -93,20 +95,37 @@ class BackendUnavailable(RuntimeError):
     """Hermes gateway or its key is unusable; the message is user-friendly."""
 
 
+def _lang() -> str:
+    """Current reply language, driven by the HUD's SLO/ENG switch."""
+    return i18n_core.current_lang()
+
+
 def friendly_error(exc: BaseException) -> str:
     """One actionable sentence for the HUD; the full traceback stays in the log."""
     base = ((CFG.get("hermes") or {}).get("base_url") or "http://127.0.0.1:8642")
     text = str(exc) or exc.__class__.__name__
     low = text.lower()
+    english = i18n_core.is_english()
     if ("connection refused" in low or "max retries exceeded" in low
             or "failed to establish a new connection" in low
             or isinstance(exc, requests.exceptions.ConnectionError)):
+        if english:
+            return (f"The Hermes gateway is unreachable at {base} — start "
+                    f"`hermes gateway` (also check API_SERVER_ENABLED/KEY in "
+                    f"~/.hermes/.env).")
         return (f"Hermesov gateway ni dosegljiv na {base} — zaženi `hermes gateway` "
                 f"(preveri tudi API_SERVER_ENABLED/KEY v ~/.hermes/.env).")
     if "api key not found" in low:
+        if english:
+            return ("Mia cannot see the Hermes key — add API_SERVER_KEY to "
+                    "~/.hermes/.env and restart Mia "
+                    "(systemctl --user restart mia-voice).")
         return ("Mia ne vidi Hermesovega ključa — dodaj API_SERVER_KEY v ~/.hermes/.env "
                 "in znova zaženi Mio (systemctl --user restart mia-voice).")
     if "401" in low:
+        if english:
+            return ("Hermes rejected the key (401) — API_SERVER_KEY in "
+                    "~/.hermes/.env does not match.")
         return "Hermes je zavrnil ključ (401) — API_SERVER_KEY v ~/.hermes/.env se ne ujema."
     first = text.strip().splitlines()[0]
     return first[:300]
@@ -186,7 +205,7 @@ try:
         ENV_PATHS.insert(0, _hermes_home / ".env")
 except OSError:
     pass
-SENTENCE_RE = re.compile(r"(.+?[.!?])(?=\s|$)", re.DOTALL)
+SENTENCE_RE = re.compile(r"(.+?(?:[.!?…]+|\n+))(?=\s|$)", re.DOTALL)
 THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 CODEBLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
 # Secret-shaped strings are never sent to cloud TTS (privacy filter):
@@ -218,6 +237,8 @@ ENROLL_PHRASES = (
     "prepoznaj glas", "prepoznaj moj glas", "zapomni si moj glas",
     "zapomni moj glas", "nauči se moj glas", "nauci se moj glas",
     "shrani moj glas", "vpiši moj glas", "vpisi moj glas",
+    "enroll my voice", "remember my voice", "learn my voice",
+    "save my voice", "recognize my voice",
 )
 
 
@@ -225,7 +246,9 @@ def _flat(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^a-zčšžćđ ]+", " ", (text or "").lower())).strip()
 
 
-_WAKE_PREFIX_RE = re.compile(r"^\s*(?:mia|mijo|mija|mio)\b[,\s]*", re.I)
+_WAKE_PREFIX_RE = re.compile(
+    r"^\s*(?:(?:hey|hi|hello|ok|okay|hej|ej|zdravo)\s*[,;:]?\s*)*"
+    r"(?:mia|mijo|mija|mio)\b[,\s]*", re.I)
 
 
 def _strip_mia_prefix(text: str) -> str:
@@ -245,32 +268,43 @@ def _is_media_stop(text: str) -> bool:
 
 
 def _is_media_open_browser(text: str) -> bool:
-    """'Mia, predvajanje iz ozadja odpri v brskalniku!' — move the current
-    panel media into a visible desktop window."""
+    """'Mia, predvajanje iz ozadja odpri v brskalniku!' / 'open the playback in
+    the browser' — move the current panel media into a visible desktop window."""
     flat = _flat(text)
-    if "brskalnik" in flat and any(k in flat for k in
-            ("predvajanje", "glasbo", "glasba", "muziko", "film", "video", "ozadja", "ozadju", "panel")):
+    if ("brskalnik" in flat or "browser" in flat) and any(
+            k in flat for k in ("predvajanje", "glasbo", "glasba", "muziko",
+                                "film", "video", "ozadja", "ozadju", "panel",
+                                "playback", "music", "song")):
         return True
-    return "iz ozadja" in flat and ("odpri" in flat or "pokaži" in flat or "pokazi" in flat)
+    return (("iz ozadja" in flat or "from the background" in flat)
+            and ("odpri" in flat or "pokaži" in flat or "pokazi" in flat
+                 or "open" in flat or "show" in flat))
 
 
 def _volume_request(text: str) -> list[str] | None:
-    """'Mia, pojačaj (za 20)!' / 'glasnost na 50' / 'zmanjšaj' -> mia-volume args."""
+    """'Mia, pojačaj (za 20)!' / 'glasnost na 50' / 'volume to 40' -> args."""
     flat = re.sub(r"\s+", " ", re.sub(r"[^a-zčšžćđ0-9 ]+", " ", (text or "").lower())).strip()
-    m = re.search(r"glasnost(?:i)?(?:\s+na)?\s+(\d+)", flat)
+    m = re.search(r"(?:glasnost(?:i)?(?:\s+na)?|volume(?:\s+to)?|set volume to)"
+                  r"\s+(\d+)", flat)
     if m:
         return ["set", m.group(1)]
-    if "koliko je glasnosti" in flat or "kakšna je glasnost" in flat:
+    if ("koliko je glasnosti" in flat or "kakšna je glasnost" in flat
+            or "volume status" in flat or "current volume" in flat
+            or "what is the volume" in flat):
         return ["status"]
-    m = re.search(r"poja[cč]aj(?:\s+za)?\s*(\d+)?", flat)
-    if m or "glasneje" in flat:
+    m = re.search(r"(?:poja[cč]aj|volume up|turn (?:it )?up)(?:\s+(?:za|by))?\s*(\d+)?", flat)
+    if m or "glasneje" in flat or "louder" in flat:
         pct = (m.group(1) if m else None)
         return ["up"] + ([pct] if pct else [])
-    m = re.search(r"(?:zmanj[sš]aj|zni[zž]aj|uti[sš]aj)(?:\s+za)?\s*(\d+)?", flat)
-    if m or " ti[sš]e" in flat or flat.endswith("ti[sš]e"):
+    m = re.search(r"(?:zmanj[sš]aj|zni[zž]aj|uti[sš]aj|volume down|turn (?:it )?down)"
+                  r"(?:\s+(?:za|by))?\s*(\d+)?", flat)
+    if m or " ti[sš]e" in flat or flat.endswith("ti[sš]e") or "quieter" in flat:
         pct = (m.group(1) if m else None)
         return ["down"] + ([pct] if pct else [])
-    if "ugasni zvok" in flat or "brez zvoka" in flat:
+    if "unmute" in flat or "odkleni zvok" in flat or "vrni zvok" in flat:
+        return ["unmute"]
+    if ("ugasni zvok" in flat or "brez zvoka" in flat or "mute" in flat
+            or "silence" in flat):
         return ["mute"]
     return None
 
@@ -344,11 +378,27 @@ _WEATHER_CODES = {
     85: "rahle snežne plohe", 86: "močne snežne plohe",
     95: "nevihta", 96: "nevihta s točo", 99: "močna nevihta s točo",
 }
-def _geocode_city(city: str) -> tuple[float, float, str] | None:
+_WEATHER_CODES_EN = {
+    0: "clear", 1: "mostly clear", 2: "partly cloudy", 3: "cloudy",
+    45: "fog", 48: "rime fog",
+    51: "light drizzle", 53: "drizzle", 55: "heavy drizzle",
+    56: "freezing drizzle", 57: "heavy freezing drizzle",
+    61: "light rain", 63: "rain", 65: "heavy rain",
+    66: "freezing rain", 67: "heavy freezing rain",
+    71: "light snow", 73: "snow", 75: "heavy snow", 77: "snow grains",
+    80: "light showers", 81: "showers", 82: "heavy showers",
+    85: "light snow showers", 86: "heavy snow showers",
+    95: "thunderstorm", 96: "thunderstorm with hail",
+    99: "severe thunderstorm with hail",
+}
+
+
+def _geocode_city(city: str, lang: str = "sl") -> tuple[float, float, str] | None:
     try:
         r = requests.get(
             "https://geocoding-api.open-meteo.com/v1/search",
-            params={"name": city, "count": 1, "language": "sl", "format": "json"},
+            params={"name": city, "count": 1,
+                    "language": "en" if lang == "en" else "sl", "format": "json"},
             timeout=8)
         r.raise_for_status()
         results = r.json().get("results") or []
@@ -359,10 +409,14 @@ def _geocode_city(city: str) -> tuple[float, float, str] | None:
                 str(top.get("name") or city))
     except Exception:
         return None
-def _weather_answer(city: str) -> str:
+
+
+def _weather_answer(city: str, lang: str | None = None) -> str:
     cfg = CFG.get("weather") or {}
+    english = str(lang or _lang()).lower().startswith("en")
     if not bool(cfg.get("enabled", True)):
-        return "Vremenska storitev je izklopljena, šefe."
+        return ("Weather service is disabled, boss." if english
+                else "Vremenska storitev je izklopljena, šefe.")
     raw = (city or "").strip().lower()
     if raw:
         name = _WEATHER_CITY_ALIASES.get(raw, raw.title())
@@ -375,11 +429,12 @@ def _weather_answer(city: str) -> str:
         except (TypeError, ValueError):
             lat = lon = None
     if lat is None or lon is None:
-        geo = _geocode_city(name)
+        geo = _geocode_city(name, "en" if english else "sl")
         if not geo:
-            return f"Za {name} ne najdem vremenske postaje, šefe."
+            return (f"I can't find a weather station for {name}, boss." if english
+                    else f"Za {name} ne najdem vremenske postaje, šefe.")
         lat, lon, name = geo
-    key = (round(float(lat), 3), round(float(lon), 3))
+    key = (round(float(lat), 3), round(float(lon), 3), english)
     now = time.monotonic()
     with _WEATHER_LOCK:
         cached = _WEATHER_CACHE.get(key)
@@ -399,23 +454,35 @@ def _weather_answer(city: str) -> str:
         cur = r.json().get("current") or {}
         temp = cur.get("temperature_2m")
         if temp is None:
-            return "Vremenske postaje trenutno ne morem prebrati, šefe."
+            return ("I can't read the weather station right now, boss." if english
+                    else "Vremenske postaje trenutno ne morem prebrati, šefe.")
         feel = cur.get("apparent_temperature")
         code = int(cur.get("weather_code") or 0)
         wind = cur.get("wind_speed_10m")
         hum = cur.get("relative_humidity_2m")
-        parts = [f"V {name} je {round(float(temp))} °C"]
-        if feel is not None:
-            parts.append(f"občutek {round(float(feel))} °C")
-        parts.append(_WEATHER_CODES.get(code, "neznano vreme"))
-        if wind is not None:
-            parts.append(f"veter {round(float(wind))} km/h")
-        if hum is not None:
-            parts.append(f"vlaga {round(float(hum))} %")
+        if english:
+            parts = [f"In {name} it is {round(float(temp))} °C"]
+            if feel is not None:
+                parts.append(f"feels like {round(float(feel))} °C")
+            parts.append(_WEATHER_CODES_EN.get(code, "unknown weather"))
+            if wind is not None:
+                parts.append(f"wind {round(float(wind))} km/h")
+            if hum is not None:
+                parts.append(f"humidity {round(float(hum))}%")
+        else:
+            parts = [f"V {name} je {round(float(temp))} °C"]
+            if feel is not None:
+                parts.append(f"občutek {round(float(feel))} °C")
+            parts.append(_WEATHER_CODES.get(code, "neznano vreme"))
+            if wind is not None:
+                parts.append(f"veter {round(float(wind))} km/h")
+            if hum is not None:
+                parts.append(f"vlaga {round(float(hum))} %")
         answer = ", ".join(parts) + "."
     except Exception as exc:
         print(f"WEATHER fetch failed: {type(exc).__name__}: {exc}", flush=True)
-        return "Vremenske storitve ne morem doseči, šefe."
+        return ("I can't reach the weather service, boss." if english
+                else "Vremenske storitve ne morem doseči, šefe.")
     with _WEATHER_LOCK:
         _WEATHER_CACHE[key] = (now, answer)
     return answer
@@ -530,12 +597,22 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
-def _media_browser_windows() -> list[dict]:
+_MEDIA_WINDOW_CACHE: dict = {"ts": 0.0, "data": [], "lock": threading.Lock()}
+
+
+def _media_browser_windows(force: bool = False) -> list[dict]:
     """Visible browser windows whose title looks like media, even untracked.
 
     The registry only knows windows Mia opened; after a restart or an
     xdg-open fallback the user can still have a YouTube window playing.
+    The scan runs three xdotool calls per window, so a 2 s cache keeps
+    /api/background and close requests cheap.
     """
+    now = time.monotonic()
+    with _MEDIA_WINDOW_CACHE["lock"]:
+        if (not force and _MEDIA_WINDOW_CACHE["ts"]
+                and now - _MEDIA_WINDOW_CACHE["ts"] < 2.0):
+            return list(_MEDIA_WINDOW_CACHE["data"])
     xdo = shutil.which("xdotool")
     if not xdo:
         return []
@@ -566,6 +643,9 @@ def _media_browser_windows() -> list[dict]:
         if not any(hint in name.lower() for hint in hints):
             continue
         windows.append({"wid": wid, "title": name})
+    with _MEDIA_WINDOW_CACHE["lock"]:
+        _MEDIA_WINDOW_CACHE["ts"] = now
+        _MEDIA_WINDOW_CACHE["data"] = list(windows)
     return windows
 
 
@@ -805,7 +885,8 @@ async def _music_chat(text: str) -> dict | None:
         return None
     query = query or _pick_favorite_artist()
     prefer_desktop = any(word in _flat(text) for word in
-                         ("youtube", "jutub", "yt", "brskalnik", "okno"))
+                         ("youtube", "jutub", "yt", "brskalnik", "okno",
+                          "browser", "window"))
     await _stop_all_media()
     found = await asyncio.to_thread(_find_youtube, query)
     if not found:
@@ -1103,6 +1184,7 @@ class HermesAPI:
             except json.JSONDecodeError:
                 continue
             ev = event_name or data.get("event", "")
+            event_name = ""     # SSE event names apply to one dispatch only
             if ev == "run.started":
                 yield ("run", data.get("run_id") or "")
             elif ev == "assistant.delta":
@@ -1189,6 +1271,11 @@ class VoicePipelineServer:
             "beam_size": int(stt.get("beam_size", 1)),
             "faster_whisper_vad_filter": False,
             "no_log_file": True,
+            # faster-whisper best practice: without this the model repeats the
+            # previous segment on noise and invents long "hallucination loops".
+            "condition_on_previous_text": bool(stt.get("condition_on_previous_text", False)),
+            "without_timestamps": bool(stt.get("without_timestamps", True)),
+            "no_speech_threshold": float(stt.get("no_speech_threshold", 0.6)),
         }
         if stt.get("initial_prompt"):
             recorder_kwargs["initial_prompt"] = stt["initial_prompt"]
@@ -1351,10 +1438,16 @@ class VoicePipelineServer:
         timing.llm_provider = "hermes"
         timing.llm_model = "hermes-agent"
         timeout = float(h.get("timeout", 240))
+        english = i18n_core.is_english()
         directive = (h.get("language_directive") or "").strip()
-        system_extra = h.get("system_prompt_extra")
+        if english:
+            # The configured directive is usually Slovenian. Keeping it while
+            # the HUD is in English produced two contradictory instructions.
+            directive = (h.get("language_directive_en")
+                         or "Answer only in English, in short spoken sentences.")
+        system_extra = h.get("system_prompt_extra_en") if english else h.get("system_prompt_extra")
         if system_extra is None:
-            system_extra = _DEFAULT_HERMES_EXTRA
+            system_extra = _DEFAULT_HERMES_EXTRA_EN if english else _DEFAULT_HERMES_EXTRA
         system_extra = str(system_extra).strip()
         try:
             brief = LEARNING.brief(transcript)
@@ -1369,7 +1462,7 @@ class VoicePipelineServer:
         except Exception:
             chat_context = ""
         reply_lang = ("Answer only in English, whatever language the user uses."
-                      if UI_STATE.get("lang") == "en" else "")
+                      if english else "")
         payload = "\n\n".join(
             part for part in (reply_lang, directive, system_extra, chat_context,
                               brief, transcript)
@@ -1411,7 +1504,34 @@ class VoicePipelineServer:
         pending = ""
         full_response: list[str] = []
         spoken = False
+        max_chunk = int((self.cfg.get("tts") or {}).get("max_chunk_chars", 220) or 220)
+        first_text = asyncio.Event()
         await ws.send_json({"type": "agent_status", "state": "thinking"})
+
+        # Optional short acknowledgement while the agent is still thinking.
+        # Without it a slow local model leaves 10–30 s of silence, which reads
+        # as "she did not hear me".
+        ack_task = None
+        ack_cfg = self.cfg.get("hermes") or {}
+        ack_after = float(ack_cfg.get("ack_after_seconds", 0) or 0)
+        if ack_after > 0:
+            ack_texts = list(ack_cfg.get("ack_texts") or ["Takoj.", "Še delam.", "Skoraj."])
+
+            async def ack() -> None:
+                try:
+                    await asyncio.wait_for(first_text.wait(), timeout=ack_after)
+                    return
+                except asyncio.TimeoutError:
+                    pass
+                if full_response or conn.spoken_sentences:
+                    return
+                text = localize(random.choice(ack_texts), _lang())
+                try:
+                    await self._send_tts_sentence(ws, text, timing, conn)
+                except Exception as exc:
+                    print(f"ack skipped: {exc}", flush=True)
+
+            ack_task = asyncio.create_task(ack())
 
         q: asyncio.Queue = asyncio.Queue()
 
@@ -1452,9 +1572,10 @@ class VoicePipelineServer:
                     timing.interrupted = info.get("interrupted", False)
                     continue
                 # kind == "text"
+                first_text.set()
                 full_response.append(value)
                 pending += value
-                sentences, pending = self._extract_complete_sentences(pending)
+                sentences, pending = self._extract_complete_sentences(pending, max_chunk)
                 for sentence in sentences:
                     clean = self._clean_for_tts(sentence)
                     if not clean:
@@ -1472,7 +1593,8 @@ class VoicePipelineServer:
             # nothing was said yet: tell the user out loud instead of staying mute
             if not spoken and not conn.spoken_sentences:
                 notice = ((self.cfg.get("hermes") or {}).get("unreachable_text")
-                          or "Hermesov gateway ni dosegljiv. Zaženi hermes gateway in poskusi znova.")
+                          or tr("hermes.unreachable"))
+                notice = localize(notice, _lang())
                 await ws.send_json({"type": "agent_status", "state": "speaking"})
                 conn.is_speaking = True
                 try:
@@ -1481,6 +1603,8 @@ class VoicePipelineServer:
                     print(f"could not speak the unreachable notice: {tts_exc}", flush=True)
             raise
         finally:
+            if ack_task is not None and not ack_task.done():
+                ack_task.cancel()
             if not forward_task.done():
                 forward_task.cancel()
         timing.response_text = "".join(full_response).strip()
@@ -1515,6 +1639,13 @@ class VoicePipelineServer:
 
     async def _send_tts_sentence(self, ws: WebSocket, sentence: str, timing: TurnTiming,
                                  conn: "ConnState | None" = None) -> None:
+        """Synthesize one sentence and stream every PCM chunk as it is produced.
+
+        Buffering the whole sentence before sending the first byte used to add
+        the entire synthesis time to the perceived latency. Local engines emit
+        audio progressively, so the first chunk goes out immediately; the HUD
+        schedules the rest back-to-back.
+        """
         if not sentence:
             return
         spoken = strip_speech_tags(sentence)
@@ -1532,34 +1663,52 @@ class VoicePipelineServer:
                 loop.call_soon_threadsafe(q.put_nowait, exc)
 
         worker_task = asyncio.create_task(asyncio.to_thread(worker))
-        chunks: list[bytes] = []
-        while True:
-            item = await q.get()
-            if item is None:
-                break
-            if isinstance(item, Exception):
-                raise item
-            chunks.append(item)
-        await worker_task
-        if not chunks:
-            return
-        if conn is not None and not conn.is_speaking:
-            # announce "speaking" only when audio really exists — on a slow
-            # CPU TTS the synthesis takes minutes and a premature GOVORIM
-            # state reads as "she is mute"
-            await ws.send_json({"type": "agent_status", "state": "speaking"})
-            conn.is_speaking = True
-        for chunk in chunks:
-            await ws.send_bytes(chunk)
+        sent_any = False
+        try:
+            while True:
+                item = await q.get()
+                if item is None:
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                if conn is not None and not conn.is_speaking:
+                    # announce "speaking" only when audio really exists — a slow
+                    # CPU TTS must not show GOVORIM while she is still silent
+                    await ws.send_json({"type": "agent_status", "state": "speaking"})
+                    conn.is_speaking = True
+                sent_any = True
+                await ws.send_bytes(item)
+        finally:
+            if not worker_task.done():
+                worker_task.cancel()
+            else:
+                await worker_task
+        if not sent_any:
+            print(f"[tts] no audio produced for: {spoken[:60]!r}", flush=True)
 
     @staticmethod
-    def _extract_complete_sentences(text: str) -> tuple[list[str], str]:
-        sentences = []
+    def _extract_complete_sentences(text: str,
+                                    max_chars: int = 220) -> tuple[list[str], str]:
+        """Split streamed text into speakable chunks.
+
+        Complete sentences are preferred. A long stretch without punctuation
+        is cut at the last natural break so the first audio does not wait for
+        the whole reply (models sometimes emit a single long clause).
+        """
+        sentences: list[str] = []
         last_end = 0
         for match in SENTENCE_RE.finditer(text):
             sentences.append(match.group(1).strip())
             last_end = match.end()
-        return sentences, text[last_end:]
+        pending = text[last_end:]
+        if not sentences and len(pending) > max_chars:
+            window = pending[:max_chars]
+            cut = max(window.rfind(", "), window.rfind("; "), window.rfind(": "),
+                      window.rfind(" — "), window.rfind(" "))
+            if cut >= 60:
+                sentences.append(pending[:cut + 1].strip())
+                pending = pending[cut + 1:]
+        return sentences, pending
 
     @staticmethod
     def _clean_for_tts(text: str) -> str:
@@ -1589,6 +1738,7 @@ load_env()
 CFG = load_config()
 UI_STATE_PATH = ROOT / "logs" / "ui-state.json"
 UI_STATE: dict = load_ui_state(UI_STATE_PATH)   # e.g. {"manual_override": true}
+i18n_core.set_lang(UI_STATE.get("lang") or "sl")
 HERMES = HermesAPI(CFG)   # lightweight API client - independent of the STT pipeline
 LEARNING = get_core(CFG)  # durable memory, habits, recipes, skill tree
 CHAT = ChatBrain(CFG)   # fast conversational brain; "agent" when disabled
@@ -1604,6 +1754,16 @@ _DEFAULT_HERMES_EXTRA = (
     "mia-ctl je v skills/mia-companion/bin/mia-ctl, mia-auto pa ob njem. "
     "Okna, ki jih Mia odpre, zapreš z `mia-ctl media close` (ali `mia-close`). "
     "Vsako dejanje preveri in ne trdi, da je uspelo, če orodje ni vrnilo uspeha."
+)
+
+_DEFAULT_HERMES_EXTRA_EN = (
+    "Tools are available through the mia_autonomy and mia_learning plugins and "
+    "the mia-* skills. For actions on this machine use mia-ctl through "
+    "system_command/plans; never invent raw shell commands. The repo is in "
+    "MIA_HOME (default ~/Mia); mia-ctl is in skills/mia-companion/bin/mia-ctl, "
+    "with mia-auto next to it. Close windows Mia opened with "
+    "`mia-ctl media close` (or `mia-close`). Verify every action and never "
+    "claim success when the tool did not return success."
 )
 
 
@@ -1733,7 +1893,8 @@ async def start_learning_loop() -> None:
     async def warm() -> None:
         try:
             await asyncio.to_thread(LEARNING.system_facts)
-            await asyncio.to_thread(LEARNING.mine, True, _capability_extra())
+            await asyncio.to_thread(
+                lambda: LEARNING.mine(True, _capability_extra()))
         except Exception as exc:
             print(f"learning warm skipped: {exc}", flush=True)
 
@@ -1741,7 +1902,8 @@ async def start_learning_loop() -> None:
         await asyncio.sleep(30)
         while True:
             try:
-                await asyncio.to_thread(LEARNING.mine, True, _capability_extra())
+                await asyncio.to_thread(
+                    lambda: LEARNING.mine(True, _capability_extra()))
                 await asyncio.to_thread(LEARNING.prune)
             except Exception as exc:
                 print(f"learning loop error: {exc}", flush=True)
@@ -1794,7 +1956,9 @@ async def start_autonomy_loop() -> None:
     async def announce() -> None:
         while True:
             text = await speech_queue.get()
-            payload = {"type": "mia_say", "text": str(text)[:600]}
+            lang = _lang()
+            payload = {"type": "mia_say", "text": str(localize(text, lang))[:600],
+                       "lang": lang}
             for client in list(WS_CLIENTS):
                 try:
                     await client.send_json(payload)
@@ -1920,6 +2084,7 @@ async def hud_chat(request: Request) -> JSONResponse:
     chat_text = _strip_mia_prefix(text)
 
     def quick(answer: str, tools: list[dict] | None = None) -> JSONResponse:
+        answer = localize(answer, _lang())
         payload = {"text": answer, "tools": tools or [], "run_id": None}
         try:
             payload["episode_id"] = LEARNING.record_chat(
@@ -1929,22 +2094,21 @@ async def hud_chat(request: Request) -> JSONResponse:
             pass
         return JSONResponse(payload)
 
-    local_time = time_answer(chat_text)
+    local_time = time_answer(chat_text, lang=_lang())
     if local_time:
         print(f"TIME answered locally (chat): {local_time!r}", flush=True)
         return quick(local_time, [{"name": "local_time", "preview": ""}])
 
     weather_city = weather_request(chat_text)
     if weather_city is not None:
-        answer = await asyncio.to_thread(_weather_answer, weather_city)
+        answer = await asyncio.to_thread(_weather_answer, weather_city, _lang())
         print(f"WEATHER answered locally (chat): {answer!r}", flush=True)
         return quick(answer, [])
 
     if media_stop_request(chat_text):
         stopped = await _stop_all_media(auto=False)
         print(f"MEDIA stop via chat: {chat_text!r} -> stopped={stopped}", flush=True)
-        return quick("Ustavila sem glasbo, šefe." if stopped
-                     else "Nič ne igra, šefe.", [])
+        return quick(tr("media.stopped") if stopped else tr("media.nothing"), [])
 
     try:
         music = await _music_chat(text)
@@ -1959,11 +2123,11 @@ async def hud_chat(request: Request) -> JSONResponse:
     if volume is not None:
         result = await asyncio.to_thread(_run_mia_tool, "mia-volume", volume)
         if result is None:
-            return quick("Glasnosti ne morem spremeniti — mia-volume ni na voljo, šefe.", [])
+            return quick(tr("volume.unavailable_tool"), [])
         lines = (result.stdout or "").strip().splitlines()
         last = lines[-1] if lines else ""
-        confirm = (f"Glasnost {last.split(':', 1)[1].strip()}, šefe."
-                   if "glasnost:" in last else "Zvok preklopljen, šefe.")
+        confirm = (tr("volume.set", value=last.split(":", 1)[1].strip())
+                   if "glasnost:" in last else tr("volume.toggled"))
         return quick(confirm, [{"name": "mia-volume", "preview": " ".join(volume)}])
 
     autonomy = get_autonomy()
@@ -1987,8 +2151,7 @@ async def hud_chat(request: Request) -> JSONResponse:
     if google_mode == "show":
         url = google_url(google_query) if google_query else "https://www.google.com"
         opened = await asyncio.to_thread(_open_visible_url, url)
-        return quick("Odprla sem v brskalniku, šefe." if opened
-                     else "Brskalnika nisem mogla odpreti, šefe.",
+        return quick(tr("google.opened") if opened else tr("google.failed"),
                      [{"name": "mia-open", "preview": url}])
     if google_mode == "answer" and google_query:
         agent_text = (
@@ -1998,7 +2161,7 @@ async def hud_chat(request: Request) -> JSONResponse:
 
     if google_mode != "answer" and CHAT.choose(chat_text) == "chat":
         try:
-            brief = LEARNING.brief(chat_text)
+            brief = await asyncio.to_thread(LEARNING.brief, chat_text)
         except Exception:
             brief = ""
         try:
@@ -2014,7 +2177,7 @@ async def hud_chat(request: Request) -> JSONResponse:
 
     out: dict = {"text": "", "tools": [], "run_id": None}
     try:
-        brief = LEARNING.brief(agent_text)
+        brief = await asyncio.to_thread(LEARNING.brief, agent_text)
     except Exception:
         brief = ""
     chat_payload = "\n\n".join(part for part in (brief, agent_text) if part)
@@ -2050,7 +2213,8 @@ async def hud_chat(request: Request) -> JSONResponse:
     try:
         await asyncio.to_thread(run_sync)
         try:
-            out["episode_id"] = LEARNING.record_chat(
+            out["episode_id"] = await asyncio.to_thread(
+                LEARNING.record_chat,
                 conversation, text, out["text"], out["tools"],
                 duration_s=time.time() - started)
         except Exception as exc:
@@ -2059,9 +2223,10 @@ async def hud_chat(request: Request) -> JSONResponse:
     except Exception as exc:
         print(f"hud_chat failed: {type(exc).__name__}: {exc}", flush=True)
         try:
-            LEARNING.record_chat(conversation, text, "", out["tools"],
-                                 error=friendly_error(exc),
-                                 duration_s=time.time() - started)
+            await asyncio.to_thread(
+                LEARNING.record_chat, conversation, text, "", out["tools"],
+                error=friendly_error(exc),
+                duration_s=time.time() - started)
         except Exception:
             pass
         return JSONResponse({"error": friendly_error(exc)}, status_code=502)
@@ -2206,7 +2371,7 @@ LAST_SUMMON: dict = {}       # last media shown — for "odpri predvajanje v brs
 async def voice_calibration() -> JSONResponse:
     """Distance-calibration status for the HUD."""
     try:
-        gate = get_pipeline().speaker_gate
+        gate = await asyncio.to_thread(lambda: get_pipeline().speaker_gate)
     except Exception:
         gate = None
     return JSONResponse({
@@ -2243,8 +2408,9 @@ def _capability_extra() -> dict:
 @app.get("/api/capabilities")
 async def capabilities_list(request: Request) -> JSONResponse:
     if request.query_params.get("refresh") in ("1", "true", "yes"):
+        extra = await asyncio.to_thread(_capability_extra)
         await asyncio.to_thread(capability_core.refresh, LEARNING.store,
-                                LEARNING.cfg, _capability_extra())
+                                LEARNING.cfg, extra)
     rows = await asyncio.to_thread(
         LEARNING.capabilities, False,
         request.query_params.get("query", ""),
@@ -2256,8 +2422,9 @@ async def capabilities_list(request: Request) -> JSONResponse:
 
 @app.post("/api/capabilities/refresh")
 async def capabilities_refresh() -> JSONResponse:
+    extra = await asyncio.to_thread(_capability_extra)
     await asyncio.to_thread(capability_core.refresh, LEARNING.store,
-                            LEARNING.cfg, _capability_extra())
+                            LEARNING.cfg, extra)
     return JSONResponse({"ok": True,
                          "summary": await asyncio.to_thread(LEARNING.capability_summary)})
 
@@ -2439,8 +2606,8 @@ async def learning_set_fact(request: Request) -> JSONResponse:
 
 @app.post("/api/learning/mine")
 async def learning_mine() -> JSONResponse:
-    return JSONResponse(await asyncio.to_thread(LEARNING.mine, True,
-                                                _capability_extra()))
+    return JSONResponse(await asyncio.to_thread(
+        lambda: LEARNING.mine(True, _capability_extra())))
 
 
 @app.post("/api/learning/sysinfo")
@@ -2477,6 +2644,7 @@ async def music_play_endpoint(request: Request) -> JSONResponse:
     result = await _music_chat(text)
     if not result:
         return JSONResponse({"error": "could not resolve music request"}, status_code=400)
+    result["text"] = localize(result.get("text") or "", _lang())
     return JSONResponse(result)
 
 
@@ -2544,7 +2712,7 @@ async def background_close(request: Request) -> JSONResponse:
     else:
         return JSONResponse({"error": "neznan tip"}, status_code=400)
     print(f"BACKGROUND close {item_id}: {message}", flush=True)
-    return JSONResponse({"ok": ok, "message": message},
+    return JSONResponse({"ok": ok, "message": localize(message, _lang())},
                         status_code=200 if ok else 400)
 
 
@@ -2569,6 +2737,7 @@ async def ui_language_set(request: Request) -> JSONResponse:
     lang = "en" if str(body.get("lang") or "").lower().startswith("en") else "sl"
     UI_STATE["lang"] = lang
     _save_ui_state()
+    i18n_core.set_lang(lang)
     CHAT.force_lang = "English" if lang == "en" else ""
     print(f"UI language -> {lang}", flush=True)
     return JSONResponse({"ok": True, "lang": lang})
@@ -2644,7 +2813,7 @@ async def session_info() -> JSONResponse:
 @app.get("/api/settings")
 async def get_settings() -> JSONResponse:
     try:
-        gate = get_pipeline().speaker_gate
+        gate = await asyncio.to_thread(lambda: get_pipeline().speaker_gate)
     except Exception:
         gate = None
     return JSONResponse({
@@ -2839,8 +3008,9 @@ async def autonomy_refresh() -> JSONResponse:
         return JSONResponse({"error": "autonomy unavailable"}, status_code=503)
     profile = await asyncio.to_thread(service.refresh_profile, True)
     try:
+        extra = await asyncio.to_thread(_capability_extra)
         await asyncio.to_thread(capability_core.refresh, LEARNING.store,
-                                LEARNING.cfg, _capability_extra())
+                                LEARNING.cfg, extra)
     except Exception:
         pass
     return JSONResponse({"ok": True, "profile": profile.data,
@@ -3029,6 +3199,7 @@ async def autonomy_text(request: Request) -> JSONResponse:
     if result is None:
         return JSONResponse({"handled": False, "text": ""})
     result["handled"] = True
+    result["text"] = localize(result.get("text") or "", _lang())
     return JSONResponse(result)
 
 
@@ -3053,22 +3224,28 @@ async def autonomy_alert_ack(alert_id: int) -> JSONResponse:
 
 @app.get("/api/machines")
 async def machines() -> JSONResponse:
-    """Local (Mac) stats + configured remote workers.
+    """Local host stats + configured remote workers.
 
     Worker polls can take seconds when a worker is offline, so they run in a
-    background refresh; the endpoint always answers instantly from cache.
+    background refresh; the endpoint always answers instantly from cache. The
+    local probe (psutil, nvidia-smi, xrandr, pactl) also runs in a thread —
+    running it in the event loop used to stall voice turns by up to 3 s.
     """
-    result: list[dict] = []
-    mac: dict = {"name": "MAC MINI · HERMES", "online": True}
-    if psutil:
-        mac.update({
-            "cpu": psutil.cpu_percent(interval=0.1),
-            "mem": psutil.virtual_memory().percent,
-            "disk": psutil.disk_usage(str(ROOT)).percent,
-        })
-    mac.update(_local_gpu())
-    mac.update(_local_desktop_info())
-    result.append(mac)
+    def local_stats() -> dict:
+        import socket
+        host = socket.gethostname() or "localhost"
+        info: dict = {"name": f"{host} · HERMES", "online": True}
+        if psutil:
+            info.update({
+                "cpu": psutil.cpu_percent(interval=0.1),
+                "mem": psutil.virtual_memory().percent,
+                "disk": psutil.disk_usage(str(ROOT)).percent,
+            })
+        info.update(_local_gpu())
+        info.update(_local_desktop_info())
+        return info
+
+    result: list[dict] = [await asyncio.to_thread(local_stats)]
 
     def poll_worker(w: dict) -> dict:
         info = {"name": w.get("name", w.get("host", "worker")), "online": False}
@@ -3221,6 +3398,7 @@ class ConnState:
     audio_bytes_total: int = 0         # continuous-mode flow diagnostics
     audio_stats_at: float = 0.0
     pending_utterance: bytes | None = None  # said while a turn was busy — runs next
+    barged: bool = False                    # this turn interrupted Mia's reply
     last_rejected_stt_at: float = 0.0       # debounce for override STT on foreign voices
     calibration: CalibrationSession | None = None
     calibration_task: asyncio.Task | None = None
@@ -3229,6 +3407,7 @@ class ConnState:
 async def _speak_and_finish(ws: WebSocket, pipeline: VoicePipelineServer,
                             conn: "ConnState", timing: "TurnTiming", text: str) -> None:
     """Speak a fixed confirmation and close the turn — no Hermes involved."""
+    text = localize(text, _lang())
     conn.spoken_sentences = [text]
     await pipeline._send_tts_sentence(ws, text, timing, conn)
     timing.response_text = text
@@ -3264,6 +3443,7 @@ async def _speak_calibration(ws: WebSocket, pipeline: VoicePipelineServer,
     """
     if not text:
         return
+    text = localize(text, _lang())
     timing = TurnTiming(turn_id=pipeline.next_turn_id())
     conn.spoken_sentences = [text]
     conn.is_speaking = True
@@ -3389,6 +3569,8 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
                     wake: "WakeGate | None" = None) -> None:
     timing = conn.timing
     assert timing is not None
+    barged = conn.barged
+    conn.barged = False
     audio = b"".join(conn.audio_chunks)
     conn.audio_chunks = []
     try:
@@ -3468,6 +3650,20 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             # foreign/failed voice: fuzzy wake variants are off the table —
             # only an EXACT "Mia" start may use any override path
             said_wake = bool(transcript) and starts_with_exact_wake(transcript)
+        # An interruption is addressed to Mia by definition. A verified voice
+        # therefore does not need to repeat the wake word mid-conversation;
+        # without a voiceprint the strict wake word stays mandatory.
+        allow_barge = bool(barged and speaker_ok and gate is not None and gate.enrolled)
+        if allow_barge and transcript:
+            print(f"BARGE accepted without wake word (speaker {score}): "
+                  f"{transcript[:80]!r}", flush=True)
+            said_wake = True
+
+        # Strip the address before intent matching: »Mia, ustavi« must reach
+        # the media-stop parser, not be treated as a two-word sentence.
+        stripped = transcript
+        if said_wake:
+            _, stripped = wake.check(transcript, None, time.time())
 
         # "Mia, prepoznaj glas!" — append THIS utterance to the voiceprint.
         # Works for the enrolled voice, and for a rejected one only when
@@ -3476,38 +3672,32 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
         if said_wake and gate is not None and _is_enroll_command(transcript):
             await asyncio.to_thread(
                 gate.enroll, [np.frombuffer(audio, dtype=np.int16)], gate.enrolled)
-            confirm = "Zapomnjeno, šefe — ta glas zdaj poznam."
+            confirm = tr("enroll.saved")
             print(f"SPEAKER enrolled from voice command (score was {score})", flush=True)
             await _speak_and_finish(ws, pipeline, conn, timing, confirm)
             return
 
         # deterministic media control — works in any session, and (because it
         # only needs the wake word) even while loud playback drowns the voiceprint
-        if said_wake and _is_media_stop(transcript):
+        if said_wake and _is_media_stop(stripped):
             stopped = await _stop_all_media(auto=False)
             print(f"MEDIA stopped via voice: {transcript[:60]!r} -> {stopped}",
                   flush=True)
             await _speak_and_finish(ws, pipeline, conn, timing,
-                                    "Ustavila sem glasbo, šefe." if stopped
-                                    else "Nič ne igra, šefe.")
+                                    tr("media.stopped") if stopped else tr("media.nothing"))
             return
-        if said_wake and _is_media_open_browser(transcript):
+        if said_wake and _is_media_open_browser(stripped):
             src = LAST_SUMMON.get("src") or ""
             await _stop_all_media(auto=False)
             if src:
                 opened = await asyncio.to_thread(_open_visible_url, src)
-                confirm = ("Odprla sem ga v brskalniku, šefe." if opened
-                           else "Brskalnika nisem mogla odpreti, šefe.")
+                confirm = (tr("media.opened_browser") if opened
+                           else tr("media.browser_failed"))
             else:
-                confirm = "Ni aktivnega predvajanja, šefe."
+                confirm = tr("media.no_active")
             print(f"MEDIA open-in-browser via voice: {src or 'nič'}", flush=True)
             await _speak_and_finish(ws, pipeline, conn, timing, confirm)
             return
-
-        if said_wake:
-            _, stripped = wake.check(transcript, None, time.time())
-        else:
-            stripped = transcript
 
         feedback = detect_feedback(stripped)
         if feedback is not None:
@@ -3517,9 +3707,9 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             if result.get("ok"):
                 timing.skip_learning = True
                 print(f"LEARNING feedback via voice: {feedback} -> {result}", flush=True)
-                confirm = ("Zapomnjeno, šefe — to je zdaj pravi postopek."
+                confirm = (tr("feedback.positive")
                            if feedback.get("verdict") == "positive"
-                           else "Prav, šefe — zapomnila sem si, da tako ne deluje.")
+                           else tr("feedback.negative"))
                 await _speak_and_finish(ws, pipeline, conn, timing, confirm)
                 return
             print(f"LEARNING feedback ignored (no previous episode): {result}", flush=True)
@@ -3532,11 +3722,11 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
                 timing.skip_learning = True
                 print(f"LEARNING remember via voice: {remember} -> {result}", flush=True)
                 await _speak_and_finish(ws, pipeline, conn, timing,
-                                        "Shranjeno, šefe — postopek sem si zapomnila.")
+                                        tr("remember.saved"))
                 return
             print(f"LEARNING remember ignored (no previous episode): {result}", flush=True)
 
-        time_text = time_answer(stripped)
+        time_text = time_answer(stripped, lang=_lang())
         if time_text:
             print(f"TIME answered locally: {time_text!r}", flush=True)
             await _speak_and_finish(ws, pipeline, conn, timing, time_text)
@@ -3544,7 +3734,7 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
 
         weather_city = weather_request(stripped)
         if weather_city is not None:
-            answer = await asyncio.to_thread(_weather_answer, weather_city)
+            answer = await asyncio.to_thread(_weather_answer, weather_city, _lang())
             print(f"WEATHER answered locally: {answer!r}", flush=True)
             await _speak_and_finish(ws, pipeline, conn, timing, answer)
             return
@@ -3558,8 +3748,7 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             print(f"GOOGLE show: {google_query!r} -> {url} opened={opened}", flush=True)
             await _speak_and_finish(
                 ws, pipeline, conn, timing,
-                "Odprla sem v brskalniku, šefe." if opened
-                else "Brskalnika nisem mogla odpreti, šefe.")
+                tr("google.opened") if opened else tr("google.failed"))
             return
         if google_mode == "answer" and google_query:
             agent_transcript = (
@@ -3574,14 +3763,14 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             r = await asyncio.to_thread(_run_mia_tool, "mia-volume", vol_args)
             if r is None:
                 await _speak_and_finish(ws, pipeline, conn, timing,
-                                        "Glasnosti ne morem spremeniti, šefe.")
+                                        tr("volume.unavailable"))
                 return
             lines = (r.stdout or "").strip().splitlines()
             last = lines[-1] if lines else ""
             if "glasnost:" in last:
-                confirm = f"Glasnost {last.split(':', 1)[1].strip()}, šefe."
+                confirm = tr("volume.set", value=last.split(":", 1)[1].strip())
             else:
-                confirm = "Zvok preklopljen, šefe."
+                confirm = tr("volume.toggled")
             print(f"VOLUME via voice: {' '.join(vol_args)} -> {last}", flush=True)
             await _speak_and_finish(ws, pipeline, conn, timing, confirm)
             return
@@ -3592,7 +3781,8 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             # Explicit »youtube« / »v brskalniku« means a visible window, not
             # the HUD panel (which may have external media disabled).
             prefer_desktop = any(word in _flat(stripped) for word in
-                                 ("youtube", "jutub", "yt", "brskalnik", "okno"))
+                                 ("youtube", "jutub", "yt", "brskalnik", "okno",
+                                  "browser", "window"))
             # one song at a time: the new order immediately stops the old one
             await _stop_all_media()
 
@@ -3606,8 +3796,8 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
                 print(f"MUSIC search fallback -> {url} opened={opened}", flush=True)
                 await _speak_and_finish(
                     ws, pipeline, conn, timing,
-                    "Odprla sem YouTube iskanje, šefe." if opened
-                    else "Nisem našla ničesar, šefe.")
+                    tr("media.search_opened") if opened
+                    else tr("media.nothing_found"))
                 return
             title, vid = found
             src = f"https://www.youtube.com/watch?v={vid}"
@@ -3630,8 +3820,8 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
             print(f"MUSIC playing ({query!r}): {title[:60]} [{vid}] desktop={opened}",
                   flush=True)
             await _speak_and_finish(ws, pipeline, conn, timing,
-                                    "Evo šefe." if opened
-                                    else "Našla sem, a nisem mogla odpreti, šefe.")
+                                    tr("media.here") if opened
+                                    else tr("media.found_not_open"))
             return
 
         if said_wake:
@@ -3651,8 +3841,9 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
                             timing.tools_used.append(name)
                     print(f"AUTONOMY voice: {handled.get('intent')} -> "
                           f"{(handled.get('text') or '')[:100]!r}", flush=True)
-                    await _speak_and_finish(ws, pipeline, conn, timing,
-                                            handled.get("text") or "Narejeno.")
+                    await _speak_and_finish(
+                        ws, pipeline, conn, timing,
+                        localize(handled.get("text") or "Narejeno.", _lang()))
                     return
 
         if not speaker_ok:
@@ -3664,6 +3855,8 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
                 return
         if transcript and wake is not None:
             accept, transcript = wake.check(transcript, conn.last_reply_at, time.time())
+            if not accept and allow_barge:
+                accept = True
             if not accept:
                 timing.errors.append("ignored: no wake word")
                 print(f"WAKE rejected: {transcript[:100]!r}", flush=True)
@@ -3710,7 +3903,8 @@ async def _run_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnStat
         try:
             if (timing.transcript and not timing.skip_learning
                     and not any(str(e).startswith("ignored:") for e in timing.errors)):
-                episode_id = LEARNING.record_turn(
+                episode_id = await asyncio.to_thread(
+                    LEARNING.record_turn,
                     timing, conn.conversation, timing.transcript, source="voice")
                 verify_prompts = bool(LEARNING.cfg.get("verify_prompts", True))
                 if (episode_id and verify_prompts and timing.tools_used
@@ -3761,7 +3955,7 @@ def _start_continuous_turn(ws: WebSocket, pipeline: VoicePipelineServer, conn: C
 async def _feed_continuous(ws: WebSocket, pipeline: VoicePipelineServer, conn: ConnState,
                            chunk: bytes) -> None:
     """Feed the always-on stream through the VAD and start turns automatically."""
-    barge = bool(((CFG.get("stt") or {}).get("continuous") or {}).get("barge_in", True))
+    barge = bool(((CFG.get("stt") or {}).get("continuous") or {}).get("barge_in", False))
     conn.audio_bytes_total += len(chunk)
     now = time.time()
     if now - conn.audio_stats_at >= 10:
@@ -3783,14 +3977,11 @@ async def _feed_continuous(ws: WebSocket, pipeline: VoicePipelineServer, conn: C
         busy = conn.turn_task is not None and not conn.turn_task.done()
         if kind == "speech_start":
             if busy:
-                if not barge:
-                    continue        # half-duplex: ignore the speaker's own echo
-                if not conn.is_speaking:
-                    # mid-thinking: a click or noise burst must not kill the turn;
-                    # deliberate speech still barges via its completed "utterance"
-                    continue
-                await _cancel_active_turn(ws, pipeline, conn)   # barge-in
-                await ws.send_json({"type": "agent_status", "state": "stopped"})
+                # Never cancel on the first speech frame: a cough, a door or
+                # the TV used to kill a reply before the user said a word.
+                # A deliberate interruption is handled on the completed
+                # utterance below (adaptive interruption, like LiveKit).
+                continue
             await ws.send_json({"type": "agent_status", "state": "listening"})
             continue
         if kind == "utterance":
@@ -3801,7 +3992,16 @@ async def _feed_continuous(ws: WebSocket, pipeline: VoicePipelineServer, conn: C
                     conn.pending_utterance = payload
                     print("utterance queued (turn busy)", flush=True)
                     continue
+                min_bytes = int(16000 * 2 * float(
+                    (((CFG.get("stt") or {}).get("continuous") or {})
+                     .get("barge_min_ms", 450)) or 450) / 1000)
+                if len(payload) < min_bytes:
+                    print(f"barge ignored: {len(payload) / 32000:.2f}s is too short",
+                          flush=True)
+                    continue
                 await _cancel_active_turn(ws, pipeline, conn)
+                conn.barged = True
+                await ws.send_json({"type": "agent_status", "state": "stopped"})
             _start_continuous_turn(ws, pipeline, conn, payload)
 
 
@@ -3929,15 +4129,18 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                     if not conn.continuous or conn.segmenter is None:
                         await ws.send_json({"type": "error", "message": "flush only in continuous mode"})
                         continue
-                    barge = bool(((CFG.get("stt") or {}).get("continuous") or {}).get("barge_in", True))
+                    barge = bool(((CFG.get("stt") or {}).get("continuous") or {}).get("barge_in", False))
                     started = False
                     for kind, payload in conn.segmenter.flush():
                         if kind != "utterance":
                             continue
                         if conn.turn_task is not None and not conn.turn_task.done():
                             if not barge:
-                                continue    # half-duplex: never kill a running turn
+                                conn.pending_utterance = payload
+                                started = True
+                                continue    # half-duplex: queue, never kill a turn
                             await _cancel_active_turn(ws, pipeline, conn)
+                            conn.barged = True
                         _start_continuous_turn(ws, pipeline, conn, payload)
                         started = True
                     await ws.send_json({"type": "status",

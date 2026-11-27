@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-import time
 import unicodedata
 from difflib import SequenceMatcher
 from typing import Any

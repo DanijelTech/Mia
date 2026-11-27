@@ -346,7 +346,11 @@ class LearningCore:
                  "habit": "habits", "fact": "facts"}.get(kind)
         if not table:
             return False
-        column = "key" if isinstance(key_or_id, str) and not str(key_or_id).isdigit() else "id"
+        if kind == "fact":
+            column = "key"
+        else:
+            column = ("key" if isinstance(key_or_id, str)
+                      and not str(key_or_id).isdigit() else "id")
         return self._safe(False, lambda: self.store._execute(
             f"DELETE FROM {table} WHERE {column}=?", (key_or_id,)).rowcount > 0)
 

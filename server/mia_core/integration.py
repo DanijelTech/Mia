@@ -116,24 +116,28 @@ def extract_entities(text: str) -> list[dict]:
     for match in _URL_RE.finditer(text or ""):
         entities.append({"kind": "domain", "value": match.group(1).lower()})
     flat = _flat(text)
-    m = re.search(r"(?:pusti(?: mi)?|zaigraj|predvajaj)\s+(.+)", flat)
+    m = re.search(r"(?:pusti(?: mi)?|zaigraj|predvajaj|play|put on)\s+(.+)", flat)
     if m and "pri miru" not in flat and "na miru" not in flat:
-        entities.append({"kind": "artist", "value": m.group(1)[:80]})
-    m = re.search(r"(?:poisci|najdi|search|preveri)\s+(.+?)(?:\s+(?:in|ter|pa)\s+|$)", flat)
+        value = re.sub(r"\s+(?:on|from)\s+(?:youtube|spotify|yt)\s*$", "",
+                       m.group(1)).strip()
+        if value and value not in ("music", "song", "some music"):
+            entities.append({"kind": "artist", "value": value[:80]})
+    m = re.search(r"(?:poisci|najdi|search|preveri|find|look up)\s+(.+?)"
+                  r"(?:\s+(?:in|ter|pa|on)\s+|$)", flat)
     if m:
         entities.append({"kind": "query", "value": m.group(1)[:80]})
     generic = {"okno", "to", "stran", "zavihek", "tab", "window", "app",
-               "aplikacijo", "vse", "glasbo", "glasba", "muziko"}
+               "aplikacijo", "vse", "glasbo", "glasba", "muziko", "browser"}
     for pattern, kind in (
-        (r"^(?:odpri|zazeni|launch|open)\s+(.+)$", "app"),
-        (r"^(?:zapri|close)\s+(.+)$", "app"),
-        (r"^(?:poisci|najdi|search|preveri)\s+(.+)$", "query"),
+        (r"^(?:odpri|zazeni|launch|open|start)\s+(.+)$", "app"),
+        (r"^(?:zapri|close|stop)\s+(.+)$", "app"),
+        (r"^(?:poisci|najdi|search|preveri|find|look up)\s+(.+)$", "query"),
         (r"^(?:pokazi|show)\s+(.+)$", "query"),
     ):
         match = re.match(pattern, flat)
         if match:
             value = re.split(r"\s+(?:in|ter|pa)\s+", match.group(1).strip(), maxsplit=1)[0]
-            value = re.sub(r"^(?:mi|prosim|mi prosim)\s+", "", value).strip()
+            value = re.sub(r"^(?:mi|prosim|mi prosim|me|please|for me)\s+", "", value).strip()
             if value and not value.startswith("http") and value.lower() not in generic:
                 entities.append({"kind": kind, "value": value[:80]})
             break
@@ -147,9 +151,10 @@ _GOOGLE_ANSWER = ("povej", "odgovori", "razlozi", "razloži", "koliko", "kaj",
                   "where", "why", "how", "tell")
 _GOOGLE_CLEAN = (
     "na googlu", "v googlu", "google", "googlu", "poisci", "poišči", "najdi",
-    "search", "in", "ter", "pa", "mi", "prosim", "povej", "odgovori",
-    "razlozi", "razloži", "prikazi", "prikaži", "pokazi", "pokaži", "odpri",
-    "v brskalniku", "na zaslonu", "brskalnik", "splet", "web", "na", "v",
+    "search", "look up", "find", "for", "in", "ter", "pa", "mi", "prosim",
+    "povej", "odgovori", "razlozi", "razloži", "prikazi", "prikaži", "pokazi",
+    "pokaži", "odpri", "v brskalniku", "na zaslonu", "brskalnik", "splet",
+    "web", "na", "v", "me", "please", "tell", "answer", "on", "about", "the",
 )
 
 
@@ -190,6 +195,10 @@ _MUSIC_JUNK = (
     "neko", "eno", "malce", "prosim", "spet", "ponovno", "kakšno",
     "kaksno", "na youtube", "na youtubu", "na jutubu", "na yt", "youtube",
     "youtubu", "jutub", "jutubu", "yt", "mi",
+    # English
+    "on youtube", "on youtubu", "on spotify", "on yt", "some", "the",
+    "please", "for me", "music", "song", "songs", "track", "tracks",
+    "playlist",
 )
 
 
@@ -211,6 +220,14 @@ def music_play_request(text: str, fav_match=None) -> str | None:
         return None
 
     patterns = (
+        # English: "play some music", "play Bohemian Rhapsody on youtube"
+        r"^(?:please\s+)?(?:play|put on|start)\s+(?:some\s+|the\s+)?"
+        r"(?:music|song|songs|track|tracks|playlist)\s*(?:on|from)?\s*"
+        r"(?:youtube|spotify|yt)?\s*(.*)$",
+        r"^(?:please\s+)?(?:play|put on)\s+(.+?)\s+(?:on|from)\s+"
+        r"(?:youtube|spotify|yt)$",
+        r"^(?:youtube|yt)\s+(?:play|search)\s+(.*)$",
+        r"^(?:please\s+)?(?:play|put on)\s+(.+)$",
         # »zamenjaj/spremeni/daj glasbo« = another track, not a new search
         r"^(?:zamenjaj|spremeni|menjaj|daj|drugo|druga|novo|nova|naslednjo|naslednja)"
         r"\s+(?:glasbo|muziko|glazbo|pesem|pesmi|predvajanje)\s*(.*)$",
@@ -232,10 +249,12 @@ def music_play_request(text: str, fav_match=None) -> str | None:
         # A music word alone is not a play command: »ustavi youtube« and
         # »zapri vsa okna youtube« must fall through, not start a new song.
         return None
-    query = re.sub(r"^(?:pusti(?:te)?|predvajaj(?:te)?|zaigraj(?:te)?|play)\s+",
-                   "", query.strip())
+    query = re.sub(r"^(?:pusti(?:te)?|predvajaj(?:te)?|zaigraj(?:te)?|"
+                   r"play|put on|start)\s+", "", query.strip())
     for junk in _MUSIC_JUNK:
-        query = query.replace(junk, " ")
+        # Word boundaries matter: plain replace() turned "bohemian" into
+        # "bohe an" because "mi" is a filler word.
+        query = re.sub(rf"(?<!\w){re.escape(junk)}(?!\w)", " ", query)
     query = re.sub(r"^od\s+", "", query.strip())
     return re.sub(r"\s+", " ", query).strip()
 
@@ -291,11 +310,37 @@ _MONTHS_SL = ("januarja", "februarja", "marca", "aprila", "maja", "junija",
               "decembra")
 
 
-def time_answer(text: str, now=None) -> str | None:
+_WEEKDAYS_EN = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+                "Saturday", "Sunday")
+_MONTHS_EN = ("January", "February", "March", "April", "May", "June", "July",
+              "August", "September", "October", "November", "December")
+
+
+def _english_time_phrase(hour: int, minute: int) -> str:
+    if hour < 5:
+        period = "at night"
+    elif hour < 12:
+        period = "in the morning"
+    elif hour < 18:
+        period = "in the afternoon"
+    else:
+        period = "in the evening"
+    h12 = hour % 12 or 12
+    if minute == 0:
+        return f"{h12} {period}"
+    return f"{h12}:{minute:02d} {period}"
+
+
+def _english_clock(hour: int, minute: int) -> str:
+    return f"It is {_english_time_phrase(hour, minute)}."
+
+
+def time_answer(text: str, now=None, lang: str = "sl") -> str | None:
     """Instant local time/date answer — no LLM, no Hermes session.
 
     This is deliberately generous: the user should not need an exact phrase
-    for something as trivial as the clock.
+    for something as trivial as the clock. The answer follows ``lang`` so an
+    English HUD never gets a Slovenian clock.
     """
     import datetime as _dt
     flat = _flat(text)
@@ -304,24 +349,36 @@ def time_answer(text: str, now=None) -> str | None:
     asks_time = any(phrase in flat for phrase in (
         "koliko je ura", "koliko je uro", "kaj je ura", "kaksna ura",
         "povej mi uro", "povej uro", "ura je", "what time is it",
-        "what is the time", "current time",
-    ))
+        "what is the time", "current time", "time is it",
+    )) or ("and time" in flat) or ("time and date" in flat)
     asks_date = any(phrase in flat for phrase in (
         "kateri dan je", "kateri datum", "kaksen dan je", "danes je kateri",
         "kateri dan smo", "what is the date", "what day is it", "todays date",
-        "današnji datum", "danasnji datum",
+        "today's date", "današnji datum", "danasnji datum",
     ))
     if not (asks_time or asks_date):
         return None
     current = now or _dt.datetime.now()
+    english = str(lang or "").lower().startswith("en")
     if asks_time and not asks_date:
+        if english:
+            return _english_clock(current.hour, current.minute)
         hour, minute = current.hour, current.minute
         if minute == 0:
             return f"Ura je {hour}."
         return f"Ura je {hour} in {minute}."
     if asks_date and not asks_time:
+        if english:
+            return (f"Today is {_WEEKDAYS_EN[current.weekday()]}, "
+                    f"{_MONTHS_EN[current.month - 1]} {current.day}, "
+                    f"{current.year}.")
         return (f"Danes je {_WEEKDAYS_SL[current.weekday()]}, "
                 f"{current.day}. {_MONTHS_SL[current.month - 1]} {current.year}.")
+    if english:
+        return (f"Today is {_WEEKDAYS_EN[current.weekday()]}, "
+                f"{_MONTHS_EN[current.month - 1]} {current.day}, "
+                f"{current.year}, and it is "
+                f"{_english_time_phrase(current.hour, current.minute)}.")
     return (f"Danes je {_WEEKDAYS_SL[current.weekday()]}, "
             f"{current.day}. {_MONTHS_SL[current.month - 1]} {current.year}, "
             f"ura je {current.hour} in {current.minute}.")
@@ -331,13 +388,16 @@ _WEATHER_PHRASES = (
     "kaksno je vreme", "kakvo je vreme", "kako je vreme", "kaksno vreme",
     "vreme v", "vreme za", "vreme na", "napoved", "temperatura",
     "povej mi vreme", "povej vreme", "preveri vreme", "pokazi vreme",
-    "prikazi vreme", "bo vreme", "weather",
+    "prikazi vreme", "bo vreme", "weather", "forecast", "temperature in",
 )
 _WEATHER_TIME = {
     "danes", "jutri", "vceraj", "zdaj", "sedaj", "zjutraj", "dopoldne",
     "popoldne", "zvecer", "ponoci", "noc", "jutro", "vikend", "teden",
     "naslednji", "ta", "to", "tem", "vremenu", "vreme", "napoved",
     "temperatura",
+    # English
+    "today", "tomorrow", "yesterday", "now", "tonight", "morning",
+    "afternoon", "evening", "weekend", "week", "next", "this", "the",
 }
 
 
@@ -356,7 +416,7 @@ def weather_request(text: str) -> str | None:
         if city in flat:
             return city
     match = re.search(
-        r"\b(?:v|za|na)\s+(?:kraju\s+)?([a-zčćžšđ][a-zčćžšđ-]{1,30})\b", flat)
+        r"\b(?:v|za|na|in|for|at)\s+(?:kraju\s+)?([a-zčćžšđ][a-zčćžšđ-]{1,30})\b", flat)
     if match:
         city = match.group(1)
         if city not in _WEATHER_TIME:

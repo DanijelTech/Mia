@@ -20,10 +20,8 @@ from __future__ import annotations
 import os
 import platform
 import shutil
-import socket
 import time
 from pathlib import Path
-from typing import Any
 
 from .db import Store
 
@@ -287,9 +285,14 @@ def _detect(item: dict, extra: dict) -> tuple[str, str]:
         tool = _first_tool("ip", "nmcli", "route", "ipconfig")
         return ("detected", tool) if tool else ("unsupported", "no network tool")
     if detect == "process":
-        tool = _first_tool("ps", "tasklist", "psutil")
-        return ("detected", tool or "python psutil") if (tool or _has("ps")) else (
-            "unsupported", "no process backend")
+        tool = _first_tool("ps", "tasklist")
+        if tool or _has("ps"):
+            return "detected", tool or "ps"
+        try:
+            __import__("psutil")
+            return "detected", "python psutil"
+        except ImportError:
+            return "unsupported", "no process backend"
     if detect == "service":
         tool = _first_tool("systemctl", "launchctl", "powershell")
         return ("detected", tool) if tool else ("unsupported", "no service manager")
@@ -428,6 +431,14 @@ def mark_learned(store: Store, action: str, ok: bool = True) -> None:
     if not base:
         return
     candidates = [base]
+    if action.startswith("sys "):
+        sub = action.split(" ", 1)[1]
+        cap = {"time": "system.time", "timezone": "system.timezone",
+               "hostname": "system.hostname", "users": "system.users",
+               "locale": "system.locale",
+               "power-profile": "system.power_profile"}.get(sub)
+        if cap:
+            candidates.insert(0, cap)
     if base in ("audio.volume", "display.brightness", "desktop.windows",
                 "desktop.apps", "desktop.clipboard", "desktop.media",
                 "desktop.power", "system.process", "system.service", "files",

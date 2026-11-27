@@ -18,6 +18,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from .. import i18n
 from ..integration import time_answer
 
 _FOLD = str.maketrans("čćšžđČĆŠŽĐ", "ccszdCCSZD")
@@ -159,14 +160,14 @@ def _help(m, text, flat):
 @_rule(r"(?:koliko je (?:ura|uro)|kaj je ura|kaksna je ura|povej mi uro|"
        r"what time is it|what is the time)")
 def _time(m, text, flat):
-    answer = time_answer(text)
+    answer = time_answer(text, lang=i18n.current_lang())
     return Intent(name="time", kind="query", reply=answer or "")
 
 
 @_rule(r"(?:kateri dan je|kateri datum|kaksen dan je|kateri dan smo|"
        r"danes je kateri|what is the date|what day is it)")
 def _date(m, text, flat):
-    answer = time_answer(text)
+    answer = time_answer(text, lang=i18n.current_lang())
     return Intent(name="date", kind="query", reply=answer or "")
 
 

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -32,11 +32,37 @@ def _ascii(text: str) -> str:
     return text.lower()
 
 
+def _fold_with_map(text: str) -> tuple[str, list[int]]:
+    """ASCII fold plus a folded-index -> original-index map.
+
+    The map matters when the original contains precomposed accented letters
+    (NFKD expands them and the combining mark is dropped), so slicing the
+    original by a folded offset would cut in the wrong place.
+    """
+    out: list[str] = []
+    index: list[int] = []
+    for pos, ch in enumerate(text or ""):
+        for part in unicodedata.normalize("NFKD", ch):
+            if unicodedata.combining(part):
+                continue
+            for low in part.lower():
+                out.append(low)
+                index.append(pos)
+    return "".join(out), index
+
+
+# Spoken greetings in front of the wake word: "hey Mia, …", "ok Mia …".
+_GREETING_RE = re.compile(
+    r"^(?:(?:hey|hi|hello|ok|okay|yo|hej|ej|oj|zdravo|dober\s+dan|"
+    r"dobro\s+jutro|dobro\s+vecer)\b[\s,.;:!?-]*)+", re.I)
+
+
 def starts_with_exact_wake(text: str, word: str = "mia") -> bool:
     """EXACT wake word at the start (no fuzzy variants) — the bar for turns
     whose speaker verification FAILED: Whisper mishearings of noise ('nja',
-    'mja') must not trigger overrides."""
-    flat = _ascii(text).strip()
+    'mja') must not trigger overrides. A spoken greeting before the wake word
+    is allowed: »Hey Mia …« is the normal English form."""
+    flat = _GREETING_RE.sub("", _ascii(text).strip())
     return bool(re.match(rf"{re.escape(word)}(?=[\s,.!?]|$)", flat))
 
 
@@ -105,6 +131,9 @@ class SegmenterConfig:
     max_utterance_ms: int = 20000   # never swallow speech: force-close here
     energy_override: bool = True    # loud audio counts as speech even if VAD says no
     speech_start_ms: int = 96       # consecutive speech before "speech_start" fires (click/noise debounce)
+    adaptive_endpoint: bool = True  # shorter pauses for short commands
+    min_silence_ms: int = 350
+    max_silence_ms: int = 1100
 
 
 class UtteranceSegmenter:
@@ -113,13 +142,28 @@ class UtteranceSegmenter:
     def __init__(self, detector: SpeechDetector, cfg: SegmenterConfig | None = None):
         self.cfg = cfg or SegmenterConfig()
         self.detector = detector
-        self._silence_frames = max(1, self.cfg.silence_ms // FRAME_MS)
         self._max_frames = max(1, self.cfg.max_utterance_ms // FRAME_MS)
         self._min_speech_frames = max(1, self.cfg.min_speech_ms // FRAME_MS)
         self._pre_roll_frames = max(1, self.cfg.pre_roll_ms // FRAME_MS)
         self._start_frames = max(1, self.cfg.speech_start_ms // FRAME_MS)
         self._pending = b""
         self.reset()
+
+    def _endpoint_frames(self) -> int:
+        """Adaptive endpointing: a short command closes faster than a long one.
+
+        The base ``silence_ms`` is the ceiling; short utterances scale it down
+        to ``min_silence_ms``. This trims 200–350 ms from typical commands
+        without cutting off slower, thoughtful sentences.
+        """
+        base = max(120, int(self.cfg.silence_ms))
+        if not self.cfg.adaptive_endpoint:
+            return max(1, base // FRAME_MS)
+        speech_ms = self._speech_frames * FRAME_MS
+        factor = 0.45 + 0.55 * min(1.0, speech_ms / 5000.0)
+        target = int(base * factor)
+        target = max(int(self.cfg.min_silence_ms), min(int(self.cfg.max_silence_ms), target))
+        return max(1, target // FRAME_MS)
 
     def reset(self) -> None:
         self._pre: list[bytes] = []
@@ -144,11 +188,9 @@ class UtteranceSegmenter:
             loud = bool(self.cfg.energy_override and hasattr(self.detector, "loud")
                         and self.detector.loud(frame))
             threshold = self.cfg.end_threshold if self._speaking else self.cfg.threshold
-            if self._speaking:
-                # end only when the VAD says silence *and* the room is quiet
-                is_speech = prob >= threshold or loud
-            else:
-                is_speech = prob >= threshold or loud
+            # In speech the lower end-threshold (hysteresis) keeps the
+            # utterance open through short gaps; loud audio always counts.
+            is_speech = prob >= threshold or loud
             self.prob = float(prob)
             self.state = "speech" if self._speaking else "silence"
 
@@ -177,7 +219,7 @@ class UtteranceSegmenter:
                 self._speech_frames += 1
             else:
                 self._silence_run += 1
-                if forced or self._silence_run >= self._silence_frames:
+                if forced or self._silence_run >= self._endpoint_frames():
                     payload = bytes(self._buf)
                     self._speaking = False
                     self._announced = False
@@ -214,21 +256,27 @@ class WakeGate:
         self.strict = bool(strict)
 
     def _strip_wake(self, text: str) -> str:
-        flat = _ascii(text)
+        folded, index = _fold_with_map(text)
+        # A greeting in front of the wake word ("hey Mia, …") is part of the
+        # address, not the request; drop it together with the wake word.
+        greeting = _GREETING_RE.match(folded)
+        start = greeting.end() if greeting else 0
+        view = folded[start:]
         for word in sorted(self.words, key=len, reverse=True):
             # the lookahead keeps the wake word on a word boundary: "miara"
             # must not become "ra", and a bare "Mia" must become ""
-            m = re.match(rf"^[\s,.;:!?-]*{re.escape(word)}(?=[\s,.;:!?-]|$)(.*)$", flat, re.S)
+            m = re.match(rf"^[\s,.;:!?-]*{re.escape(word)}(?=[\s,.;:!?-]|$)(.*)$",
+                         view, re.S)
             if m:
-                # map the ASCII prefix length back onto the original text
-                cut = len(text) - len(m.group(1)) if m.group(1) else len(text)
+                end_folded = len(folded) - len(m.group(1))
+                cut = index[end_folded] if end_folded < len(index) else len(text)
                 return text[cut:].lstrip(" ,.;:!?-")
         return text
 
     def starts_with_wake(self, text: str) -> bool:
         """Strict check: the utterance STARTS with a wake word (no followup
         window) — used for the speaker-gate override while music plays."""
-        flat = _ascii(text).strip()
+        flat = _GREETING_RE.sub("", _ascii(text).strip())
         return any(re.match(rf"{re.escape(w)}(?=[\s,.;:!?-]|$)", flat) for w in self.words)
 
     def check(self, transcript: str, last_reply_at: float | None, now: float) -> tuple[bool, str]:
@@ -260,5 +308,8 @@ def build_segmenter(cfg: dict | None, detector: SpeechDetector | None = None) ->
             max_utterance_ms=int(c.get("max_utterance_ms", 20000)),
             energy_override=bool(c.get("energy_override", True)),
             speech_start_ms=int(c.get("speech_start_ms", 96)),
+            adaptive_endpoint=bool(c.get("adaptive_endpoint", True)),
+            min_silence_ms=int(c.get("min_silence_ms", 350)),
+            max_silence_ms=int(c.get("max_silence_ms", 1100)),
         ),
     )

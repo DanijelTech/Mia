@@ -1,5 +1,7 @@
 # Local computer control (`mia-ctl`)
 
+> Slovenian version: [../CONTROL.md](../CONTROL.md)
+
 `mia-ctl` is a small, explicit, audited vocabulary for controlling the local
 computer. The agent uses it instead of raw `xdotool`/`wmctrl`/`pkill` because it
 provides three guarantees:

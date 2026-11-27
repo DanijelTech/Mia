@@ -280,8 +280,10 @@ class FallbackBackend(TTSBackend):
         super().__init__()
         self.primary = primary
         self.fallback = fallback
-        self.name = primary.name
-        self.label = f"{primary.label} (fallback {fallback.label})"
+        # Backends are duck-typed in tests and plugins; never require `.name`.
+        self.name = getattr(primary, "name", "primary")
+        self.label = (f"{getattr(primary, 'label', self.name)} "
+                      f"(fallback {getattr(fallback, 'label', 'fallback')})")
         self.voice_id = getattr(primary, "voice_id", "")
 
     def synth(self, text: str) -> Iterator[bytes]:
@@ -293,8 +295,9 @@ class FallbackBackend(TTSBackend):
         except Exception as exc:
             if produced:
                 raise
-            print(f"[tts] {self.primary.label} failed ({type(exc).__name__}: "
-                  f"{exc}) — using {self.fallback.label}", flush=True)
+            print(f"[tts] {getattr(self.primary, 'label', self.primary)} failed "
+                  f"({type(exc).__name__}: {exc}) — using "
+                  f"{getattr(self.fallback, 'label', self.fallback)}", flush=True)
             yield from self.fallback.synth(text)
 
 

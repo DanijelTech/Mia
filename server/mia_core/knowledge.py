@@ -302,9 +302,23 @@ def tree_payload(root: str | Path) -> dict:
             children[parent].append(node["name"])
         else:
             roots.append(node["name"])
+    if not roots and by_name:
+        # Every skill points at a parent -> the tree is one or more cycles.
+        # Still show the skills instead of an empty page.
+        roots = sorted(by_name)
+        for name in roots:
+            by_name[name]["health"].append({
+                "level": "error",
+                "message": "skill tree has no root (parent cycle)"})
 
-    def build(name: str) -> dict:
+    def build(name: str, seen: frozenset[str] = frozenset()) -> dict:
         node = by_name[name]
+        # A malformed tree (A parent of B, B parent of A) must not recurse
+        # forever: stop at the first repeat and leave a visible issue.
+        if name in seen:
+            return {"name": name, "title": node["title"], "cycle": True,
+                    "children": []}
+        next_seen = seen | {name}
         return {
             "name": name,
             "title": node["title"],
@@ -317,7 +331,7 @@ def tree_payload(root: str | Path) -> dict:
             "lines": node["lines"],
             "references": node["references"],
             "bin": node["bin"],
-            "children": [build(c) for c in sorted(children.get(name, []))],
+            "children": [build(c, next_seen) for c in sorted(children.get(name, []))],
         }
 
     issues = [{"skill": n["name"], **h} for n in nodes for h in n["health"]]

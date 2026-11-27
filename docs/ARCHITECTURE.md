@@ -9,22 +9,59 @@
    Whisperja) in pretaka int16 PCM prek WebSocketa `/ws`.
 2. Medtem ko govoriš, strežnik vsakih ~1,2 s požene inkrementalni Whisper in
    pošilja dogodke `partial_transcript` (podnapisi v živo).
-3. Ob koncu govora: končni prepis — strežnik najprej poskusi opcijskega **GPU
+3. Ob koncu govora **prilagodljiv zaključek izjave** odloči, kdaj je izjava
+   končana (350–700 ms tišine, odvisno od dolžine govora; kratek ukaz se
+   zaključi hitreje). Končni prepis — strežnik najprej poskusi opcijskega **GPU
    STT delavca** (`stt.remote`, velik model, ~0,2 s), sicer pade na lokalni
    Whisper — nato gre prepis do Hermesa prek njegovega **Sessions API**
    (`POST /api/sessions/{id}/chat/stream`, SSE). ID seje se hrani v
    `logs/hermes_sessions.json` po imenu pogovora, zato spomin preživi ponovne
    zagone. Tipkani klepet (`/api/chat`) uporablja *isto* sejo.
+   faster-whisper teče s `condition_on_previous_text: false` in brez časovnih
+   žigov: prejšnji segment kot kontekst povzroči ponavljanje na šumu
+   (»hallucination loops«).
 4. Razčlenjevanje SSE dogodkov: `run.started` (id kroga → podpora gumbu STOP),
    `assistant.delta` (besedilo), `tool.started` (ime + predogled → aktivnost v
    HUD-u), `assistant.completed` (vključno z zastavico `interrupted`),
    `run.completed` (poraba žetonov), `*approval*` (→ kartice za odobritev).
-5. Besedilo se razdeli na povedi, odstrani se markdown/think-bloki, **prekrijejo
-   se skrivnosti**, nato vsaka poved steče skozi izbrani TTS pogon
+5. Besedilo se razdeli na povedi (tudi po novi vrstici in tropičju), odstrani se
+   markdown/think-bloke in **prekrijejo skrivnosti**. Dolg stavek brez ločil se
+   odreže na zadnjem naravnem premoru (`tts.max_chunk_chars`, privzeto 220), da
+   prvi zvok ne čaka na cel odgovor. Vsak kos gre skozi izbrani TTS pogon
    (`server/tts.py`: privzeto lokalni `piper`, `http` za lokalno storitev, kot je
    Gepard ali Maya1, `command` za lokalni CLI na poved, ali `elevenlabs` za
-   oblak) nazaj do odjemalca kot 16 kHz PCM, medtem ko generiranje še teče.
-   Lokalni glasovi pri 22,05 kHz se pretakajoče prevzorčijo v procesu.
+   oblak), vsak PCM kos pa se pošlje odjemalcu **takoj, ko ga motor ustvari**
+   (ne šele po končani povedi). Lokalni glasovi pri 22,05 kHz se pretakajoče
+   prevzorčijo v procesu.
+6. Če je nastavljen `hermes.ack_after_seconds`, Mia izgovori kratko potrditev
+   (»Takoj.«), ko agent v tem oknu še ni proizvedel besedila. Potrditev se
+   prekliče ob prvem delta dogodku, zato se nikoli ne prekrije z odgovorom.
+
+## Izmenjava in prekinitev
+
+- **Nagovor** je jezikovno nevtralen: `Mia`, `Mijo`, `Mija`, `Mio` in pozdravi
+  pred njim (`Hey Mia`, `OK Mia`, `Hej Mia`, `Zdravo Mia`). Pozdrav se odstrani
+  skupaj z budnico.
+- **Pol-duplex** (`stt.continuous.barge_in: false`, privzeto) izjavo, ki pride,
+  ko je Mia zaposlena, postavi v čakalno vrsto; najnovejša zmaga in se izvede
+  takoj po koncu turna. Šum ne more ubiti turna.
+- **Barge-in** (`barge_in: true`) se odzove le na *zaključeno* izjavo, daljšo od
+  `barge_min_ms` (privzeto 450 ms), nikoli na prvi govorni okvir. S preverjenim
+  odtisom prekinitev ne potrebuje budnice — izjava je po definiciji namenjena
+  Mii. Brez profila ostaja stroga budnica obvezna. To je vzorec
+  »prilagodljive prekinitve«: kašelj ali TV stavek ne uniči odgovora, namerni
+  »ustavi« pa ga.
+- **Brez lažne budnice**: budnica mora biti prva beseda za neobveznim
+  pozdravom. »The name Mia is nice« ni turn.
+
+## Dvojezični deterministični odgovori
+
+LLM odgovarja v jeziku, v katerem govoriš, a ura, vreme, mediji, glasnost,
+odgovori samodejnosti in kalibracijski pozivi so deterministični.
+`server/mia_core/i18n.py` jih prevede iz točnega slovenskega izvora v angleščino,
+ko je jezik HUD-a ENG (`MIA_LANG=en` v okolju, nastavi ga `/api/ui/language`).
+Neznani stavki se vrnejo nespremenjeni, nikoli strojno popačeni; testi pokrijejo
+točne in dinamične oblike.
 
 Zakaj Sessions API in ne `/v1/responses` ali `/v1/runs`: v Hermesu v0.16 so seje
 edina površina, ki v enem toku združuje imenovan trajni spomin, ID krogov,

@@ -509,7 +509,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    raw = list(sys.argv[1:] if argv is None else argv)
+    # `--json`/`--dry-run` are global but users (and the docs) put them after
+    # the subcommand: `mia-auto profile --json`. Accept both positions.
+    want_json = "--json" in raw
+    want_dry = "--dry-run" in raw
+    clean = [a for a in raw if a not in ("--json", "--dry-run")]
+    args = parser.parse_args(clean)
+    args.json = bool(want_json or getattr(args, "json", False))
+    args.dry_run = bool(want_dry or getattr(args, "dry_run", False))
     if not getattr(args, "cmd", None):
         parser.print_help()
         return 2

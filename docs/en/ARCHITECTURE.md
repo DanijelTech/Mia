@@ -9,22 +9,59 @@
    PCM over WebSocket `/ws`.
 2. While you speak, the server runs incremental Whisper passes every ~1.2 s
    and emits `partial_transcript` events (live captions).
-3. On stop: final transcription — the server first tries the optional **GPU
-   STT worker** (`stt.remote`, big model, ~0.2 s) and falls back to local
-   Whisper if it's unreachable — then the transcript goes to Hermes via its **Sessions
-   API** (`POST /api/sessions/{id}/chat/stream`, SSE). Session ids persist in
-   `logs/hermes_sessions.json` per conversation name, so memory survives
-   restarts. Typed chat (`/api/chat`) uses the *same* session.
+3. On end of speech: the **adaptive endpoint** decides when the utterance is
+   complete (350–700 ms of silence, scaled by how long you have been speaking;
+   a short command closes faster). Final transcription — the server first tries
+   the optional **GPU STT worker** (`stt.remote`, big model, ~0.2 s) and falls
+   back to local Whisper if it's unreachable — then the transcript goes to Hermes
+   via its **Sessions API** (`POST /api/sessions/{id}/chat/stream`, SSE). Session
+   ids persist in `logs/hermes_sessions.json` per conversation name, so memory
+   survives restarts. Typed chat (`/api/chat`) uses the *same* session.
+   faster-whisper runs with `condition_on_previous_text: false` and without
+   timestamps: keeping the previous segment as context makes Whisper repeat
+   itself on noise ("hallucination loops").
 4. SSE events parsed: `run.started` (run id → STOP support), `assistant.delta`
    (text), `tool.started` (name + preview → HUD activity), `assistant.completed`
    (incl. `interrupted` flag), `run.completed` (token usage), `*approval*`
    (→ HUD approval cards).
-5. Text is sentence-split, markdown/think-block-stripped, **secret-redacted**,
-   then each sentence streams through the configured TTS backend (`server/tts.py`:
-   local `piper` by default, `http` for a local TTS service such as Gepard,
-   `command` for a per-sentence local CLI, or `elevenlabs` for cloud) back to the
-   client as 16 kHz PCM while generation continues. Local voices at 22.05 kHz are
-   resampled streamingly in-process.
+5. Text is split into sentences (newlines and ellipses count), markdown/think
+   blocks are stripped and secrets redacted. A long clause without punctuation
+   is cut at the last natural break (`tts.max_chunk_chars`, default 220), so the
+   first audio does not wait for the whole reply. Each chunk streams through the
+   configured TTS backend (`server/tts.py`: local `piper` by default, `http` for
+   a local TTS service such as Gepard/Maya1, `command` for a per-sentence local
+   CLI, or `elevenlabs` for cloud) and every PCM chunk is forwarded to the
+   client **the moment the engine produces it** (not after the sentence is
+   complete). Local voices at 22.05 kHz are resampled streamingly in-process.
+6. If `hermes.ack_after_seconds` is set, a short acknowledgement ("Right away.")
+   is spoken when the agent has not produced text within that window. It is
+   cancelled as soon as the first delta arrives, so it never overlaps the reply.
+
+## Turn-taking and interruption
+
+- **Wake addressing** is language-neutral: `Mia`, `Mijo`, `Mija`, `Mio`, and
+  greetings in front of it (`Hey Mia`, `OK Mia`, `Hej Mia`, `Zdravo Mia`).
+  The greeting is stripped together with the wake word.
+- **Half-duplex** (`stt.continuous.barge_in: false`, default) queues an
+  utterance that arrives while Mia is busy; the newest one wins and runs as
+  soon as the turn finishes. Noise cannot kill a turn.
+- **Barge-in** (`barge_in: true`) only reacts to a *completed* utterance longer
+  than `barge_min_ms` (default 450 ms), never to the first speech frame. With a
+  verified voiceprint the interruption does not need the wake word — it is
+  addressed to Mia by definition. Without a profile the strict wake word stays
+  mandatory. This is the "adaptive interruption" pattern: a cough or a TV
+  sentence does not destroy the answer, a deliberate "stop" does.
+- **No false wake**: the wake word must be the first word after an optional
+  greeting. "The name Mia is nice" is not a turn.
+
+## Bilingual deterministic replies
+
+The LLM answers in the language you speak, but time, weather, media, volume,
+autonomy answers and calibration prompts are deterministic. `server/mia_core/i18n.py`
+localizes them from the exact Slovenian source to English when the HUD language
+is ENG (`MIA_LANG=en` in the environment, set by `/api/ui/language`). Unknown
+sentences are returned unchanged, never machine-mangled; the tests cover the
+exact and dynamic forms.
 
 Why the Sessions API and not `/v1/responses` or `/v1/runs`: on Hermes v0.16,
 sessions are the only surface that combines named persistent memory, run ids,

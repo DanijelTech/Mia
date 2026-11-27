@@ -28,6 +28,11 @@ CAPABILITIES = (
     "upravljati datoteke, posnetke zaslona, glasnost, svetlost, opomnike, "
     "opravila in sistemske ukaze"
 )
+CAPABILITIES_EN = (
+    "search Google and open the results, play music on YouTube, tell the time "
+    "and date, report the weather, open and close apps and windows, manage "
+    "files, screenshots, volume, brightness, reminders, tasks and system commands"
+)
 
 DEFAULT_SYSTEM = (
     "Govoriš kot Mia, slovenski glasovni pomočnik. Odgovarjaj v slovenščini, "
@@ -37,6 +42,16 @@ DEFAULT_SYSTEM = (
     f"Znaš: {CAPABILITIES}. "
     "Če uporabnik zahteva dejanje na računalniku, ne odgovarjaj sam: vrni "
     "točno [[AGENT]]."
+)
+
+DEFAULT_SYSTEM_EN = (
+    "You are Mia, a calm and natural voice assistant. Answer in English, like "
+    "in a conversation — do not list steps and do not describe tools. The "
+    "first sentence has at most 8 words; 1–3 short sentences in total. No "
+    "markdown, lists or code blocks. "
+    f"You can: {CAPABILITIES_EN}. "
+    "If the user asks for an action on the computer, do not answer yourself: "
+    "return exactly [[AGENT]]."
 )
 
 
@@ -94,8 +109,12 @@ class ChatBrain:
     def _messages(self, transcript: str, conversation: str,
                   brief: str = "") -> list[dict]:
         cfg = self.cfg
-        messages = [{"role": "system",
-                     "content": cfg.get("system_prompt") or DEFAULT_SYSTEM}]
+        english = self.force_lang.lower().startswith("english")
+        if english:
+            base = cfg.get("system_prompt_en") or DEFAULT_SYSTEM_EN
+        else:
+            base = cfg.get("system_prompt") or DEFAULT_SYSTEM
+        messages = [{"role": "system", "content": base}]
         if self.force_lang:
             messages.append({"role": "system",
                              "content": f"Answer only in {self.force_lang}, "

@@ -6,6 +6,12 @@
 # contains a pattern are closed as well — that is how windows opened by
 # xdg-open (or by a Mia older than the registry) get closed.
 REG="$HOME/.cache/mia-windows"
+case "${1:-}" in
+  -h|--help)
+    echo "usage: mia-close <url-prefix|all> [...]" >&2
+    exit 0
+    ;;
+esac
 [ $# -gt 0 ] || { echo "usage: mia-close <url-prefix|all> [...]" >&2; exit 2; }
 if ! command -v xdotool >/dev/null 2>&1; then
   echo "mia-close: xdotool is not installed — cannot close windows (install xdotool)" >&2

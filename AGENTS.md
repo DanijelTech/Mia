@@ -6,6 +6,10 @@ Mia is a local-first Slovenian voice assistant and Iron-Man-style HUD built on
 Hermes Agent. It runs on the user's own machine: Whisper (STT), Piper/Gepard/
 Maya1 (TTS), a local LLM behind Hermes, and a browser HUD.
 
+Documentation roles: `README.md` is the English main README, `README.sl.md` the
+Slovenian original; `docs/` is Slovenian, `docs/en/` English, and every page
+links its counterpart. Keep both sides in sync when behaviour changes.
+
 The current major addition is the **learning/knowledge core** and the
 **audited computer-control CLI**:
 
@@ -23,11 +27,23 @@ The current major addition is the **learning/knowledge core** and the
 - `server/hud/learning.html` — HUD page for memory, tree, habits, recipes,
   mistakes, episode log and search.
 - `hermes-plugin/mia_learning/` — first-class Hermes tools
-  (`memory_brief/search/feedback/remember/fact/mistake/status`, `skill_tree`)
-  that call `/api/learning/*`; `hermes-plugin/hud_display/` remains the media
-  panel plugin; `hermes-plugin/mia_autonomy/` exposes
+  (`memory_brief/search/feedback/remember/fact/mistake/status`, `skill_tree`,
+  `music_play/stop`) that call `/api/learning/*`; `hermes-plugin/hud_display/`
+  remains the media panel plugin; `hermes-plugin/mia_autonomy/` exposes
   `system_status/profile/health/adapt/plans/run_plan/command/jobs/tasks/alerts`
-  over `/api/autonomy/*`.
+  over `/api/autonomy/*`. Each plugin's `__init__.py` MUST define
+  `register(ctx)` and register every schema in `plugin.yaml`; an empty file
+  means Hermes silently exposes no tools (`tests/test_plugin_registration.py`).
+- `server/mia_core/i18n.py` — bilingual deterministic replies. The HUD switch
+  calls `/api/ui/language`, which sets `MIA_LANG` and `CHAT.force_lang`; the
+  server localizes time/date, weather, volume/media/Google confirmations,
+  autonomy answers and calibration prompts. `localize()` returns unknown text
+  unchanged (never machine-mangles agent output). Add exact/pattern entries for
+  every new deterministic string; `tests/test_i18n.py` covers them. The LLM
+  prompts switch too: `hermes.language_directive_en`,
+  `hermes.system_prompt_extra_en` and `llm.chat.system_prompt_en` (built-in
+  English defaults when omitted). Never keep a Slovenian "answer in Slovenian"
+  prompt active in English mode.
 - One model is the default: `llm.chat.base_url` points at the main
   llama-server (`stack.llama`, port 18083), so no second GGUF is loaded. Do not
   add a `stack.chat` block with another model to the examples; the split brain
@@ -45,9 +61,11 @@ The current major addition is the **learning/knowledge core** and the
   the SLO/ENG switch (bottom-right). The dictionary is keyed by the exact
   Slovenian text; a MutationObserver translates text nodes and
   placeholder/title/aria-label, so script-written labels are covered. Switching
-  to ENG also POSTs `/api/ui/language`; the server then adds "answer in English"
-  to the Hermes/chat prompts. A new HUD string must be added to DICT —
-  `tests/test_hud_i18n.py` fails on an untranslated static string.
+  to ENG also POSTs `/api/ui/language`; the server sets `MIA_LANG`, switches the
+  Hermes/chat language directive (the Slovenian `language_directive` is skipped
+  in English mode) and localizes deterministic replies via `mia_core/i18n.py`.
+  A new HUD string must be added to DICT — `tests/test_hud_i18n.py` fails on an
+  untranslated static string. The server side is `tests/test_i18n.py`.
 - `server/hud/background.html` — the "V OZADJU" page: what Mia runs in the
   background (media windows, HUD panels, stack services, autonomy jobs), manual
   closing/stopping and the manual-override switch.
@@ -93,6 +111,19 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
 ## Architecture facts
 
 - Voice/chat turns go through `server/server.py` → Hermes Sessions API.
+- Voice latency path: `continuous.UtteranceSegmenter` uses adaptive endpointing
+  (`adaptive_endpoint`, `min_silence_ms` 350 … `silence_ms` 700); faster-whisper
+  runs with `condition_on_previous_text: false`; `stream_response_audio` cuts
+  long clauses at `tts.max_chunk_chars` and `_send_tts_sentence` forwards every
+  PCM chunk as the engine yields it (never buffers the whole sentence). Optional
+  `hermes.ack_after_seconds` speaks a short ack while the model thinks. Do not
+  reintroduce whole-sentence buffering — it adds the full synthesis time to the
+  first audio.
+- Barge-in (`stt.continuous.barge_in: true`) cancels only on a completed
+  utterance >= `barge_min_ms`; `_feed_continuous` must not cancel on
+  `speech_start`. A barged turn with a verified voiceprint may skip the wake
+  word (`ConnState.barged` → `allow_barge` in `_run_turn`); without a profile the
+  strict wake stays mandatory. Wake addressing accepts greetings (`Hey Mia`).
 - A turn is routed by `mia_core/brain.py::classify_brain`: explicit actions,
   live-data questions, URLs and paths go to Hermes; casual chat goes to the
   optional fast chat model (`server/chat_brain.py`, OpenAI-compatible
@@ -162,6 +193,12 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
 - `tests/test_brain_router.py` — chat-vs-agent routing and chat-brain gating
   (no network: the `requests` import is lazy).
 - `tests/test_tts_fallback.py` — HTTP→Piper TTS fallback (skips without numpy).
+- `tests/test_i18n.py` — bilingual deterministic replies, English clock/date,
+  English music/Google/weather parsing.
+- `tests/test_continuous.py` — wake greetings, accent-safe wake stripping,
+  adaptive endpoint timing.
+- `tests/test_plugin_registration.py` — both Hermes plugins register every
+  declared tool.
 - Keep tests hermetic: use `tempfile`, set `HOME`/`XDG_*` for `mia-ctl`.
 
 ## Known pitfalls (hard-won)

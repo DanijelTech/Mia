@@ -8,8 +8,6 @@ were actually observed or explicitly confirmed. It is the difference between
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
-
 from .db import Store
 from .habits import habit_lines
 from .recipes import match_anti_patterns, match_recipes

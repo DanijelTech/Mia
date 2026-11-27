@@ -61,6 +61,52 @@ Three steps:
 The `status` message on start tells which VAD runs (`silero` or `rms`); `rms`
 means Silero was unavailable and detection is energy-based (coarser).
 
+**Mia's memory / system tools are missing in Hermes** — `plugin.yaml` declares
+the tools, but Hermes only sees them when the plugin's `register(ctx)` runs. An
+older build shipped empty `hermes-plugin/mia_learning/__init__.py` and
+`hermes-plugin/mia_autonomy/__init__.py`; update and re-enable:
+
+```bash
+cd ~/Mia && git pull
+ls -l hermes-plugin/mia_learning/__init__.py   # must not be 0 bytes
+hermes plugins list | grep -E 'mia_learning|mia_autonomy'
+hermes plugins enable mia_learning mia_autonomy
+systemctl --user restart mia-voice
+```
+
+Then ask the agent to call `memory_status` or `system_status`; a JSON answer
+proves registration. `tests/test_plugin_registration.py` fails if a declared
+tool is not registered.
+
+**The HUD is in English but Mia still speaks Slovenian** — the deterministic
+replies (clock, weather, media, volume, autonomy) follow `MIA_LANG`, which
+`/api/ui/language` sets when you press ENG. Check the server log for
+`UI language -> en`; if it is missing, the request did not reach the server
+(open the HUD from the same origin, or `curl -X POST /api/ui/language`). The
+LLM itself needs `hermes.language_directive_en` (or the built-in English
+directive) — the Slovenian directive is skipped in English mode. Restart after
+editing `server.yaml`.
+
+**The first word takes too long / she is silent for 20 s** — the reply is
+streamed: each TTS chunk is sent as the engine produces it, and a long clause
+is cut at `tts.max_chunk_chars` (default 220). If the first audio still waits,
+the TTS engine itself is slow (CPU Piper on a busy box, or Maya1 loading) —
+check `[tts]` lines and `/health` on :8770. For a slow agent, set
+`hermes.ack_after_seconds: 3` so she says "Right away." instead of silence.
+
+**She cuts me off / does not interrupt** — `stt.continuous.silence_ms` is the
+ceiling for the adaptive endpoint (350–700 ms). A short command closes at
+`min_silence_ms`, a long sentence at `silence_ms`. To interrupt by voice, set
+`barge_in: true`; barge-in now waits for a completed utterance of at least
+`barge_min_ms` and, with a calibrated voiceprint, does not require the wake
+word. Without a profile the strict wake word stays mandatory.
+
+**Whisper repeats the same sentence / invents text on silence** — keep
+`stt.condition_on_previous_text: false` (default) and
+`stt.no_speech_threshold: 0.6`. The `hallucination_filter` list catches known
+phrases; add your own if a new one appears. Never put the wake word in
+`initial_prompt`.
+
 **HUD says "voice server unreachable" / "connection refused (4401)"** — the
 browser opened the WebSocket with an Origin that was not allowlisted. Opening the
 HUD by LAN IP (`https://192.168.1.10:8766/hud/`) sends

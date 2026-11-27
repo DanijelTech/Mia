@@ -1,5 +1,7 @@
 # Capability checklist (confirmed / learned / empty)
 
+> Slovenian version: [../CAPABILITIES.md](../CAPABILITIES.md)
+
 Mia keeps a machine-checked inventory of what she can do on **this** computer.
 Every item has an id, category, label, command, detection method and status.
 

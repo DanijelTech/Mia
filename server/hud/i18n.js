@@ -487,6 +487,38 @@
     "✓ oddaljenost": "✓ distance",
     "brskalnik": "browser",
     "MANJKA": "MISSING",
+    /* ---- runtime messages written by the page scripts -------------- */
+    "NAPAKA": "ERROR",
+    "samodejno poslušanje vklopljeno — reci »Mia …«":
+      "automatic listening on — say »Mia …«",
+    "neprestano poslušanje vklopljeno — reci »Mia …«":
+      "continuous listening on — say »Mia …«",
+    "klepet počiščen (zgodovina ostane v Hermesu — za ponastavitev vpiši /new)":
+      "chat cleared (history stays in Hermes — type /new to reset)",
+    "za mikrofon in zvok klikni gumb na vrhu strani (zahteva brskalnika)":
+      "click the button at the top for microphone and sound (browser requirement)",
+    "mikrofon blokiran: ": "microphone blocked: ",
+    "mikrofon ne pošilja zvoka": "the microphone sends no audio",
+    "Mia se ni odzvala v 8 s. Najverjetneje teče stara različica strežnika. Zaženi: ./stop-mia.sh && ./start-mia.sh, nato osveži stran.":
+      "Mia did not respond within 8 s. Most likely an old server build is running. Run: ./stop-mia.sh && ./start-mia.sh, then refresh the page.",
+    "Brskalnik ni dovolil mikrofona: ": "The browser denied the microphone: ",
+    "PRIJAVA POTREBNA (4401)": "LOGIN REQUIRED (4401)",
+    "ŽETON HUD-a ni veljaven. Vnesi nov MIA_HUD_TOKEN ali odpri URL z ?token=…":
+      "The HUD token is invalid. Enter a new MIA_HUD_TOKEN or open the URL with ?token=…",
+    "POVEZAVA PREKINJENA (": "CONNECTION LOST (",
+    "povezava zavrnjena (4401): žeton je napačen ali potekel — prijavi se znova":
+      "connection refused (4401): the token is wrong or expired — log in again",
+    "Kalibracijo zaženi iz glavnega HUD-a (gumb ZAČNI KALIBRACIJO).":
+      "Start the calibration from the main HUD (ZAČNI KALIBRACIJO button).",
+    "(prazen spomin)": "(empty memory)",
+    "ni prav": "not right",
+    "to je bilo prav": "that was right",
+    "— še ni dovolj dokazov —": "— not enough evidence yet —",
+    "Glasovni strežnik ni povezan. Preveri, da Mia teče, in osveži stran (Ctrl+Shift+R).":
+      "The voice server is not connected. Check that Mia is running, then refresh (Ctrl+Shift+R).",
+    "samodejno poslušanje vklopljeno": "automatic listening on",
+    "(ni sistemski ukaz — pošlji to v klepet)":
+      "(not a system command — send this to chat)",
   };
 
   const PREFIX = [

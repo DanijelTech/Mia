@@ -170,6 +170,50 @@ koraki:
 V `status` sporočilu ob vklopu piše, kateri VAD teče (`silero` ali `rms`); če piše
 `rms`, Silero ni na voljo in je zaznava energijska (bolj groba).
 
+**Hermes ne vidi Miinih orodij za spomin / sistem** — `plugin.yaml` orodja samo
+razglasi; Hermes jih vidi šele, ko se izvede `register(ctx)` v vtičniku. Starejša
+izdaja je imela prazna `hermes-plugin/mia_learning/__init__.py` in
+`hermes-plugin/mia_autonomy/__init__.py`; posodobi in znova omogoči:
+
+```bash
+cd ~/Mia && git pull
+ls -l hermes-plugin/mia_learning/__init__.py   # ne sme biti 0 bajtov
+hermes plugins list | grep -E 'mia_learning|mia_autonomy'
+hermes plugins enable mia_learning mia_autonomy
+systemctl --user restart mia-voice
+```
+
+Nato naj agent pokliče `memory_status` ali `system_status`; odgovor JSON dokaže
+registracijo. `tests/test_plugin_registration.py` pade, če razglašeno orodje ni
+registrirano.
+
+**HUD je v angleščini, Mia pa še govori slovensko** — deterministični odgovori
+(ura, vreme, mediji, glasnost, samodejnost) sledijo `MIA_LANG`, ki ga nastavi
+`/api/ui/language`, ko pritisneš ENG. V dnevniku strežnika poišči
+`UI language -> en`; če ga ni, zahteva ni prišla do strežnika (odpri HUD z istega
+izvora ali pokliči `curl -X POST /api/ui/language`). LLM potrebuje
+`hermes.language_directive_en` (ali vgrajeno angleško navodilo) — slovensko
+navodilo se v angleškem načinu preskoči. Po spremembi `server.yaml` znova zaženi.
+
+**Prva beseda pride prepozno / 20 s tišine** — odgovor se pretaka: vsak TTS kos
+se pošlje takoj, ko ga motor ustvari, dolg stavek pa se odreže pri
+`tts.max_chunk_chars` (privzeto 220). Če prvi zvok še vedno čaka, je počasen sam
+TTS motor (CPU Piper na zasedenem stroju ali nalaganje Maya1) — poglej vrstice
+`[tts]` in `/health` na :8770. Za počasen agent nastavi
+`hermes.ack_after_seconds: 3`, da reče »Takoj.« namesto tišine.
+
+**Mia me prekine / se ne pusti prekiniti** — `stt.continuous.silence_ms` je
+zgornja meja prilagodljivega zaključka (350–700 ms). Kratek ukaz se zaključi pri
+`min_silence_ms`, dolga poved pri `silence_ms`. Za prekinitev z glasom vklopi
+`barge_in: true`; barge-in zdaj čaka na zaključeno izjavo, dolgo vsaj
+`barge_min_ms`, in s kalibriranim odtisom ne zahteva budnice. Brez profila ostaja
+stroga budnica obvezna.
+
+**Whisper ponavlja isti stavek / si izmišlja besedilo v tišini** — pusti
+`stt.condition_on_previous_text: false` (privzeto) in
+`stt.no_speech_threshold: 0.6`. Seznam `hallucination_filter` ujame znane fraze;
+dodaj svojo, če se pojavi nova. Budnice nikoli ne dajaj v `initial_prompt`.
+
 **HUD javi »glasovni strežnik ni dosegljiv« / »povezava zavrnjena (4401)«** —
 brskalnik je spletni priključek (`/ws`) odprl z izvorom, ki ni bil na seznamu.
 Pri odpiranju po LAN IP (`https://192.168.1.10:8766/hud/`) je izvor
