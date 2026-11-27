@@ -286,6 +286,16 @@ class FallbackBackend(TTSBackend):
                       f"(fallback {getattr(fallback, 'label', 'fallback')})")
         self.voice_id = getattr(primary, "voice_id", "")
 
+    @property
+    def pitch_getter(self):
+        return getattr(self.primary, "pitch_getter", None)
+
+    @pitch_getter.setter
+    def pitch_getter(self, fn) -> None:
+        # The HUD sets this on the wrapper; HTTPBackend reads it per request.
+        self.primary.pitch_getter = fn
+        self.fallback.pitch_getter = fn
+
     def synth(self, text: str) -> Iterator[bytes]:
         produced = False
         try:

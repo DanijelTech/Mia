@@ -60,6 +60,30 @@ def _default_metrics(**overrides) -> dict:
     return base
 
 
+class IntentRoutingTests(unittest.TestCase):
+    def test_english_and_slovenian_forms(self):
+        cases = {
+            "Mia, glasnost na 50": "volume.set",
+            "Mia, set volume to 40": "volume.set",
+            "Mia, vsak dan ob 8 zdravje": "schedule.daily",
+            "Mia, ponovno zaženi storitev nginx": "service.restart",
+            "Mia, restartaj računalnik": "power.reboot",
+            "Mia, open the browser": "open.url",
+            "Mia, take a screenshot": "screenshot",
+            "Mia, play music": "media.play",
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                intent = intents.route(text)
+                self.assertIsNotNone(intent, text)
+                self.assertEqual(intent.name, expected)
+
+    def test_english_reminder(self):
+        intent = intents.route("Mia, remind me in 5 minutes to drink water")
+        self.assertEqual(intent.kind, "schedule")
+        self.assertEqual(intent.args.get("body"), "drink water")
+
+
 class ProfileTests(unittest.TestCase):
     def test_detect_shape_and_fingerprint(self):
         profile = SystemProfile()

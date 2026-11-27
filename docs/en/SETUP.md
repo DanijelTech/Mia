@@ -535,6 +535,14 @@ python -m venv .venv && .venv/Scripts/pip install sounddevice websockets numpy o
 python client.py --push-to-talk --server ws://YOUR_HOST:8765/ws --list-devices
 ```
 
+The `/ws` endpoint requires `MIA_HUD_TOKEN` when auth is enabled. The client
+reads it from the environment or `--token`:
+
+```bash
+MIA_HUD_TOKEN=... python client.py --server ws://YOUR_HOST:8765/ws
+python client.py --server ws://YOUR_HOST:8765/ws --token ...
+```
+
 **GPU worker stats** (shows in the Machines panel): copy
 `worker/worker_stats.py` to the worker machine, `pip install psutil`, run it,
 and point a `machines:` entry's `stats_url` at `http://worker-ip:8767/stats`.

@@ -135,6 +135,8 @@
     "profila še ni": "no profile yet",
     "ni aktivnih opravil": "no active jobs",
     "— ni nalog —": "— no tasks —",
+    "ni dosegljivo (Hermes)": "unavailable (Hermes)",
+    "spomin ni dosegljiv": "memory unavailable",
     "— ni še aktivnosti —": "— no activity yet —",
     "—": "—",
     "Osveženo": "Refreshed",

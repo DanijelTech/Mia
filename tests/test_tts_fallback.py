@@ -42,6 +42,13 @@ class TTSFallbackTests(unittest.TestCase):
             _FakeBackend(error=RuntimeError("down")), _FakeBackend([b"b"]))
         self.assertEqual(list(backend.synth("x")), [b"b"])
 
+    def test_pitch_getter_reaches_the_primary_backend(self):
+        primary, fallback = _FakeBackend([b"a"]), _FakeBackend([b"b"])
+        backend = tts.FallbackBackend(primary, fallback)
+        backend.pitch_getter = lambda: 4.0
+        self.assertEqual(primary.pitch_getter(), 4.0)
+        self.assertEqual(fallback.pitch_getter(), 4.0)
+
     def test_does_not_switch_after_audio_started(self):
         class Partial(_FakeBackend):
             def synth(self, text):

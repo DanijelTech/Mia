@@ -87,10 +87,15 @@ _DURATION_UNITS = {
     "minut": 60, "minute": 60, "minuto": 60, "min": 60,
     "ur": 3600, "ure": 3600, "uro": 3600, "h": 3600,
     "dni": 86400, "dan": 86400, "dneva": 86400,
+    "second": 1, "seconds": 1, "sec": 1, "secs": 1,
+    "minutes": 60, "mins": 60,
+    "hour": 3600, "hours": 3600, "hrs": 3600,
+    "day": 86400, "days": 86400,
 }
 _DURATION_RE = re.compile(
-    r"(?:cez|za)\s+(\d+)\s*(sekund\w*|sekunde|sekundo|sek|minut\w*|minute|minuto|min"
-    r"|ur\w*|ure|uro|dni|dan|dneva)", re.I)
+    r"(?:(?:cez|za|in)\s+(\d+)\s*"
+    r"(sekund\w*|sekunde|sekundo|sek|second\w*|secs?|minut\w*|minute|minuto|min"
+    r"|minutes?|mins?|ur\w*|ure|uro|hours?|hrs?|dni|dan|dneva|days?))", re.I)
 
 
 def _duration_seconds(flat: str) -> int | None:
@@ -220,11 +225,19 @@ def _alerts(m, text, flat):
 
 
 # ------------------------------------------------------------------ volume
-@_rule(r"^(?:nastavi|daj|naredi)\s+glasnost(?:i)?\s+(?:na\s+)?(\d{1,3})")
+@_rule(r"^(?:(?:nastavi|daj|naredi)\s+)?glasnost(?:i)?\s+(?:na\s+)?(\d{1,3})")
 def _volume_set(m, text, flat):
     return _action("volume.set", "volume",
                    args={"action": "set", "value": int(m.group(1))},
                    reply=f"Glasnost {m.group(1)}.")
+
+
+@_rule(r"^(?:set|change)\s+volume\s+(?:to\s+)?(\d{1,3})|^volume\s+(?:to\s+)?(\d{1,3})")
+def _volume_set_en(m, text, flat):
+    value = m.group(1) or m.group(2)
+    return _action("volume.set", "volume",
+                   args={"action": "set", "value": int(value)},
+                   reply=f"Glasnost {value}.")
 
 
 @_rule(r"^(?:koliko je glasnosti|kaksna je glasnost|glasnost status|"
@@ -281,7 +294,7 @@ def _brightness_down(m, text, flat):
 
 
 # ------------------------------------------------------------------- media
-@_rule(r"^(?:predvajaj|zaigraj|play)\s*(?:glasbo|muziko|pesem)?\s*$")
+@_rule(r"^(?:predvajaj|zaigraj|play)\s*(?:glasbo|muziko|pesem|music|song)?\s*$")
 def _media_play(m, text, flat):
     return _action("media.play", "media", args={"action": "play"},
                    reply="Predvajam.")
@@ -335,7 +348,8 @@ def _power_suspend(m, text, flat):
                    reply="Naj se ustavim? Potrdi s »ja«.")
 
 
-@_rule(r"^(?:ponovno zazeni|restart|reboot|restartaj racunalnik)")
+@_rule(r"^(?:restart(?:aj)?|reboot|ponovno zazeni)"
+       r"(?:\s+(?:racunalnik|sistem|napravo|stroj|computer|machine))?$")
 def _power_reboot(m, text, flat):
     return _action("power.reboot", "power", args={"action": "reboot"},
                    confirmation=True, destructive=True,
@@ -350,7 +364,8 @@ def _power_shutdown(m, text, flat):
 
 
 # -------------------------------------------------------------- screenshot
-@_rule(r"^(?:posnemi|naredi posnetek|screenshot|capture)\s*(?:zaslon|ekran|screen)?")
+@_rule(r"^(?:posnemi|naredi posnetek|screenshot|screen shot|take a screenshot|"
+       r"take screenshot|capture)\s*(?:zaslon|ekran|screen)?")
 def _screenshot(m, text, flat):
     return _action("screenshot", "screenshot", args={},
                    reply="Posnetek shranjen.")
@@ -396,6 +411,7 @@ _URL = re.compile(r"^(?:https?://|www\.)\S+", re.I)
 @_rule(r"^(?:odpri|odprite|open|zazeni|launch)\s+(.+)$")
 def _open(m, text, flat):
     target = _clean(text[m.start(1):m.end(1)])
+    target = re.sub(r"^(?:the|a|an)\s+", "", target, flags=re.I)
     folded = fold(target)
     if folded in ("brskalnik", "browser", "splet", "internet"):
         return _action("open.url", "open", args={"target": "browser"},
@@ -496,6 +512,9 @@ def _service_status2(m, text, flat):
        r"([a-z0-9@_.-]+)")
 def _service_restart(m, text, flat):
     unit = m.group(1)
+    if fold(unit) in ("racunalnik", "sistem", "napravo", "stroj",
+                      "computer", "machine"):
+        return None
     return _action("service.restart", "service",
                    args={"action": "restart", "unit": unit},
                    confirmation=True, destructive=True,
@@ -671,8 +690,9 @@ def _pkg_search(m, text, flat):
 
 # -------------------------------------------------------------- scheduling
 _REMINDER = re.compile(
-    r"^(?:opomni me|opomni|remind me|spomni me)\s+(?:cez\s+\d+\s*\w+\s*)?"
-    r"(?:ob\s+\d{1,2}(?::\d{2})?\s*)?(?:da\s+|naj\s+|,?\s*)(.+)$", re.I)
+    r"^(?:opomni me|opomni|remind me|spomni me)\s+"
+    r"(?:(?:cez|in)\s+\d+\s*\w+\s*)?"
+    r"(?:ob\s+\d{1,2}(?::\d{2})?\s*)?(?:da\s+|naj\s+|to\s+|,?\s*)(.+)$", re.I)
 
 
 @_rule(r"^(?:opomni me|opomni|remind me|spomni me)\b")
@@ -689,7 +709,7 @@ def _reminder(m, text, flat):
         return None
     result = _REMINDER.search(flat)
     body = _clean(text[result.start(1):result.end(1)]) if result else ""
-    body = re.sub(r"^(?:da|naj)\s+", "", body, flags=re.I).strip(_TRAIL)
+    body = re.sub(r"^(?:da|naj|to)\s+", "", body, flags=re.I).strip(_TRAIL)
     body = body or "Opomnik"
     return Intent(name="schedule.reminder", kind="schedule",
                   verb="reminder", trigger=trigger,
@@ -828,16 +848,24 @@ def route(text: str) -> Intent | None:
     prefix = _POLITE.match(flat)
     offset = prefix.end() if prefix else 0
     flat_view, raw_view = flat[offset:], raw[offset:]
-    for pattern, handler in _RULES:
-        match = pattern.search(flat_view)
-        if not match:
-            continue
-        intent = handler(match, raw_view, flat_view)
-        if intent is not None:
-            if not intent.text:
-                intent.text = raw_view
-            return intent
-    return None
+
+    def _try(rules):
+        for pattern, handler in rules:
+            match = pattern.search(flat_view)
+            if not match:
+                continue
+            intent = handler(match, raw_view, flat_view)
+            if intent is not None:
+                if not intent.text:
+                    intent.text = raw_view
+                return intent
+        return None
+
+    # Anchored rules first: "vsak dan ob 8 zdravje" is a schedule, not a
+    # health question, even though it contains the word "zdravje".
+    anchored = [(p, h) for p, h in _RULES if p.pattern.startswith("^")]
+    loose = [(p, h) for p, h in _RULES if not p.pattern.startswith("^")]
+    return _try(anchored) or _try(loose)
 
 
 def route_help() -> str:

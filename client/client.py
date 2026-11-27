@@ -19,6 +19,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from urllib.parse import quote
 
 import numpy as np
 import sounddevice as sd
@@ -397,9 +398,20 @@ async def wake_word_loop(
         print("Utterance sent. Waiting for response audio...")
 
 
+def _with_token(url: str, token: str = "") -> str:
+    """Append MIA_HUD_TOKEN (env or --token); the server requires it on /ws."""
+    token = token or os.environ.get("MIA_HUD_TOKEN") or os.environ.get("JARVIS_HUD_TOKEN") or ""
+    if not token:
+        return url
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}token={quote(token)}"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Hermes LAN voice client for Windows")
     parser.add_argument("--server", default=DEFAULT_SERVER, help=f"WebSocket server URL, default {DEFAULT_SERVER}")
+    parser.add_argument("--token", default="",
+                        help="HUD token (default: MIA_HUD_TOKEN from the environment)")
     parser.add_argument("--input-device", type=int, default=None, help="sounddevice input device index")
     parser.add_argument("--output-device", type=int, default=None, help="sounddevice output device index")
     parser.add_argument("--list-devices", action="store_true", help="list Windows audio devices and exit")
@@ -445,7 +457,8 @@ async def main_async() -> int:
         return 2
 
     try:
-        async with websockets.connect(args.server, max_size=None) as ws:
+        url = _with_token(args.server, args.token)
+        async with websockets.connect(url, max_size=None) as ws:
             print(f"Connected to {args.server}")
             with input_stream:
                 player = asyncio.create_task(playback_worker(ws, args.output_device, stop_event, turn_complete))

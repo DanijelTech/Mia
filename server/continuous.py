@@ -54,7 +54,8 @@ def _fold_with_map(text: str) -> tuple[str, list[int]]:
 # Spoken greetings in front of the wake word: "hey Mia, …", "ok Mia …".
 _GREETING_RE = re.compile(
     r"^(?:(?:hey|hi|hello|ok|okay|yo|hej|ej|oj|zdravo|dober\s+dan|"
-    r"dobro\s+jutro|dobro\s+vecer)\b[\s,.;:!?-]*)+", re.I)
+    r"dobro\s+jutro|dobro\s+vecer|good\s+morning|good\s+afternoon|"
+    r"good\s+evening|hey\s+there)\b[\s,.;:!?-]*)+", re.I)
 
 
 def starts_with_exact_wake(text: str, word: str = "mia") -> bool:

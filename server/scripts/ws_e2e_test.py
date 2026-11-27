@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """End-to-end voice pipeline test: stream a WAV through the WS, print events."""
-import asyncio, json, sys, wave
+import asyncio, json, os, sys, wave
+from urllib.parse import quote
 
 import websockets
 
 WAV = sys.argv[1]
 CONV = sys.argv[2] if len(sys.argv) > 2 else "mia-debug"
-URL = "ws://127.0.0.1:8765/ws"
+_TOKEN = os.environ.get("MIA_HUD_TOKEN") or os.environ.get("JARVIS_HUD_TOKEN") or ""
+URL = "ws://127.0.0.1:8765/ws" + (f"?token={quote(_TOKEN)}" if _TOKEN else "")
 
 
 async def main():

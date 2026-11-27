@@ -12,8 +12,8 @@ sys.path.insert(0, str(ROOT / "server"))
 
 from mia_core import i18n  # noqa: E402
 from mia_core.integration import (  # noqa: E402
-    google_request, media_stop_request, music_play_request, time_answer,
-    weather_request,
+    detect_feedback, detect_remember, google_request, media_stop_request,
+    music_play_request, time_answer, weather_request,
 )
 
 
@@ -114,6 +114,11 @@ class EnglishIntentTests(unittest.TestCase):
     def test_english_weather(self):
         self.assertEqual(weather_request("what is the weather in London"),
                          "london")
+
+    def test_english_feedback_and_remember(self):
+        self.assertEqual(detect_feedback("that was right")["verdict"], "positive")
+        self.assertEqual(detect_feedback("that was wrong")["verdict"], "negative")
+        self.assertTrue(detect_remember("remember this procedure"))
 
 
 if __name__ == "__main__":

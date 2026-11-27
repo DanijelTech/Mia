@@ -273,6 +273,11 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   `~/.config/mia/home`, then by walking up from the script.
 - `install.sh` installs skills into `$HERMES_HOME/skills`; `uninstall.sh` is
   allowed to remove only `~/.hermes/skills/mia-*`, never other Hermes data.
+- WebSocket auth: `_ws_allowed` must check `MIA_HUD_TOKEN` for **every** client,
+  including native clients with no `Origin` (they pass `?token=` or
+  `X-Mia-Token`). Returning early on a missing Origin was a LAN auth bypass.
+  `client/client.py` and `server/scripts/ws_e2e_test.py` read the token from the
+  environment or `--token`.
 - The HUD `openView()` treats paths starting with `/hud/` as local pages;
   everything else goes through the dashboard TLS proxy on :9443.
 - Strict wake defaults to true; `followup_seconds` is ignored in strict mode.

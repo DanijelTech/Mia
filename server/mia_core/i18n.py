@@ -358,6 +358,7 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^(\d+) dni (\d+) h$"), r"\1 days \2 h"),
     (re.compile(r"^(\d+) h (\d+) min$"), r"\1 h \2 min"),
     (re.compile(r"^(\d+) min$"), r"\1 min"),
+    (re.compile(r"^opravilo (\d+)$"), r"job \1"),
 ]
 
 # Health titles and short messages (exact).
@@ -390,6 +391,9 @@ _EXACT.update({
     "medijska plošča": "media panel",
     "najdeno okno brskalnika": "browser window (found)",
     "TTS storitev": "TTS service",
+    "okno": "window",
+    "neznan tip": "unknown type",
+    "manjka id": "missing id",
 })
 
 _HELP_EN = (

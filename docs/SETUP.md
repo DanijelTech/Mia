@@ -594,6 +594,14 @@ pip install sounddevice websockets numpy openwakeword
 python client.py --push-to-talk --server ws://TVOJ_HOST:8765/ws --list-devices
 ```
 
+Ko je avtentikacija vklopljena, `/ws` zahteva `MIA_HUD_TOKEN`. Odjemalec ga
+prebere iz okolja ali iz `--token`:
+
+```bash
+MIA_HUD_TOKEN=... python client.py --server ws://TVOJ_HOST:8765/ws
+python client.py --server ws://TVOJ_HOST:8765/ws --token ...
+```
+
 **Statistika GPU delavca** (prikaže se v panelu Stroji): kopiraj
 `worker/worker_stats.py` na delavca, `pip install psutil`, zaženi in v vnosu
 `machines:` nastavi `stats_url` na `http://worker-ip:8767/stats`.

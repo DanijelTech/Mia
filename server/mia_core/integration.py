@@ -32,18 +32,21 @@ _PRAISE = (
     "tako je", "to je prav", "to je bilo prav", "zdaj je prav", "koncno prav",
     "pravilno", "odlicno", "bravo", "super", "to mi je vsec", "tocno tako",
     "hvala tako je", "ja tako", "tako se dela", "perfect", "well done",
-    "that is right", "correct",
+    "that is right", "that was right", "that s right", "thats right",
+    "exactly", "correct",
 )
 _CORRECTION = (
     "ni prav", "to ni prav", "to je narobe", "narobe", "ne tako", "ni bilo prav",
     "zmotila si se", "motis se", "popravi", "to ne deluje", "ne deluje tako",
     "naslednjic drugace", "raje naredi", "wrong", "not right", "incorrect",
+    "that is wrong", "that was wrong", "thats wrong",
 )
 _REMEMBER = (
     "zapomni si postopek", "zapomni si to", "zapomni si kako", "zapomni si nacin",
     "shrani recept", "shrani postopek", "naslednjic naredi tako",
     "to je pravi postopek", "to je pravi nacin", "remember this procedure",
-    "save this recipe", "remember how you did this",
+    "save this recipe", "remember how you did this", "remember this",
+    "save this procedure",
 )
 
 
@@ -349,7 +352,8 @@ def time_answer(text: str, now=None, lang: str = "sl") -> str | None:
     asks_time = any(phrase in flat for phrase in (
         "koliko je ura", "koliko je uro", "kaj je ura", "kaksna ura",
         "povej mi uro", "povej uro", "ura je", "what time is it",
-        "what is the time", "current time", "time is it",
+        "what is the time", "what s the time", "whats the time",
+        "current time", "time is it",
     )) or ("and time" in flat) or ("time and date" in flat)
     asks_date = any(phrase in flat for phrase in (
         "kateri dan je", "kateri datum", "kaksen dan je", "danes je kateri",

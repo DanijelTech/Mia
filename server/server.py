@@ -247,7 +247,8 @@ def _flat(text: str) -> str:
 
 
 _WAKE_PREFIX_RE = re.compile(
-    r"^\s*(?:(?:hey|hi|hello|ok|okay|hej|ej|zdravo)\s*[,;:]?\s*)*"
+    r"^\s*(?:(?:hey|hi|hello|ok|okay|hej|ej|zdravo|good\s+morning|"
+    r"good\s+afternoon|good\s+evening)\s*[,;:]?\s*)*"
     r"(?:mia|mijo|mija|mio)\b[,\s]*", re.I)
 
 
@@ -351,7 +352,9 @@ def _pick_favorite_artist() -> str:
                    .read_text(encoding="utf-8").splitlines() if a.strip()]
     except OSError:
         artists = []
-    return random.choice(artists) if artists else "slovenska glasba"
+    if artists:
+        return random.choice(artists)
+    return "popular music" if _lang() == "en" else "slovenska glasba"
 _WEATHER_CACHE: dict[tuple[float, float], tuple[float, str]] = {}
 _WEATHER_LOCK = threading.Lock()
 _WEATHER_CITY_ALIASES = {
@@ -2008,20 +2011,24 @@ async def api_auth_middleware(request: Request, call_next):
 
 
 def _ws_allowed(ws: WebSocket) -> bool:
-    """Browsers send Origin (+cookie); native clients (PTT, tests) send neither."""
+    """Origin check for browsers, token check for every client.
+
+    A missing Origin is normal for the Python push-to-talk client, but it must
+    NOT bypass authentication: a LAN client without a token could otherwise
+    drive the whole machine whenever MIA_HUD_TOKEN is configured.
+    """
     origin = ws.headers.get("origin")
-    if not origin:
-        return True  # non-browser client on the LAN (Python PTT, e2e tests)
-    from urllib.parse import urlparse
-    origin_host = (urlparse(origin).hostname or "").lower()
-    request_host = (ws.headers.get("host") or "").rsplit(":", 1)[0].lower()
-    # Same-origin is always fine: opening https://192.168.1.10:8766/hud/ sends
-    # exactly that Origin, and the HUD must be able to talk to its own server.
-    same_origin = bool(origin_host) and origin_host == request_host
-    if not (same_origin or origin_host in ALLOWED_ORIGIN_HOSTS):
-        print(f"WS rejected: origin {origin!r} does not match host {request_host!r}",
-              flush=True)
-        return False
+    if origin:
+        from urllib.parse import urlparse
+        origin_host = (urlparse(origin).hostname or "").lower()
+        request_host = (ws.headers.get("host") or "").rsplit(":", 1)[0].lower()
+        # Same-origin is always fine: opening https://192.168.1.10:8766/hud/
+        # sends exactly that Origin, and the HUD must talk to its own server.
+        same_origin = bool(origin_host) and origin_host == request_host
+        if not (same_origin or origin_host in ALLOWED_ORIGIN_HOSTS):
+            print(f"WS rejected: origin {origin!r} does not match host "
+                  f"{request_host!r}", flush=True)
+            return False
     token = hud_token()
     if not token:
         return True
@@ -2667,6 +2674,11 @@ async def background_list() -> JSONResponse:
     services = await _service_items()
     jobs = await asyncio.to_thread(_job_items)
     items = windows + panels + services + jobs
+    if _lang() == "en":
+        for item in items:
+            for key in ("name", "detail"):
+                if isinstance(item.get(key), str):
+                    item[key] = localize(item[key], "en")
     return JSONResponse({
         "override": _manual_override(),
         "tools": await asyncio.to_thread(_background_tools),
@@ -2686,7 +2698,7 @@ async def background_close(request: Request) -> JSONResponse:
     item_id = str(body.get("id") or "")
     kind, _, ref = item_id.partition(":")
     if not kind or not ref:
-        return JSONResponse({"error": "manjka id"}, status_code=400)
+        return JSONResponse({"error": localize("manjka id", _lang())}, status_code=400)
     if kind == "window":
         ok, message = await asyncio.to_thread(_close_window, ref)
     elif kind == "panel":
@@ -2710,7 +2722,7 @@ async def background_close(request: Request) -> JSONResponse:
     elif kind == "job":
         ok, message = await asyncio.to_thread(_disable_job, ref)
     else:
-        return JSONResponse({"error": "neznan tip"}, status_code=400)
+        return JSONResponse({"error": localize("neznan tip", _lang())}, status_code=400)
     print(f"BACKGROUND close {item_id}: {message}", flush=True)
     return JSONResponse({"ok": ok, "message": localize(message, _lang())},
                         status_code=200 if ok else 400)
@@ -2866,6 +2878,8 @@ async def hud_config() -> JSONResponse:
         "conversation": hermes.get("conversation") or "",
         "pitch_semitones": VOICE_SETTINGS.get("pitch_semitones", 0.0),
         "lang": str(UI_STATE.get("lang") or "sl"),
+        "dashboard_port": int(((CFG.get("server") or {}).get("dashboard_proxy")
+                               or {}).get("port") or 9443),
         "learning_enabled": bool(LEARNING.enabled),
         "learning_brief_chars": int((LEARNING.cfg.get("context") or {}).get("max_chars", 1500)),
     })

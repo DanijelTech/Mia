@@ -197,7 +197,10 @@ $("calibBtn").onclick=()=>{
   try{
     window.parent.startCalibration();
     window.parent.document.getElementById("viewerClose").click();
-  }catch{alert("Kalibracijo zaženi iz glavnega HUD-a (gumb ZAČNI KALIBRACIJO).")}
+  }catch{
+    const msg="Kalibracijo zaženi iz glavnega HUD-a (gumb ZAČNI KALIBRACIJO).";
+    alert(window.MiaI18N?window.MiaI18N.t(msg):msg);
+  }
 };
 $("mineBtn").onclick=async()=>{$("mineBtn").textContent="…";try{await post("/api/learning/mine")}catch{};await load();$("mineBtn").textContent="OSVEŽI SPOMIN"};
 $("capRefresh").onclick=async()=>{$("capRefresh").textContent="…";try{await post("/api/capabilities/refresh")}catch{};await loadCaps();$("capRefresh").textContent="ZNOVA ZAZNAJ"};
