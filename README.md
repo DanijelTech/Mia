@@ -165,6 +165,24 @@ SAMODEJNOST, ZMOGLJIVOSTI, ZNANJE in V OZADJU) in Mia odgovarja v angleščini.
 Slovenski izvirnik ostane v kodi; `tests/test_hud_i18n.py` preveri, da noben
 nov niz ni brez prevoda.
 
+## En model (Gemma) — brez drugega GGUF-a
+
+Privzeto hitri pogovor uporablja **isti llama-server kot agent** (Gemma), zato
+drugega modela ni treba nalagati. Če imaš v `server/config/server.yaml` še
+`stack.chat` s Qwen/chat GGUF (napačna pot ali nepotreben drug model), ga
+počisti s pripravljeno migracijo:
+
+```bash
+python3 server/scripts/use_single_model.py --dry-run   # samo pokaže spremembo
+python3 server/scripts/use_single_model.py             # zapiše + naredi .bak
+./stop-mia.sh && ./start-mia.sh
+```
+
+Skript nastavi `llm.chat.base_url` na glavni llama-server (vratca iz
+`stack.llama.health`) in zakomentira cel `stack.chat`, tako da se drugi model
+ne zaganja več. Kommentarji v `server.yaml` ostanejo, prejšnja različica pa se
+shrani kot `server.yaml.bak-<datum>`.
+
 ## Arhitektura
 
 ```

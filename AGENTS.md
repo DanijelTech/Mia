@@ -28,6 +28,12 @@ The current major addition is the **learning/knowledge core** and the
   panel plugin; `hermes-plugin/mia_autonomy/` exposes
   `system_status/profile/health/adapt/plans/run_plan/command/jobs/tasks/alerts`
   over `/api/autonomy/*`.
+- One model is the default: `llm.chat.base_url` points at the main
+  llama-server (`stack.llama`, port 18083), so no second GGUF is loaded. Do not
+  add a `stack.chat` block with another model to the examples; the split brain
+  still supports it as an opt-in. `server/scripts/use_single_model.py`
+  (pure `rewrite_config`) migrates old configs and must stay comment-preserving
+  and idempotent.
 - HUD language: `server/hud/i18n.js` is loaded by every HUD page and injects
   the SLO/ENG switch (bottom-right). The dictionary is keyed by the exact
   Slovenian text; a MutationObserver translates text nodes and

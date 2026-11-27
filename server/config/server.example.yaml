@@ -13,15 +13,18 @@ llm:
   temperature: 0.3
   history_turns: 12           # fallback provider only
   # --- split brain: fast conversation vs Hermes agent -----------------
-  # Casual conversation goes to a small local chat model (OpenAI-compatible,
-  # e.g. a second llama-server). Commands, live-data questions and URLs/paths
-  # still go to Hermes. If the chat server is down, turns fall back to Hermes.
+  # Casual conversation can skip the agent and ask the *same* llama-server
+  # directly (OpenAI-compatible /v1). No second GGUF is needed: the model is
+  # the one from stack.llama. Commands, live-data questions and URLs/paths
+  # still go to Hermes. If the server is down, turns fall back to Hermes.
+  # A separate small chat model is optional: then point base_url at its port
+  # (and add stack.chat below).
   router:
-    enabled: true             # false = every turn goes to Hermes (old behaviour)
+    enabled: true             # false = every turn goes to Hermes
   chat:
     enabled: true             # true only works when base_url answers
-    base_url: http://127.0.0.1:18084/v1
-    model: local-chat         # label; llama-server uses the loaded GGUF
+    base_url: http://127.0.0.1:18083/v1
+    model: local              # label; llama-server ignores it for one model
     max_tokens: 160
     temperature: 0.6
     history_turns: 8
@@ -200,7 +203,9 @@ machines: []                # optional extra machines for the HUD "Stroji" panel
 #     log: logs/llama-server.out
 #     supervisor: ""        # opcijski restart-on-crash ovoj; "" = brez
 #     argv: [/pot/do/llama-server, -m, /pot/do/model.gguf, --port, "18081"]
-#   chat:                   # mali model za tekoč pogovor (ločen od Hermesa)
+#   chat:                   # OPTIONAL second (small) model for fast chat.
+#                           # Not needed: by default llm.chat points at the
+#                           # same llama-server as the agent (port 18083).
 #     health: http://127.0.0.1:18084/health
 #     start_timeout: 420
 #     pidfile: logs/chat-model.pid

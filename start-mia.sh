@@ -222,7 +222,7 @@ check_model_file() { # check_model_file <label> <argv...> — 0 when the GGUF ex
   warn "$label: model file not found — $path"
   dir="$(dirname "$path")"
   if [ -d "$dir" ]; then
-    found="$(find "$dir" -maxdepth 2 -type f -name '*.gguf' 2>/dev/null | head -n 5)"
+    found="$(find "$dir" -maxdepth 4 -type f -name '*.gguf' 2>/dev/null | head -n 5)"
     if [ -n "$found" ]; then
       info "GGUF files that do exist under $dir:"
       printf '%s\n' "$found" | sed 's/^/      /'
@@ -330,6 +330,8 @@ if [ "$DO_START" = 1 ]; then
         [ "$rc" = 0 ] && info "chat model is up" \
           || { warn "chat model did not become ready within ${CHAT_TIMEOUT}s"; DEGRADED+=("chat model"); }
       elif ! check_model_file "chat model" "${CHAT_ARGV[@]}"; then
+        info "hint: a second model is optional — the main one can answer chat:"
+        info "      python3 server/scripts/use_single_model.py"
         DEGRADED+=("chat model")
       else
         info "starting chat model (fast conversation)…"

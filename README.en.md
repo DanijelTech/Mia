@@ -159,6 +159,24 @@ AUTONOMY, CAPABILITIES, KNOWLEDGE and BACKGROUND pages) and makes Mia answer in
 English. The Slovenian original stays in the source; `tests/test_hud_i18n.py`
 fails if a new string has no translation.
 
+## One model (Gemma) — no second GGUF
+
+By default the fast chat path asks the **same llama-server as the agent**
+(Gemma), so a second model is not needed. If `server/config/server.yaml` still
+has a `stack.chat` block with a Qwen/chat GGUF (wrong path or an unwanted second
+model), run the migration:
+
+```bash
+python3 server/scripts/use_single_model.py --dry-run   # show the change
+python3 server/scripts/use_single_model.py             # write it + keep a .bak
+./stop-mia.sh && ./start-mia.sh
+```
+
+It points `llm.chat.base_url` at the main llama-server (port from
+`stack.llama.health`) and comments out the whole `stack.chat` block, so the
+second model is never started. Comments in `server.yaml` are preserved and the
+previous file is saved as `server.yaml.bak-<date>`.
+
 ## Architecture
 
 ```
