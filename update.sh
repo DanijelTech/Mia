@@ -102,8 +102,16 @@ if [ "$DO_RESTART" = 1 ]; then
     fi
   elif [ -f server/logs/mia.pid ]; then
     info "background mode detected — restarting via stop-mia.sh/start-mia.sh"
-    ./stop-mia.sh >/dev/null 2>&1 && ./start-mia.sh --no-open >/dev/null 2>&1 \
-      && info "restarted in the background" || warn "restart failed, run ./start-mia.sh"
+    if ./stop-mia.sh >/dev/null 2>&1; then
+      ./start-mia.sh --no-open >/dev/null 2>&1; rc=$?
+      case "$rc" in
+        0) info "restarted in the background" ;;
+        3) warn "restarted, but part of the stack is not ready — run ./start-mia.sh to see why" ;;
+        *) warn "restart failed, run ./start-mia.sh" ;;
+      esac
+    else
+      warn "restart failed, run ./start-mia.sh"
+    fi
   else
     info "nothing running (start it with ./start-mia.sh)"
   fi

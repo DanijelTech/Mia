@@ -58,8 +58,8 @@ import avatar_visemes
 import avatar_config
 from mia_core.integration import (detect_feedback, detect_remember,
                                   google_request, google_url,
-                                  music_play_request, time_answer,
-                                  weather_request)
+                                  hermes_error_text, music_play_request,
+                                  time_answer, weather_request)
 from mia_core import capabilities as capability_core
 from mia_core.learning import get_core
 from mia_core.autonomy.service import AutonomyService
@@ -813,7 +813,8 @@ class HermesAPI:
                     "interrupted": bool(data.get("interrupted")),
                 }))
             elif ev in ("run.failed", "error"):
-                raise RuntimeError(f"Hermes stream error: {data_text[:300]}")
+                raise RuntimeError(
+                    "Hermes stream error: " + hermes_error_text(data, data_text))
             elif ev == "run.completed":
                 usage = data.get("usage") or {}
                 if usage:

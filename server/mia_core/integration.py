@@ -316,6 +316,32 @@ def weather_request(text: str) -> str | None:
     return ""
 
 
+def hermes_error_text(payload: Any, fallback: str = "") -> str:
+    """One actionable sentence for a Hermes ``run.failed``/``error`` event.
+
+    Hermes reports a failed run as the whole run object. When it could not
+    resolve a model at all, ``runtime.provider`` and ``runtime.model`` are
+    empty — dumping that JSON into the HUD tells the user nothing.
+    """
+    data = payload if isinstance(payload, dict) else {}
+    err = data.get("error")
+    if isinstance(err, dict):
+        message = str(err.get("message") or err.get("detail") or "").strip()
+    else:
+        message = str(err or "").strip()
+    if message:
+        return message[:300]
+    runtime = data.get("runtime") or {}
+    requested = runtime.get("requested") or {}
+    provider = str(runtime.get("provider") or requested.get("provider") or "").strip()
+    model = str(runtime.get("model") or requested.get("model") or "").strip()
+    if not provider and not model:
+        return ("Hermes ni izbral modela (provider in model sta prazna) — preveri, "
+                "da llama-server odgovarja na /health in da je model nastavljen "
+                "v ~/.hermes.")
+    return (fallback or str(data))[:300]
+
+
 def outcome_from_turn(response: str, errors: list[str] | None = None,
                       interrupted: bool = False) -> str:
     errors = errors or []

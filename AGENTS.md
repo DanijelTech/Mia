@@ -158,6 +158,15 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
 
 - The repository was cloned shallow; use `git fetch --unshallow` before
   history-dependent operations.
+- `start-mia.sh` health means `http_ready` (HTTP status < 500), not "the port
+  answers". llama-server binds early and returns 503 `Loading model` until the
+  GGUF is loaded; a bare socket check reported "up" while the 12B model was
+  still on disk, so the chat model was started on top of it, missed its
+  timeout, and Hermes came up without a usable model (`run.failed` with empty
+  `runtime.provider`/`model`). `port_open` only means "something listens — wait
+  for it, never start a second server". Each background start writes an
+  `==> <label> started` marker so failure hints quote the current run only.
+  Exit code 3 = HUD is up but part of the stack is not ready.
 - `server/server.py` imports heavy deps; only `py_compile` it in this container.
 - Large heredocs in the terminal tool can be silently truncated; use the file
   editor or split files.
