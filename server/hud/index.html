@@ -52,14 +52,16 @@ header .sub{font-size:12px; letter-spacing:3px; color:var(--txt-dim)}
 .dot.on{background:var(--teal); box-shadow:0 0 6px var(--teal)}
 .dot.off{background:var(--red); box-shadow:0 0 6px var(--red)}
 #center{display:flex; flex-direction:column; align-items:center; justify-content:flex-start; position:relative; overflow:hidden}
-#reactorWrap{position:relative; width:min(46vh,440px); height:min(46vh,440px); cursor:pointer; flex-shrink:0}
-#reactor{width:100%; height:100%}
+#reactorWrap{position:relative; width:min(50vh,480px); height:min(50vh,480px); cursor:pointer; flex-shrink:0;
+  filter:drop-shadow(0 0 18px #00e5ff33)}
+#reactor{width:100%; height:100%; border-radius:50%}
 #coreState{
-  position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:flex-end;
+  padding-bottom:12%;
   pointer-events:none; font-family:'Orbitron';
 }
-#coreState .st{font-size:15px; letter-spacing:6px; color:var(--cyan); text-shadow:0 0 14px #00e5ffaa}
-#coreState .hint{font-size:9px; letter-spacing:2px; color:var(--txt-dim); margin-top:6px}
+#coreState .st{font-size:14px; letter-spacing:5px; color:var(--cyan); text-shadow:0 0 16px #00e5ffcc, 0 0 32px #00e5ff55}
+#coreState .hint{font-size:9px; letter-spacing:2px; color:var(--txt-dim); margin-top:4px; text-shadow:0 0 8px #000}
 #feed{
   width:100%; max-width:680px; flex:1; overflow-y:auto; margin-top:4px; padding:0 10px;
   display:flex; flex-direction:column; gap:6px; scrollbar-width:thin;
@@ -478,40 +480,64 @@ setInterval(()=>{const d=new Date();$("clock").textContent=d.toTimeString().slic
 /* ============================== reactor ============================ */
 const cv=$("reactor"), ctx=cv.getContext("2d");
 const RDPR=Math.min(window.devicePixelRatio||1,2);
-let brain=null, lastT=0, energy=0, spikes=[];
+let brain=null, lastT=0, energy=0, spikes=[], pulseRings=[];
 function sizeCanvas(){
   const r=cv.parentElement.getBoundingClientRect();
   cv.width=Math.max(1,Math.round(r.width*RDPR));
   cv.height=Math.max(1,Math.round(r.height*RDPR));
   brain=buildBrain(cv.width,cv.height);
-  spikes.length=0;
+  spikes.length=0; pulseRings.length=0;
 }
 const STATE_STYLE={
-  standby:{speed:.15,color:"#00e5ff"},
-  listening:{speed:.5,color:"#19f0d8"},
-  thinking:{speed:1.6,color:"#ffb300"},
-  tool:{speed:2.4,color:"#ffb300"},
-  speaking:{speed:.7,color:"#00e5ff"},
-  error:{speed:.05,color:"#ff4d5e"},
+  standby:{speed:.18,color:"#00e5ff", secondary:"#19f0d8"},
+  listening:{speed:.55,color:"#19f0d8", secondary:"#7dffef"},
+  thinking:{speed:1.7,color:"#ffb300", secondary:"#ff6b00"},
+  tool:{speed:2.5,color:"#ffb300", secondary:"#ff4d5e"},
+  speaking:{speed:.85,color:"#00e5ff", secondary:"#a0f0ff"},
+  error:{speed:.08,color:"#ff4d5e", secondary:"#ff8899"},
 };
 
-/* A brain-shaped neural cloud. The silhouette is a hand-tuned side view; the
-   folds (gyri) are inset copies of it, and the neurons sit on those folds, so
-   the network reads as a brain instead of a spinning ring. Nodes brighten with
-   the microphone level and with Mia's own TTS output. */
+/* Anatomical side-view silhouette (left = posterior, right = frontal).
+   Control points tuned for a readable human brain profile with brainstem. */
 const BRAIN_OUTLINE=[
-  [[-0.86,0.06],[-0.90,-0.30],[-0.66,-0.60],[-0.30,-0.64]],
-  [[-0.30,-0.64],[0.02,-0.70],[0.34,-0.66],[0.58,-0.48]],
-  [[0.58,-0.48],[0.82,-0.30],[0.96,-0.04],[0.92,0.14]],
-  [[0.92,0.14],[0.88,0.28],[0.72,0.36],[0.52,0.38]],
-  [[0.52,0.38],[0.34,0.40],[0.22,0.34],[0.10,0.40]],
-  [[0.10,0.40],[-0.02,0.46],[-0.10,0.56],[-0.24,0.54]],
-  [[-0.24,0.54],[-0.38,0.52],[-0.46,0.62],[-0.60,0.64]],
-  [[-0.60,0.64],[-0.78,0.66],[-0.90,0.46],[-0.86,0.06]],
+  /* occipital → superior parietal */
+  [[-0.88, 0.08],[-0.94,-0.18],[-0.78,-0.52],[-0.48,-0.62]],
+  /* superior → frontal pole */
+  [[-0.48,-0.62],[-0.12,-0.74],[0.28,-0.70],[0.58,-0.48]],
+  /* frontal pole → orbital */
+  [[0.58,-0.48],[0.82,-0.28],[0.96,-0.02],[0.90, 0.18]],
+  /* orbital → temporal pole / Sylvian */
+  [[0.90, 0.18],[0.78, 0.34],[0.52, 0.30],[0.32, 0.38]],
+  /* temporal lobe inferior */
+  [[0.32, 0.38],[0.10, 0.48],[-0.08, 0.58],[-0.28, 0.52]],
+  /* brainstem / cerebellum hinge */
+  [[-0.28, 0.52],[-0.42, 0.48],[-0.50, 0.62],[-0.62, 0.68]],
+  /* cerebellum */
+  [[-0.62, 0.68],[-0.80, 0.72],[-0.94, 0.42],[-0.88, 0.08]],
 ];
+
+/* Major gyral folds as relative curves inside the outline (meaningful structure). */
+const GYRI=[
+  /* superior frontal */
+  [[-0.15,-0.55],[0.05,-0.58],[0.30,-0.52],[0.48,-0.38]],
+  /* precentral / central */
+  [[0.05,-0.50],[0.18,-0.42],[0.28,-0.22],[0.22, 0.00]],
+  /* postcentral */
+  [[-0.20,-0.48],[-0.08,-0.38],[0.02,-0.18],[-0.02, 0.05]],
+  /* superior temporal */
+  [[-0.35,-0.10],[-0.15, 0.02],[0.10, 0.12],[0.28, 0.22]],
+  /* inferior temporal */
+  [[-0.20, 0.20],[-0.02, 0.28],[0.18, 0.32],[0.28, 0.28]],
+  /* occipital fold */
+  [[-0.72,-0.10],[-0.62,-0.28],[-0.48,-0.38],[-0.32,-0.42]],
+  /* cerebellum arcs */
+  [[-0.72, 0.35],[-0.62, 0.48],[-0.50, 0.55],[-0.38, 0.48]],
+  [[-0.78, 0.22],[-0.70, 0.38],[-0.58, 0.50],[-0.48, 0.42]],
+];
+
 function bezierPoints(seg,n){
   const out=[];
-  for(let i=0;i<n;i++){
+  for(let i=0;i<=n;i++){
     const t=i/n, u=1-t;
     out.push([
       u*u*u*seg[0][0]+3*u*u*t*seg[1][0]+3*u*t*t*seg[2][0]+t*t*t*seg[3][0],
@@ -520,68 +546,116 @@ function bezierPoints(seg,n){
   }
   return out;
 }
+
 function buildBrain(W,H){
-  if(!(W>20&&H>20)) return {nodes:[],edges:[],outline:[],R:1,cx:W/2,cy:H/2};
-  const R=Math.min(W,H)*0.42, cx=W/2, cy=H/2;
+  if(!(W>20&&H>20)) return {nodes:[],edges:[],outline:[],gyri:[],R:1,cx:W/2,cy:H/2};
+  const R=Math.min(W,H)*0.44, cx=W/2, cy=H/2*0.98;
   const path=[];
-  for(const seg of BRAIN_OUTLINE) path.push(...bezierPoints(seg,20));
-  let mx=0,my=0;
-  for(const p of path){mx+=p[0];my+=p[1];}
-  mx/=path.length; my/=path.length;
+  for(const seg of BRAIN_OUTLINE) path.push(...bezierPoints(seg,24));
+  // remove duplicate joint points
+  const clean=[];
+  for(const p of path){
+    if(!clean.length || Math.hypot(p[0]-clean.at(-1)[0], p[1]-clean.at(-1)[1])>1e-4) clean.push(p);
+  }
+  const outline=clean.map(p=>[cx+p[0]*R, cy+p[1]*R]);
+
   const inside=(x,y)=>{
     let hit=false;
-    for(let i=0;i<path.length;i++){
-      const a=path[i], b=path[(i+1)%path.length];
-      if((a[1]>y)!==(b[1]>y) && x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0]) hit=!hit;
+    for(let i=0;i<clean.length;i++){
+      const a=clean[i], b=clean[(i+1)%clean.length];
+      if((a[1]>y)!==(b[1]>y) && x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1]+1e-12)+a[0]) hit=!hit;
     }
     return hit;
   };
-  const rings=[];
-  const scales=[0.88,0.72,0.56,0.40,0.24];
-  for(let k=0;k<scales.length;k++){
-    const s=scales[k], pts=[];
-    for(let i=0;i<path.length;i++){
-      const p=path[i], dx=p[0]-mx, dy=p[1]-my;
-      const w=0.05*Math.sin(i*0.7+k*1.3);
-      pts.push([mx+dx*s*(1+w), my+dy*s*(1+w)]);
-    }
-    const arcs=[];
-    let i=0;
-    while(i<pts.length){
-      const gap=Math.random()<0.18;
-      const len=6+((Math.random()*11)|0);
-      if(!gap) arcs.push(pts.slice(i,i+len));
-      i+=len;
-    }
-    rings.push(arcs);
+
+  // Structured nodes along gyri + cortical surface + deep nuclei
+  const nodes=[], edges=[];
+  const addNode=(nx,ny,w,kind)=>{
+    if(!inside(nx,ny) && kind!=="deep") return -1;
+    const id=nodes.length;
+    nodes.push({
+      x:cx+nx*R, y:cy+ny*R,
+      phase:Math.random()*Math.PI*2,
+      w:w|| (0.55+Math.random()*0.85),
+      kind:kind||"cortex",
+      base:Math.random()
+    });
+    return id;
+  };
+
+  // Cortical ribbon: denser sampling of outline, inset slightly
+  const cortexIdx=[];
+  for(let i=0;i<clean.length;i+=2){
+    const p=clean[i];
+    // inward normal approximation via centroid
+    const ox=p[0]*0.92, oy=p[1]*0.92;
+    const id=addNode(ox, oy, 0.7+Math.random()*0.5, "cortex");
+    if(id>=0) cortexIdx.push(id);
   }
-  const nodes=[], edges=[], link=(0.09*R)*(0.09*R);
-  for(const arcs of rings){
-    for(const arc of arcs){
-      const idx=[];
-      for(let i=0;i<arc.length;i+=2){
-        const x=arc[i][0]+(Math.random()-0.5)*0.02;
-        const y=arc[i][1]+(Math.random()-0.5)*0.02;
-        if(!inside(x,y)) continue;
-        idx.push(nodes.length);
-        nodes.push({x:cx+x*R,y:cy+y*R,phase:Math.random()*Math.PI*2,
-                    w:0.55+Math.random()*0.9});
-      }
-      for(let k=1;k<idx.length;k++){
-        const a=nodes[idx[k-1]], b=nodes[idx[k]];
-        const d=(a.x-b.x)*(a.x-b.x)+(a.y-b.y)*(a.y-b.y);
-        if(d<link) edges.push([idx[k-1],idx[k]]);
-      }
-    }
+  for(let k=1;k<cortexIdx.length;k++){
+    if(Math.random()<0.85) edges.push([cortexIdx[k-1], cortexIdx[k]]);
   }
-  for(let i=0;i<30;i++){
-    const x=(Math.random()*2-1)*0.9, y=(Math.random()*2-1)*0.7;
+  // close a few long-range cortical links
+  for(let k=0;k<cortexIdx.length;k+=7){
+    const j=(k+11)%cortexIdx.length;
+    if(j!==k) edges.push([cortexIdx[k], cortexIdx[j]]);
+  }
+
+  // Gyral pathways
+  const gyriPix=[];
+  for(const g of GYRI){
+    const pts=bezierPoints(g, 18);
+    const idx=[];
+    for(const p of pts){
+      const id=addNode(p[0], p[1], 0.85+Math.random()*0.4, "gyrus");
+      if(id>=0) idx.push(id);
+    }
+    for(let k=1;k<idx.length;k++) edges.push([idx[k-1], idx[k]]);
+    gyriPix.push(pts.map(p=>[cx+p[0]*R, cy+p[1]*R]));
+  }
+
+  // Deep nuclei cluster (thalamus / basal ganglia region)
+  for(let i=0;i<14;i++){
+    const a=Math.random()*Math.PI*2, r=0.08+Math.random()*0.14;
+    addNode(Math.cos(a)*r*0.6, Math.sin(a)*r*0.5+0.05, 1.0+Math.random()*0.4, "deep");
+  }
+  // link deep to nearby cortex
+  const deepIds=nodes.map((n,i)=>n.kind==="deep"?i:-1).filter(i=>i>=0);
+  for(const d of deepIds){
+    let best=-1, bestD=1e9;
+    for(let i=0;i<nodes.length;i++){
+      if(nodes[i].kind==="deep") continue;
+      const dx=nodes[i].x-nodes[d].x, dy=nodes[i].y-nodes[d].y;
+      const dd=dx*dx+dy*dy;
+      if(dd<bestD){bestD=dd;best=i;}
+    }
+    if(best>=0) edges.push([d,best]);
+  }
+
+  // Fill remaining interior with sparse interneurons
+  for(let i=0;i<40;i++){
+    const x=(Math.random()*2-1)*0.85, y=(Math.random()*2-1)*0.65;
     if(!inside(x,y)) continue;
-    nodes.push({x:cx+x*R,y:cy+y*R,phase:Math.random()*Math.PI*2,
-                w:0.5+Math.random()*0.7});
+    addNode(x,y, 0.45+Math.random()*0.55, "inter");
   }
-  const outline=path.map(p=>[cx+p[0]*R,cy+p[1]*R]);
-  return {nodes,edges,outline,R,cx,cy};
+
+  // Local connectivity for interneurons
+  const linkR=(0.11*R)*(0.11*R);
+  for(let i=0;i<nodes.length;i++){
+    if(nodes[i].kind!=="inter") continue;
+    for(let j=i+1;j<nodes.length;j++){
+      const dx=nodes[i].x-nodes[j].x, dy=nodes[i].y-nodes[j].y;
+      if(dx*dx+dy*dy<linkR && Math.random()<0.35) edges.push([i,j]);
+    }
+  }
+
+  return {nodes, edges, outline, gyri:gyriPix, R, cx, cy};
+}
+
+function hexAlpha(col, a){
+  // col is #rrggbb ; return rgba
+  const r=parseInt(col.slice(1,3),16), g=parseInt(col.slice(3,5),16), b=parseInt(col.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
 }
 
 function frame(t){
@@ -591,71 +665,129 @@ function frame(t){
   const dt=lastT?Math.min(0.1,now-lastT):0.016;
   lastT=now;
   const s=STATE_STYLE[state]||STATE_STYLE.standby;
-  if(!speakAt||performance.now()-speakAt>160) speakLevel*=Math.pow(0.86,dt*60);
-  const mic=(state==="listening")?level:level*0.25;
-  const target=0.10+Math.min(1.5,mic*1.5+speakLevel*1.8);
-  energy+=(target-energy)*Math.min(1,dt*10);
-  const W=cv.width,H=cv.height;
+  if(!speakAt||performance.now()-speakAt>160) speakLevel*=Math.pow(0.82,dt*60);
+
+  // Strong audio response: mic always matters when frames arrive; speech drives hard
+  const micDrive=level;
+  const voiceDrive=speakLevel;
+  const target=0.08 + Math.min(1.85, micDrive*2.2 + voiceDrive*2.4);
+  energy+=(target-energy)*Math.min(1, dt*(energy>target?6:14));
+
+  const W=cv.width, H=cv.height;
   ctx.clearRect(0,0,W,H);
   if(!brain||!brain.nodes.length)return;
-  const {nodes,edges,outline,R,cx,cy}=brain;
-  const col=s.color;
+  const {nodes,edges,outline,gyri,R,cx,cy}=brain;
+  const col=s.color, col2=s.secondary||col;
+  const e=Math.min(1.6, energy);
 
-  const glow=ctx.createRadialGradient(cx,cy,0,cx,cy,R*1.05);
-  glow.addColorStop(0,col+"2e"); glow.addColorStop(0.6,col+"10");
-  glow.addColorStop(1,"transparent");
-  ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(cx,cy,R*1.05,0,Math.PI*2); ctx.fill();
+  // Outer ambient glow (neon halo)
+  const halo=ctx.createRadialGradient(cx,cy,R*0.15, cx,cy, R*1.25);
+  halo.addColorStop(0, hexAlpha(col, 0.22+0.28*Math.min(1,e)));
+  halo.addColorStop(0.45, hexAlpha(col2, 0.08+0.12*Math.min(1,e)));
+  halo.addColorStop(1, "transparent");
+  ctx.fillStyle=halo;
+  ctx.beginPath(); ctx.arc(cx,cy,R*1.25,0,Math.PI*2); ctx.fill();
 
-  ctx.lineWidth=1.3*RDPR; ctx.strokeStyle=col;
-  ctx.globalAlpha=0.18+0.20*Math.min(1,energy);
+  // Soft filled brain body
   ctx.beginPath();
   for(let i=0;i<outline.length;i++){
     const p=outline[i];
     if(i) ctx.lineTo(p[0],p[1]); else ctx.moveTo(p[0],p[1]);
   }
-  ctx.closePath(); ctx.stroke(); ctx.globalAlpha=1;
+  ctx.closePath();
+  const body=ctx.createRadialGradient(cx-R*0.15, cy-R*0.1, R*0.1, cx, cy, R);
+  body.addColorStop(0, hexAlpha(col, 0.10+0.12*Math.min(1,e)));
+  body.addColorStop(1, hexAlpha(col, 0.02));
+  ctx.fillStyle=body; ctx.fill();
 
-  ctx.lineWidth=0.7*RDPR; ctx.strokeStyle=col;
-  ctx.globalAlpha=0.09+0.22*Math.min(1,energy);
+  // Outline stroke with energy-reactive thickness
+  ctx.lineWidth=(1.6+2.2*Math.min(1,e))*RDPR;
+  ctx.strokeStyle=hexAlpha(col, 0.35+0.45*Math.min(1,e));
+  ctx.shadowColor=col; ctx.shadowBlur=(8+18*Math.min(1,e))*RDPR;
+  ctx.stroke();
+  ctx.shadowBlur=0;
+
+  // Gyral fold lines (meaningful structure)
+  ctx.lineWidth=1.1*RDPR;
+  ctx.strokeStyle=hexAlpha(col2, 0.18+0.35*Math.min(1,e));
+  ctx.shadowColor=col2; ctx.shadowBlur=6*RDPR;
+  for(const g of gyri){
+    ctx.beginPath();
+    for(let i=0;i<g.length;i++){
+      if(i) ctx.lineTo(g[i][0],g[i][1]); else ctx.moveTo(g[i][0],g[i][1]);
+    }
+    ctx.stroke();
+  }
+  ctx.shadowBlur=0;
+
+  // Synaptic edges
+  ctx.lineWidth=0.7*RDPR;
+  ctx.strokeStyle=hexAlpha(col, 0.08+0.28*Math.min(1,e));
   ctx.beginPath();
-  for(const e of edges){
-    const a=nodes[e[0]], b=nodes[e[1]];
+  for(const ed of edges){
+    const a=nodes[ed[0]], b=nodes[ed[1]];
     ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
   }
-  ctx.stroke(); ctx.globalAlpha=1;
+  ctx.stroke();
 
+  // Neurons
   ctx.globalCompositeOperation="lighter";
-  const speed=0.9+s.speed;
-  let glowBudget=14;
+  const speed=0.85+s.speed;
+  let glowBudget=22;
   for(const n of nodes){
-    const wave=0.5+0.5*Math.sin(now*speed*1.7+n.phase);
-    const b=Math.min(1,0.12+energy*n.w*(0.35+0.65*wave));
-    ctx.globalAlpha=0.22+0.78*b;
-    ctx.fillStyle=b>0.74?"#eaffff":col;
-    if(b>0.62&&glowBudget>0){ctx.shadowColor=col;ctx.shadowBlur=10*RDPR;glowBudget--;}
-    else ctx.shadowBlur=0;
+    const wave=0.5+0.5*Math.sin(now*speed*(n.kind==="deep"?2.4:1.5)+n.phase);
+    const kindBoost=n.kind==="deep"?1.25:n.kind==="gyrus"?1.1:1;
+    const b=Math.min(1, 0.10 + e*n.w*kindBoost*(0.30+0.70*wave));
+    const rad=(n.kind==="deep"?2.2:1.15) + (n.kind==="deep"?3.5:2.6)*b;
+    ctx.globalAlpha=0.25+0.75*b;
+    ctx.fillStyle=b>0.72?"#f0ffff":(n.kind==="deep"?col2:col);
+    if(b>0.55 && glowBudget>0){
+      ctx.shadowColor=b>0.75? "#ffffff":col;
+      ctx.shadowBlur=(6+14*b)*RDPR;
+      glowBudget--;
+    } else ctx.shadowBlur=0;
     ctx.beginPath();
-    ctx.arc(n.x,n.y,(1.1+2.4*b)*RDPR,0,Math.PI*2);
+    ctx.arc(n.x, n.y, rad*RDPR, 0, Math.PI*2);
     ctx.fill();
   }
   ctx.shadowBlur=0;
 
-  if(edges.length&&Math.random()<Math.min(0.55,energy*0.45)&&spikes.length<24){
-    const e=edges[(Math.random()*edges.length)|0];
-    spikes.push({a:e[0],b:e[1],t:0,dur:0.32+Math.random()*0.32});
+  // Traveling spikes along edges (activity)
+  const spikeChance=Math.min(0.75, 0.12 + e*0.55);
+  if(edges.length && Math.random()<spikeChance && spikes.length<36){
+    const ed=edges[(Math.random()*edges.length)|0];
+    spikes.push({a:ed[0], b:ed[1], t:0, dur:0.28+Math.random()*0.4, bright:0.6+Math.random()*0.4});
   }
   for(let i=spikes.length-1;i>=0;i--){
     const sp=spikes[i]; sp.t+=dt;
     if(sp.t>=sp.dur){spikes.splice(i,1);continue;}
     const a=nodes[sp.a], b=nodes[sp.b];
+    if(!a||!b)continue;
     const p=sp.t/sp.dur, x=a.x+(b.x-a.x)*p, y=a.y+(b.y-a.y)*p;
     const fade=Math.sin(p*Math.PI);
-    ctx.globalAlpha=0.9*fade;
-    ctx.fillStyle="#f2ffff";
-    ctx.shadowColor=col; ctx.shadowBlur=12*RDPR;
-    ctx.beginPath(); ctx.arc(x,y,1.8*RDPR,0,Math.PI*2); ctx.fill();
-    ctx.shadowBlur=0;
+    ctx.globalAlpha=0.95*fade*sp.bright;
+    ctx.fillStyle="#ffffff";
+    ctx.shadowColor=col2; ctx.shadowBlur=14*RDPR;
+    ctx.beginPath(); ctx.arc(x,y,(2.0+1.5*fade)*RDPR,0,Math.PI*2); ctx.fill();
   }
+  ctx.shadowBlur=0;
+
+  // Pulse rings on strong audio peaks
+  if(e>0.55 && Math.random()<0.08+e*0.12 && pulseRings.length<5){
+    pulseRings.push({r:R*0.25, life:1, max:R*1.15});
+  }
+  for(let i=pulseRings.length-1;i>=0;i--){
+    const pr=pulseRings[i];
+    pr.r+=dt*(R*1.1);
+    pr.life-=dt*1.4;
+    if(pr.life<=0 || pr.r>pr.max){pulseRings.splice(i,1);continue;}
+    ctx.globalAlpha=Math.max(0, pr.life)*0.55;
+    ctx.strokeStyle=col;
+    ctx.lineWidth=1.5*RDPR;
+    ctx.shadowColor=col; ctx.shadowBlur=10*RDPR;
+    ctx.beginPath(); ctx.arc(cx,cy,pr.r,0,Math.PI*2); ctx.stroke();
+  }
+  ctx.shadowBlur=0;
   ctx.globalAlpha=1;
   ctx.globalCompositeOperation="source-over";
 }
@@ -976,7 +1108,7 @@ function playChunk(buf){
   if(i16.length){
     let sum=0;
     for(let i=0;i<i16.length;i++){const v=i16[i]/32768;sum+=v*v;}
-    speakLevel=Math.min(1,Math.sqrt(sum/i16.length)*3.2);
+    speakLevel=Math.min(1,Math.sqrt(sum/i16.length)*4.5);
     speakAt=performance.now();
   }
   const f32=new Float32Array(i16.length);
@@ -1040,8 +1172,9 @@ async function initMic(){
       // level meter
       const a=new Int16Array(e.data); let s=0;
       for(let i=0;i<a.length;i+=8)s+=Math.abs(a[i]);
-      level=Math.min(1,(s/(a.length/8))/9000);
-      if(capturing)$("levelBar").style.width=(level*100).toFixed(0)+"%";
+      level=Math.min(1,(s/(a.length/8))/5500);
+      // always reflect mic energy on the bar + brain while the stream is live
+      $("levelBar").style.width=(level*100).toFixed(0)+"%";
     };
     srcNode.connect(workletNode);
   }
