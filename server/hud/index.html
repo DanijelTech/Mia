@@ -486,7 +486,6 @@ function sizeCanvas(){
   brain=buildBrain(cv.width,cv.height);
   spikes.length=0;
 }
-sizeCanvas(); addEventListener("resize",sizeCanvas);
 const STATE_STYLE={
   standby:{speed:.15,color:"#00e5ff"},
   listening:{speed:.5,color:"#19f0d8"},
@@ -522,6 +521,7 @@ function bezierPoints(seg,n){
   return out;
 }
 function buildBrain(W,H){
+  if(!(W>20&&H>20)) return {nodes:[],edges:[],outline:[],R:1,cx:W/2,cy:H/2};
   const R=Math.min(W,H)*0.42, cx=W/2, cy=H/2;
   const path=[];
   for(const seg of BRAIN_OUTLINE) path.push(...bezierPoints(seg,20));
@@ -659,6 +659,8 @@ function frame(t){
   ctx.globalAlpha=1;
   ctx.globalCompositeOperation="source-over";
 }
+sizeCanvas();
+addEventListener("resize",sizeCanvas);
 requestAnimationFrame(frame);
 
 function setState(st,label,hint){
