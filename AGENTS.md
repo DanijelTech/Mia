@@ -87,6 +87,11 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   llama-server on `llm.chat.base_url`). The deterministic
   `autonomy/intents.py` router still runs first. If the chat model is off,
   unreachable or answers `[[AGENT]]`, the turn falls back to Hermes.
+- `tts.provider: http` defaults to a Piper fallback (`tts.fallback`, or
+  `tts.http.fallback_piper`). If Maya1/Gepard is down or still loading, the
+  wrapper speaks with Piper instead of failing the turn; set `tts.fallback: ""`
+  to disable. `start-mia.sh` passes `--fallback-piper` to the manual Maya1
+  service too.
 
 - Before a turn, `LEARNING.brief(transcript)` is prepended to the payload.
 - After a turn, `LEARNING.record_turn(...)` writes an episode; successful
@@ -136,6 +141,7 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   intent router, service confirmations and `mia-auto` CLI.
 - `tests/test_brain_router.py` — chat-vs-agent routing and chat-brain gating
   (no network: the `requests` import is lazy).
+- `tests/test_tts_fallback.py` — HTTP→Piper TTS fallback (skips without numpy).
 - Keep tests hermetic: use `tempfile`, set `HOME`/`XDG_*` for `mia-ctl`.
 
 ## Known pitfalls (hard-won)

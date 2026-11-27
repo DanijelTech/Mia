@@ -123,6 +123,10 @@ stt:
 
 tts:
   provider: piper            # piper | http | command | elevenlabs (cloud)
+  # If the http engine (Maya1/Gepard) is down or still loading, speak with
+  # Piper instead of going mute. Set to "" to disable.
+  fallback: piper
+
   piper:
     mode: cli                # cli = separate process (keeps GPL piper out of this codebase)
     binary: piper            # or /path/to/venv/bin/piper

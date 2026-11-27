@@ -268,6 +268,36 @@ class HTTPBackend(TTSBackend):
             yield out
 
 
+class FallbackBackend(TTSBackend):
+    """Try the primary backend, fall back to Piper if it fails before audio.
+
+    A heavy HTTP engine (Maya1/Gepard) may be down or still loading; Mia must
+    keep speaking. If the primary already produced audio we re-raise, because
+    switching mid-sentence would repeat words.
+    """
+
+    def __init__(self, primary: TTSBackend, fallback: TTSBackend):
+        super().__init__()
+        self.primary = primary
+        self.fallback = fallback
+        self.name = primary.name
+        self.label = f"{primary.label} (fallback {fallback.label})"
+        self.voice_id = getattr(primary, "voice_id", "")
+
+    def synth(self, text: str) -> Iterator[bytes]:
+        produced = False
+        try:
+            for chunk in self.primary.synth(text):
+                produced = True
+                yield chunk
+        except Exception as exc:
+            if produced:
+                raise
+            print(f"[tts] {self.primary.label} failed ({type(exc).__name__}: "
+                  f"{exc}) — using {self.fallback.label}", flush=True)
+            yield from self.fallback.synth(text)
+
+
 class ElevenLabsBackend(TTSBackend):
     """Cloud fallback — only used when tts.provider is explicitly elevenlabs."""
 
@@ -318,7 +348,19 @@ def build_backend(cfg: dict, root: Path) -> TTSBackend:
     if provider == "command":
         return CommandBackend(tts_cfg.get("command") or {}, root)
     if provider == "http":
-        return HTTPBackend(tts_cfg.get("http") or {}, root)
+        primary = HTTPBackend(tts_cfg.get("http") or {}, root)
+        http_cfg = tts_cfg.get("http") or {}
+        fallback = tts_cfg.get("fallback", "piper")
+        want_piper = (str(fallback or "").lower() == "piper"
+                      or bool(http_cfg.get("fallback_piper")))
+        if want_piper:
+            try:
+                piper_backend = PiperBackend(tts_cfg.get("piper") or {}, root)
+            except Exception as exc:
+                print(f"[tts] Piper fallback unavailable: {exc}", flush=True)
+                return primary
+            return FallbackBackend(primary, piper_backend)
+        return primary
     if provider == "elevenlabs":
         legacy = dict(cfg.get("voice") or {})
         legacy.update({k: v for k, v in (tts_cfg.get("elevenlabs") or {}).items() if v})

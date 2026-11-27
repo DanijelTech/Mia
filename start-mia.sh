@@ -294,6 +294,10 @@ if [ "$DO_START" = 1 ]; then
       info "TTS service already answering"
     elif unit_exists mia-tts; then
       timeout 20 "${SCTL[@]}" start mia-tts && info "systemd: mia-tts started"
+      sleep 2
+      if ! timeout 10 "${SCTL[@]}" is-active --quiet mia-tts; then
+        warn "mia-tts unit is not active — check: systemctl --user status mia-tts -l (or journalctl -u mia-tts)"
+      fi
     elif [ -f "$REPO/server/scripts/gepard_tts.py" ]; then
       if [ "$TTS_ENGINE_CFG" = "maya1" ]; then
         info "starting TTS service (Maya1, GPU ${TTS_MAYA1_GPU_ID:-1}, voice: $TTS_MAYA1_VOICE)…"
@@ -301,7 +305,8 @@ if [ "$DO_START" = 1 ]; then
         CUDA_VISIBLE_DEVICES="${TTS_MAYA1_GPU_ID:-1}" \
           start_background "Maya1 TTS" "$REPO/server/logs/mia-tts.pid" "$REPO/server/logs/mia-tts.out" \
             "$PY" "$REPO/server/scripts/gepard_tts.py" --serve --engine maya1 \
-              --device cuda --maya-voice "${TTS_MAYA1_VOICE:-zenski-nezni}"
+              --device cuda --maya-voice "${TTS_MAYA1_VOICE:-zenski-nezni}" \
+              --fallback-piper
       else
         info "starting TTS service (engine: $TTS_ENGINE_CFG)…"
         TTS_ARGV=()
