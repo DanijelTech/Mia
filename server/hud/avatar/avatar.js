@@ -146,10 +146,12 @@ class MiaAvatar {
     this._baseBoneScale = null;
     this._baseHairScale = null;
     this._baseModelScale = null;
-    this._restPose = null;
+    this._basePose = null;
     this._orderedBones = null;
     this._worldQuat = new Map();
     this._worldScale = new Map();
+    this._desired = new Map();
+    this._morphTargets = new Map();
     this._tmpQ = new THREE.Quaternion();
     this._tmpQ2 = new THREE.Quaternion();
     this._tmpV = new THREE.Vector3();
@@ -160,7 +162,6 @@ class MiaAvatar {
     this.accessoryParts = [];
     this._accessoryKey = '';
     this._bgKey = '';
-    this._shapeTick = 0;
     this.forcePreview = /avatar\.html$/.test(location.pathname);
     this._bindEvents();
   }
@@ -275,6 +276,7 @@ class MiaAvatar {
   async loadModel() {
     this.eyes = []; this.morphMeshes = []; this.teeth = null; this.bones = {};
     this.hairMeshes = [];
+    this._morphTargets = new Map();
     this._disposeAccessory();
     this._disposeHair();
     this._accessoryKey = '';
@@ -295,6 +297,15 @@ class MiaAvatar {
       if ((o.isMesh || o.isSkinnedMesh) && o.morphTargetDictionary)
         this.morphMeshes.push(o);
     });
+    // Flatten the morph dictionaries once so the render loop writes a morph
+    // influence directly instead of scanning every mesh for every name.
+    for (const mesh of this.morphMeshes) {
+      for (const [name, idx] of Object.entries(mesh.morphTargetDictionary)) {
+        let list = this._morphTargets.get(name);
+        if (!list) this._morphTargets.set(name, list = []);
+        list.push({ mesh, idx });
+      }
+    }
     this.head = this.model.getObjectByName('Wolf3D_Head') || this._firstMorphMesh();
     this.teeth = this.model.getObjectByName('Wolf3D_Teeth');
     this.eyes = [];
@@ -324,12 +335,14 @@ class MiaAvatar {
     this._worldQuat.clear();
     this._worldScale.clear();
     const boneSet = new Set(Object.values(this.bones));
-    this._restPose = new Map();
+    this._basePose = new Map();
     for (const bone of boneSet) {
-      this._restPose.set(bone, {
+      this._basePose.set(bone, {
         position: bone.position.clone(),
         quaternion: bone.quaternion.clone(),
       });
+      this._worldQuat.set(bone, new THREE.Quaternion());
+      this._worldScale.set(bone, new THREE.Vector3(1, 1, 1));
     }
     this._orderedBones = [];
     for (const bone of boneSet) {
@@ -368,11 +381,24 @@ class MiaAvatar {
     }
   }
 
-  _resetRest() {
-    if (!this._restPose) return;
-    for (const [bone, rest] of this._restPose) {
-      bone.position.copy(rest.position);
-      bone.quaternion.copy(rest.quaternion);
+  /* The mixer owns the animated bones, but three.js can skip writing its tracks
+   * for a frame at a loop boundary. Restoring the last mixer output (instead of
+   * the GLB bind pose) keeps that frame on the idle pose, so the avatar never
+   * snaps back to the T-pose while the clip wraps. The cache is taken before
+   * the procedural deltas are added, so those deltas cannot accumulate. */
+  _restoreBase() {
+    if (!this._basePose) return;
+    for (const [bone, pose] of this._basePose) {
+      bone.position.copy(pose.position);
+      bone.quaternion.copy(pose.quaternion);
+    }
+  }
+
+  _cacheBase() {
+    if (!this._basePose) return;
+    for (const [bone, pose] of this._basePose) {
+      pose.position.copy(bone.position);
+      pose.quaternion.copy(bone.quaternion);
     }
   }
 
@@ -647,8 +673,13 @@ class MiaAvatar {
     try {
       const gltf = await new GLTFLoader().loadAsync(cacheBust(this.config.idle));
       if (!gltf.animations || !gltf.animations.length) return;
+      const clip = gltf.animations[0];
+      // The idle is a rotation-only base layer. Position tracks would move the
+      // rig to the idle GLB's own rest height, and scale tracks would overwrite
+      // the body-shape bone scales every frame; both are owned here instead.
+      clip.tracks = clip.tracks.filter((track) => track.name.endsWith('.quaternion'));
       this.mixer = new THREE.AnimationMixer(this.model);
-      const action = this.mixer.clipAction(gltf.animations[0]);
+      const action = this.mixer.clipAction(clip);
       action.play();
     } catch (e) {
       console.warn('[mia-avatar] idle clip unavailable:', e);
@@ -714,8 +745,11 @@ class MiaAvatar {
     const w = Math.max(64, parent ? parent.clientWidth : window.innerWidth);
     const h = Math.max(64, parent ? parent.clientHeight : window.innerHeight);
     const want = num(this.config.pixelRatio, 0);
-    const cap = this.qualityScale >= 1 ? 2 : 1.25;
-    const dpr = want > 0 ? Math.min(3, want) : Math.min(window.devicePixelRatio || 1, cap);
+    const base = want > 0 ? Math.min(3, want) : Math.min(window.devicePixelRatio || 1, 2);
+    // qualityScale is the adaptive knob: balanced starts at .75 and the loop
+    // lowers it further when frames run long. It must actually scale the
+    // backing store or the auto-degrade does nothing.
+    const dpr = Math.max(.5, Math.min(3, base * (this.qualityScale || 1)));
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
@@ -897,24 +931,31 @@ class MiaAvatar {
   _applyBackground() {
     const cfg = this.config;
     const mode = cfg.background || 'transparent';
-    if (mode === 'transparent') {
-      this.scene.background = null;
-      this._bgKey = '';
-      return;
-    }
-    if (mode === 'dark') {
-      this.scene.background = new THREE.Color('#050b14');
-    } else if (mode === 'studio') {
-      this.scene.background = new THREE.Color('#0a1a2c');
-    } else if (mode === 'color') {
-      this.scene.background = new THREE.Color(color(cfg.backgroundColor, '#050b14'));
-    } else if (mode === 'gradient') {
-      const key = 'grad:' + color(cfg.backgroundColor, '#050b14');
+    const hex = color(cfg.backgroundColor, '#050b14');
+    if (mode === 'gradient') {
+      const key = 'grad:' + hex;
       if (this._bgKey !== key) {
-        this.scene.background = this._gradientTexture(cfg.backgroundColor);
+        this._setBackground(this._gradientTexture(cfg.backgroundColor));
         this._bgKey = key;
       }
+      return;
     }
+    const key = mode === 'dark' ? 'dark' : mode === 'studio' ? 'studio'
+      : mode === 'color' ? 'color:' + hex : 'none';
+    if (key === this._bgKey) return;
+    const value = key === 'dark' ? new THREE.Color('#050b14')
+      : key === 'studio' ? new THREE.Color('#0a1a2c')
+      : key === 'none' ? null : new THREE.Color(hex);
+    this._setBackground(value);
+    this._bgKey = key;
+  }
+
+  /* Replacing a gradient background must dispose the old canvas texture or
+   * dragging the colour picker leaks a texture per input event. */
+  _setBackground(value) {
+    const previous = this.scene.background;
+    if (previous && previous.isTexture && previous !== value) previous.dispose();
+    this.scene.background = value;
   }
 
   _gradientTexture(hex) {
@@ -936,6 +977,8 @@ class MiaAvatar {
     const cfg = this.config;
     const q = cfg.quality || 'high';
     this.qualityScale = q === 'balanced' ? .75 : q === 'high' ? 1 : 1.25;
+    this._qualityTarget = this.qualityScale;
+    this._slowFrames = 0;
     const shadows = cfg.shadows !== false && q !== 'balanced';
     if (this.renderer) this.renderer.shadowMap.enabled = shadows;
     if (this.lights && this.lights.key) this.lights.key.castShadow = shadows;
@@ -1156,7 +1199,9 @@ class MiaAvatar {
     return pose;
   }
 
-  /* Apply world-axis deltas on top of the mixer pose, parents first. */
+  /* Apply world-axis deltas on top of the mixer pose, parents first. The world
+   * quats/scales are preallocated per bone so the render loop does not allocate
+   * two objects per bone per frame (which showed up as GC stutter). */
   _applyPose(pose) {
     if (!this._orderedBones || !this.model) return;
     const worldQ = this._worldQuat;
@@ -1186,33 +1231,23 @@ class MiaAvatar {
           bone.position.add(this._tmpV);
         }
       }
-      worldQ.set(bone, parentQ.clone().multiply(bone.quaternion));
-      worldS.set(bone, parentS.clone().multiply(bone.scale));
+      const wq = worldQ.get(bone);
+      if (wq) wq.copy(parentQ).multiply(bone.quaternion);
+      const ws = worldS.get(bone);
+      if (ws) ws.copy(parentS).multiply(bone.scale);
     }
   }
 
   update(dt, now) {
     if (!this.ready) return;
     const cfg = this.config;
-    this._resetRest();
+    this._restoreBase();
     if (this.mixer) {
       this.mixer.timeScale = num(cfg.idleSpeed, 1);
       this.mixer.update(dt);
     }
+    this._cacheBase();
     const t = now;
-
-    // Bone scales can be touched by an animation clip; re-assert shape now and then.
-    this._shapeTick++;
-    if (this._shapeTick % 20 === 0 &&
-        (num(cfg.height, 1) !== 1 || num(cfg.build, 1) !== 1 ||
-         num(cfg.headSize, 1) !== 1 || num(cfg.headWidth, 1) !== 1 ||
-         num(cfg.neckLength, 1) !== 1 || num(cfg.eyeSize, 1) !== 1 ||
-         num(cfg.armLength, 1) !== 1 || num(cfg.legLength, 1) !== 1 ||
-         num(cfg.shoulderWidth, 1) !== 1 || num(cfg.hipWidth, 1) !== 1 ||
-         num(cfg.handSize, 1) !== 1 || num(cfg.footSize, 1) !== 1 ||
-         num(cfg.hairScale, 1) !== 1 || num(cfg.hairVolume, 1) !== 1)) {
-      this._applyShape();
-    }
 
     // blinking: Poisson-ish gaps, plus a double blink sometimes
     const blinkSpeed = Math.max(.1, num(cfg.blinkSpeed, 1));
@@ -1266,9 +1301,10 @@ class MiaAvatar {
       this.camera.lookAt(this.cameraBase.lx, this.cameraBase.ly, this.cameraBase.lz);
     }
 
-    const desired = new Map();
+    const desired = this._desired;
+    desired.clear();
     const mood = MOODS[this.mood] || MOODS.neutral;
-    for (const [k, v] of Object.entries(mood)) desired.set(k, v);
+    for (const k in mood) desired.set(k, mood[k]);
     const add = (name, value) => desired.set(name, clamp((desired.get(name) || 0) + value));
     const smile = num(cfg.smile, 0);
     if (smile) {
@@ -1349,12 +1385,12 @@ class MiaAvatar {
   }
 
   _setMorph(name, value) {
-    for (const mesh of this.morphMeshes) {
-      const dict = mesh.morphTargetDictionary;
-      if (!dict) continue;
-      const idx = dict[name];
-      if (idx !== undefined && mesh.morphTargetInfluences) {
-        mesh.morphTargetInfluences[idx] = clamp(value);
+    const targets = this._morphTargets.get(name);
+    if (!targets) return;
+    const v = clamp(value);
+    for (const target of targets) {
+      if (target.mesh.morphTargetInfluences) {
+        target.mesh.morphTargetInfluences[target.idx] = v;
       }
     }
   }
@@ -1362,6 +1398,7 @@ class MiaAvatar {
   loop() {
     if (!this.ready) return;
     requestAnimationFrame(() => this.loop());
+    if (document.hidden) return;
     if (this.config.enabled === false && !this.forcePreview) return;
     const cap = num(this.config.fpsCap, 0);
     const stamp = performance.now();
@@ -1369,8 +1406,20 @@ class MiaAvatar {
     this._lastRender = stamp;
     const dt = Math.min(.05, this.clock.getDelta());
     this.frameTime = lerp(this.frameTime, dt * 1000, .05);
-    if (this.qualityScale > .8 && this.frameTime > 30) {
-      this.qualityScale = Math.max(.7, this.qualityScale - .05);
+    // Adaptive resolution: require several slow frames in a row so a single GC
+    // pause does not drop quality, then recover slowly when the GPU is idle.
+    if (this.frameTime > 30) this._slowFrames = (this._slowFrames || 0) + 1;
+    else this._slowFrames = 0;
+    const target = this._qualityTarget || 1;
+    const canChange = stamp - (this._lastQualityChange || 0) > 400;
+    if (this._slowFrames > 6 && this.qualityScale > .55 && canChange) {
+      this.qualityScale = Math.max(.55, this.qualityScale - .05);
+      this._slowFrames = 0;
+      this._lastQualityChange = stamp;
+      this.resize();
+    } else if (this.frameTime < 18 && this.qualityScale < target && canChange) {
+      this.qualityScale = Math.min(target, this.qualityScale + .02);
+      this._lastQualityChange = stamp;
       this.resize();
     }
     this.update(dt, performance.now() / 1000);

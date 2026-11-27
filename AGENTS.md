@@ -170,9 +170,15 @@ Do not import `server/server.py` in tests; test pure modules and subprocesses.
   runtime converts them to local axes against the current parent world
   quaternion and premultiplies them onto the idle pose. Keep every action's
   first and last key at rest (`{}`), otherwise it snaps.
-- `_resetRest()` must run before every `mixer.update()` and every pose
-  application. Without it, bones that the idle clip does not animate keep the
-  previous frame's delta and accumulate.
+- `_restoreBase()` must run before every `mixer.update()` and `_cacheBase()`
+  right after it. The cache is the last mixer output, not the GLB bind pose:
+  three.js can skip writing tracks for a frame at a clip loop boundary, and
+  restoring the bind pose there makes the avatar snap to the T-pose every loop
+  (the "poskakuje" bug). Caching before `_applyPose()` also stops procedural
+  deltas from accumulating.
+- `loadIdle()` strips non-quaternion tracks. Position tracks would move the rig
+  to the idle GLB's own rest height, and scale tracks would overwrite the
+  body-shape bone scales every frame; the runtime owns position and scale.
 - Do not write `bone.rotation.*` directly for gaze/sway/gesture. Build a pose
   map and let `_applyPose()` compose it, or the idle clip and actions fight.
 - Hair styles: the GLB meshes are listed first, then the 10 procedural wigs

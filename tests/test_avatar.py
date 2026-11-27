@@ -335,5 +335,37 @@ class AvatarMotionAndCharacterTests(unittest.TestCase):
         self.assertIn("__clothed", bare)
 
 
+class AvatarRenderLoopTests(unittest.TestCase):
+    """Regression guards for the idle-loop snap and the render budget."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.runtime = (AVATAR_DIR / "avatar.js").read_text()
+        cls.hud = (ROOT / "server/hud/index.html").read_text()
+
+    def test_idle_clip_is_rotation_only(self):
+        block = self.runtime.split("async loadIdle()", 1)[1].split("_firstMorphMesh", 1)[0]
+        self.assertIn("endsWith('.quaternion')", block)
+        self.assertIn("clip.tracks = clip.tracks.filter", block)
+
+    def test_pose_reset_restores_last_mixer_output(self):
+        update = self.runtime.split("update(dt, now) {", 1)[1]
+        self.assertIn("this._restoreBase();", update)
+        self.assertIn("this._cacheBase();", update)
+        self.assertNotIn("this._resetRest();", update)
+        restore = self.runtime.split("_restoreBase() {", 1)[1].split("_cacheBase()", 1)[0]
+        self.assertIn("_basePose", restore)
+        self.assertNotIn("_restPose", restore)
+
+    def test_quality_scale_scales_the_backing_store(self):
+        resize = self.runtime.split("resize() {", 1)[1].split("applyConfig(", 1)[0]
+        self.assertIn("qualityScale", resize)
+
+    def test_reactor_throttles_behind_the_avatar(self):
+        self.assertIn("avatar-ready", self.hud)
+        self.assertIn("reactorLast", self.hud)
+        self.assertIn("RDPR", self.hud)
+
+
 if __name__ == "__main__":
     unittest.main()
