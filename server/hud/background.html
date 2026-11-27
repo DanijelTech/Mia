@@ -138,7 +138,7 @@ async function closeItem(id){
 
 function renderWindows(items){
   $("windowsRows").innerHTML=items.length?items.map(i=>`<tr>
-    <td><b>${esc(i.name)}</b> ${i.tracked?"":'<span class="chip open">najdeno</span>'}</td>
+    <td><b>${esc(i.name)}</b> ${i.tracked?"":'<span class="chip open">'+(window.MiaI18N?window.MiaI18N.t("najdeno"):"najdeno")+'</span>'}</td>
     <td class="code">${esc(i.detail)}</td>
     <td><button class="danger" data-close="${esc(i.id)}">ZAPRI</button></td></tr>`).join("")
     :emptyRow(3,"ni odprtih medijskih oken");
@@ -171,25 +171,30 @@ function renderJobs(items){
     :emptyRow(4,"ni aktivnih opravil");
 }
 
-function renderTools(t){
-  t=t||{};
-  const chips=[["xdotool",t.xdotool],["wmctrl",t.wmctrl],
-               ["brskalnik",!!t.browser],["mia-open",t.mia_open],
-               ["mia-close",t.mia_close],["DISPLAY",t.display]];
+function renderTools(tools){
+  tools=tools||{};
+  const T=(s)=>window.MiaI18N?window.MiaI18N.t(s):s;
+  const chips=[["xdotool",tools.xdotool],["wmctrl",tools.wmctrl],
+               [T("brskalnik"),!!tools.browser],["mia-open",tools.mia_open],
+               ["mia-close",tools.mia_close],["DISPLAY",tools.display]];
   $("toolsRow").innerHTML=chips.map(([n,ok])=>
-    `<span class="chip ${ok?"up":"down"}">${n}: ${ok?"OK":"MANJKA"}</span>`).join("")
-    +`<span class="chip open">registriranih oken: ${t.registry??0}</span>`;
+    `<span class="chip ${ok?"up":"down"}">${n}: ${ok?"OK":T("MANJKA")}</span>`).join("")
+    +`<span class="chip open">${T("registriranih oken:")} ${tools.registry??0}</span>`;
   const missing=[];
-  if(!t.xdotool)missing.push("xdotool");
-  if(!t.wmctrl)missing.push("wmctrl");
-  if(!t.mia_close)missing.push("mia-close");
-  if(!t.browser)missing.push("Chromium/Chrome");
-  $("toolsHint").textContent = missing.length
-    ? "Manjka: "+missing.join(", ")+" — brez tega Mia oken ne more zapreti. "
-      +"Namesti: sudo apt install xdotool wmctrl (Chromium/Chrome ločeno)."
-    : (t.registry===0
-        ? "Orodja so pripravljena; Mia še ni odprla okna (registracija se zgodi ob odpiranju)."
-        : "Orodja so pripravljena; vsa Miina okna so v registru in jih lahko zapreš spodaj.");
+  if(!tools.xdotool)missing.push("xdotool");
+  if(!tools.wmctrl)missing.push("wmctrl");
+  if(!tools.mia_close)missing.push("mia-close");
+  if(!tools.browser)missing.push("Chromium/Chrome");
+  if(missing.length){
+    $("toolsHint").innerHTML =
+      `<span>${T("Manjka:")} </span><span>${esc(missing.join(", "))}</span>`+
+      `<span> ${T("— brez tega Mia oken ne more zapreti.")}</span>`+
+      `<span> ${T("Namesti: sudo apt install xdotool wmctrl (Chromium/Chrome ločeno).")}</span>`;
+  }else{
+    $("toolsHint").textContent = tools.registry===0
+      ? T("Orodja so pripravljena; Mia še ni odprla okna (registracija se zgodi ob odpiranju).")
+      : T("Orodja so pripravljena; vsa Miina okna so v registru in jih lahko zapreš spodaj.");
+  }
 }
 
 function renderOverride(on){
@@ -253,5 +258,6 @@ $("closeBtn").onclick=()=>{try{window.parent.closeView()}catch{window.close()}};
 load();
 setInterval(()=>{if(!document.hidden)load()},5000);
 </script>
+<script src="/hud/i18n.js"></script>
 </body>
 </html>

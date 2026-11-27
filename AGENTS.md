@@ -28,6 +28,13 @@ The current major addition is the **learning/knowledge core** and the
   panel plugin; `hermes-plugin/mia_autonomy/` exposes
   `system_status/profile/health/adapt/plans/run_plan/command/jobs/tasks/alerts`
   over `/api/autonomy/*`.
+- HUD language: `server/hud/i18n.js` is loaded by every HUD page and injects
+  the SLO/ENG switch (bottom-right). The dictionary is keyed by the exact
+  Slovenian text; a MutationObserver translates text nodes and
+  placeholder/title/aria-label, so script-written labels are covered. Switching
+  to ENG also POSTs `/api/ui/language`; the server then adds "answer in English"
+  to the Hermes/chat prompts. A new HUD string must be added to DICT —
+  `tests/test_hud_i18n.py` fails on an untranslated static string.
 - `server/hud/background.html` — the "V OZADJU" page: what Mia runs in the
   background (media windows, HUD panels, stack services, autonomy jobs), manual
   closing/stopping and the manual-override switch.

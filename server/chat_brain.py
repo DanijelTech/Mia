@@ -55,6 +55,8 @@ class ChatBrain:
         self.enabled = bool(self.router_enabled
                             and self.cfg.get("enabled", False)
                             and self.cfg.get("base_url"))
+        # set from the HUD language switch (e.g. "English"); "" = config prompt
+        self.force_lang = ""
         self._history: dict[str, list[dict]] = {}
 
     def choose(self, text: str) -> str:
@@ -94,6 +96,10 @@ class ChatBrain:
         cfg = self.cfg
         messages = [{"role": "system",
                      "content": cfg.get("system_prompt") or DEFAULT_SYSTEM}]
+        if self.force_lang:
+            messages.append({"role": "system",
+                             "content": f"Answer only in {self.force_lang}, "
+                                        f"whatever language the user writes in."})
         if brief:
             limit = int(cfg.get("brief_chars", 400))
             messages.append({"role": "system",

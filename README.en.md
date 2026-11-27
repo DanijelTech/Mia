@@ -150,6 +150,15 @@ automatic window closing (for example when you want two things open at once).
 API: `/api/background`, `/api/background/close`, `/api/background/stop`,
 `/api/background/override`.
 
+## HUD language (SLO / ENG)
+
+Every HUD page has **SLO** and **ENG** buttons in the bottom-right corner. The
+choice is stored in the browser and in `server/logs/ui-state.json`; choosing ENG
+translates the whole interface (panels, buttons, tables, alerts, the SETTINGS,
+AUTONOMY, CAPABILITIES, KNOWLEDGE and BACKGROUND pages) and makes Mia answer in
+English. The Slovenian original stays in the source; `tests/test_hud_i18n.py`
+fails if a new string has no translation.
+
 ## Architecture
 
 ```
@@ -335,6 +344,7 @@ server/hud/settings.html      SETTINGS (wake, threshold, learning, calibration)
 server/hud/capabilities.html  CAPABILITIES (confirmed/learned/empty)
 server/hud/autonomy.html      AUTONOMY (profile, plans, jobs, tasks, health)
 server/hud/background.html    V OZADJU (what runs, manual override, closing)
+server/hud/i18n.js            SLO/ENG switch and the translation dictionary
 server/scripts/  mia-start/stop/health + enroll_voice.py (voice calibration)
                  + gepard_tts.py (TTS service with per-request pitch)
 client/          optional Windows/Linux push-to-talk Python client (wake word capable)

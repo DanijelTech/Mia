@@ -13,6 +13,25 @@ from mia_core.brain import classify_brain  # noqa: E402
 from chat_brain import ChatBrain, EscalateToAgent  # noqa: E402
 
 
+class ChatBrainLanguageTests(unittest.TestCase):
+    def _brain(self):
+        return ChatBrain({"llm": {"router": {"enabled": True},
+                                  "chat": {"enabled": True,
+                                           "base_url": "http://127.0.0.1:1/v1"}}})
+
+    def test_forced_language_adds_a_system_instruction(self):
+        brain = self._brain()
+        brain.force_lang = "English"
+        messages = brain._messages("hello", "c", "")
+        self.assertEqual(messages[1]["role"], "system")
+        self.assertIn("English", messages[1]["content"])
+        self.assertEqual(messages[-1], {"role": "user", "content": "hello"})
+
+    def test_no_forced_language_keeps_the_config_prompt_only(self):
+        brain = self._brain()
+        self.assertEqual(len(brain._messages("hello", "c", "")), 2)
+
+
 class BrainRouterTests(unittest.TestCase):
     def test_casual_chat_stays_on_chat(self):
         for text in (

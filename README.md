@@ -156,6 +156,15 @@ pa izklopiš Mia-ino samodejno zapiranje oken (npr. ko želiš imeti odprti dve
 stvari hkrati). API: `/api/background`, `/api/background/close`,
 `/api/background/stop`, `/api/background/override`.
 
+## Jezik HUD-a (SLO / ENG)
+
+Spodaj desno v vsaki HUD strani sta gumba **SLO** in **ENG**. Izbira se shrani
+v brskalnik in v `server/logs/ui-state.json`; ko izbereš ENG, se prevede cel
+uporabniški vmesnik (plošče, gumbi, tabele, opozorila, strani NASTAVITVE,
+SAMODEJNOST, ZMOGLJIVOSTI, ZNANJE in V OZADJU) in Mia odgovarja v angleščini.
+Slovenski izvirnik ostane v kodi; `tests/test_hud_i18n.py` preveri, da noben
+nov niz ni brez prevoda.
+
 ## Arhitektura
 
 ```
@@ -329,6 +338,7 @@ server/hud/settings.html      NASTAVITVE (budnica, prag, učenje, kalibracija)
 server/hud/capabilities.html  ZMOGLJIVOSTI (potrjeno/naučeno/prazno)
 server/hud/autonomy.html      SAMODEJNOST (profil, načrti, opravila, naloge, zdravje)
 server/hud/background.html    V OZADJU (kaj teče, ročni nadzor, zapiranje)
+server/hud/i18n.js            SLO/ENG preklop in prevodni slovar za cel HUD
 server/scripts/  mia-start/stop/health + enroll_voice.py (glasovna kalibracija)
                  + gepard_tts.py (TTS storitev s per-request višino tona)
 client/          opcijski Windows/Linux odjemalec za pritisk na tipko (z zaznavo budnice)

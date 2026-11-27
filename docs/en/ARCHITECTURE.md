@@ -149,6 +149,7 @@ approval_request{data,run_id} · error · done{timing}
 | `/api/autonomy/status`, `/profile`, `/health`, `/jobs`, `/tasks`, `/alerts` | autonomy state, machine profile, health, jobs, tasks, alerts |
 | `/api/autonomy/refresh`, `/adapt`, `/remediate`, `/tick`, `/run`, `/text` | detect/adapt, remediate, one scheduler cycle, run a plan, natural command |
 | `/api/autonomy/jobs` (POST/DELETE), `/jobs/{id}/toggle`, `/tasks/{id}/resume`, `/cancel` | manage jobs and tasks from the HUD |
+| `/api/ui/language` | HUD language (sl/en); drives the UI translation and the reply language |
 | `/api/background`, `/api/background/close`, `/stop`, `/override` | what runs in the background, manual closing/stopping and manual override |
 | `/api/machines` | host psutil stats + remote workers from config |
 | `/api/usage` | local token/char tally; ElevenLabs quota only when TTS is cloud-based |

@@ -1368,8 +1368,11 @@ class VoicePipelineServer:
                 chat_context = "[MIA POGOVOR]\n" + recent
         except Exception:
             chat_context = ""
+        reply_lang = ("Answer only in English, whatever language the user uses."
+                      if UI_STATE.get("lang") == "en" else "")
         payload = "\n\n".join(
-            part for part in (directive, system_extra, chat_context, brief, transcript)
+            part for part in (reply_lang, directive, system_extra, chat_context,
+                              brief, transcript)
             if part)
         try:
             it = self.hermes.chat_stream_events(session_id, payload, timeout)
@@ -1589,6 +1592,7 @@ UI_STATE: dict = load_ui_state(UI_STATE_PATH)   # e.g. {"manual_override": true}
 HERMES = HermesAPI(CFG)   # lightweight API client - independent of the STT pipeline
 LEARNING = get_core(CFG)  # durable memory, habits, recipes, skill tree
 CHAT = ChatBrain(CFG)   # fast conversational brain; "agent" when disabled
+CHAT.force_lang = "English" if UI_STATE.get("lang") == "en" else ""
 
 # Prepended to every agent turn when `hermes.system_prompt_extra` is absent.
 # It tells the agent which Mia tools/paths exist; Hermes' own prompt still owns
@@ -2550,6 +2554,26 @@ async def background_close_all() -> JSONResponse:
     return JSONResponse({"ok": True, "stopped": stopped})
 
 
+@app.get("/api/ui/language")
+async def ui_language_get() -> JSONResponse:
+    return JSONResponse({"lang": str(UI_STATE.get("lang") or "sl")})
+
+
+@app.post("/api/ui/language")
+async def ui_language_set(request: Request) -> JSONResponse:
+    """HUD language: the interface and Mia's replies follow it."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    lang = "en" if str(body.get("lang") or "").lower().startswith("en") else "sl"
+    UI_STATE["lang"] = lang
+    _save_ui_state()
+    CHAT.force_lang = "English" if lang == "en" else ""
+    print(f"UI language -> {lang}", flush=True)
+    return JSONResponse({"ok": True, "lang": lang})
+
+
 @app.post("/api/background/override")
 async def background_override(request: Request) -> JSONResponse:
     """Manual override: Mia stops closing windows on her own."""
@@ -2672,6 +2696,7 @@ async def hud_config() -> JSONResponse:
         "hermes_url": hermes.get("base_url") or "",
         "conversation": hermes.get("conversation") or "",
         "pitch_semitones": VOICE_SETTINGS.get("pitch_semitones", 0.0),
+        "lang": str(UI_STATE.get("lang") or "sl"),
         "learning_enabled": bool(LEARNING.enabled),
         "learning_brief_chars": int((LEARNING.cfg.get("context") or {}).get("max_chars", 1500)),
     })

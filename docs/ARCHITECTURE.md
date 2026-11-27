@@ -191,6 +191,7 @@ approval_request{data,run_id} · error · done{timing}
 | `/api/autonomy/status`, `/profile`, `/health`, `/jobs`, `/tasks`, `/alerts` | stanje samodejnosti, profil stroja, zdravje, opravila, naloge, opozorila |
 | `/api/autonomy/refresh`, `/adapt`, `/remediate`, `/tick`, `/run`, `/text` | zaznava/prilagoditev, sanacija, en cikel urnika, izvedba načrta, naravni ukaz |
 | `/api/autonomy/jobs` (POST/DELETE), `/jobs/{id}/toggle`, `/tasks/{id}/resume`, `/cancel` | upravljanje opravil in nalog iz HUD-a |
+| `/api/ui/language` | jezik HUD-a (sl/en); vpliva na prevod vmesnika in jezik odgovorov |
 | `/api/background`, `/api/background/close`, `/stop`, `/override` | kaj teče v ozadju, ročno zapiranje/ustavljanje in ročni nadzor |
 | `/api/machines` | psutil statistika gostitelja + oddaljeni delavci iz konfiguracije |
 | `/api/usage` | lokalno štetje žetonov/znakov; kvota ElevenLabs le, kadar je TTS v oblaku |
